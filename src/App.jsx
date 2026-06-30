@@ -1,3 +1,4 @@
+import { db } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
@@ -3345,13 +3346,13 @@ export default function DuffBook() {
 
   useEffect(() => {
     (async () => {
-      try { const r = await window.storage.get('last-code', false); if (r) setRoundCode(JSON.parse(r.value)); } catch (e) {}
-      try { const r2 = await window.storage.get('notif-prefs', false); if (r2) setNotifPrefs(JSON.parse(r2.value)); } catch (e) {}
-      try { const r3 = await window.storage.get('chat-bubble-pos', false); if (r3) setBubblePos(JSON.parse(r3.value)); } catch (e) {}
-      try { const r4 = await window.storage.get('bet-templates', false); setBetTemplates(r4 ? JSON.parse(r4.value) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
-      try { const r5 = await window.storage.get('guidance-enabled', false); if (r5) setGuidanceEnabled(JSON.parse(r5.value)); } catch (e) {}
-      try { const r6 = await window.storage.get('device-profile', false); if (r6) setDeviceName(JSON.parse(r6.value).name || ''); } catch (e) {}
-      try { const r7 = await window.storage.get('my-tournaments', false); if (r7) setMyTournaments(JSON.parse(r7.value)); } catch (e) {}
+      try { const r = await storage.get('last-code', false); if (r) setRoundCode(JSON.parse(r.value)); } catch (e) {}
+      try { const r2 = await storage.get('notif-prefs', false); if (r2) setNotifPrefs(JSON.parse(r2.value)); } catch (e) {}
+      try { const r3 = await storage.get('chat-bubble-pos', false); if (r3) setBubblePos(JSON.parse(r3.value)); } catch (e) {}
+      try { const r4 = await storage.get('bet-templates', false); setBetTemplates(r4 ? JSON.parse(r4.value) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
+      try { const r5 = await storage.get('guidance-enabled', false); if (r5) setGuidanceEnabled(JSON.parse(r5.value)); } catch (e) {}
+      try { const r6 = await storage.get('device-profile', false); if (r6) setDeviceName(JSON.parse(r6.value).name || ''); } catch (e) {}
+      try { const r7 = await storage.get('my-tournaments', false); if (r7) setMyTournaments(JSON.parse(r7.value)); } catch (e) {}
       setInitChecked(true);
     })();
   }, []);
@@ -3359,7 +3360,7 @@ export default function DuffBook() {
   const rememberTournament = (code, name) => {
     setMyTournaments(prev => {
       const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 20);
-      (async () => { try { await window.storage.set('my-tournaments', JSON.stringify(next), false); } catch (e) {} })();
+      (async () => { try { await firebaseSet('my-tournaments', JSON.stringify(next), false); } catch (e) {} })();
       return next;
     });
   };
@@ -3375,19 +3376,19 @@ export default function DuffBook() {
       return () => { mounted = false; };
     }
     (async () => {
-      try { const res = await window.storage.get(tournamentKey(roundCode), true); if (mounted) setTournament(res ? JSON.parse(res.value) : defaultTournament()); } catch (e) { if (mounted) setTournament(defaultTournament()); }
-      try { const cres = await window.storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
-      try { const wres = await window.storage.get(whoamiKey(roundCode), false); if (mounted) setWhoamiId(wres ? JSON.parse(wres.value) : null); } catch (e) { if (mounted) setWhoamiId(null); }
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) setTournament(res ? JSON.parse(res.value) : defaultTournament()); } catch (e) { if (mounted) setTournament(defaultTournament()); }
+      try { const cres = await storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
+      try { const wres = await storage.get(whoamiKey(roundCode), false); if (mounted) setWhoamiId(wres ? JSON.parse(wres.value) : null); } catch (e) { if (mounted) setWhoamiId(null); }
       if (mounted) { loadedRef.current = true; setLoading(false); }
     })();
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
-    else { (async () => { try { const r = await window.storage.get(isAdminKey(roundCode), false); setIsAdmin(r ? JSON.parse(r.value) : false); } catch (e) { setIsAdmin(false); } })(); }
+    else { (async () => { try { const r = await storage.get(isAdminKey(roundCode), false); setIsAdmin(r ? JSON.parse(r.value) : false); } catch (e) { setIsAdmin(false); } })(); }
     return () => { mounted = false; };
   }, [roundCode]);
 
   useEffect(() => {
     if (!roundCode || !loadedRef.current) return;
-    const t = setTimeout(async () => { try { await window.storage.set(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
+    const t = setTimeout(async () => { try { await firebaseSet(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
     return () => clearTimeout(t);
   }, [tournament, roundCode]);
 
@@ -3400,8 +3401,8 @@ export default function DuffBook() {
     if (!roundCode) return;
     const iv = setInterval(async () => {
       if (setupOpen || wizardOpen) return;
-      try { const res = await window.storage.get(tournamentKey(roundCode), true); if (res) setTournament(prev => JSON.stringify(prev) === res.value ? prev : JSON.parse(res.value)); } catch (e) {}
-      try { const cres = await window.storage.get(chatKey(roundCode), true); if (cres) setChat(prev => JSON.stringify(prev) === cres.value ? prev : JSON.parse(cres.value)); } catch (e) {}
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (res) setTournament(prev => JSON.stringify(prev) === res.value ? prev : JSON.parse(res.value)); } catch (e) {}
+      try { const cres = await storage.get(chatKey(roundCode), true); if (cres) setChat(prev => JSON.stringify(prev) === cres.value ? prev : JSON.parse(cres.value)); } catch (e) {}
     }, 10000);
     return () => clearInterval(iv);
   }, [roundCode, setupOpen, wizardOpen]);
@@ -3483,11 +3484,11 @@ export default function DuffBook() {
   const handleCreate = () => {
     const code = genCode(), pin = genPin();
     justCreatedRef.current = code;
-    (async () => { try { await window.storage.set('last-code', JSON.stringify(code), false); await window.storage.set(isAdminKey(code), JSON.stringify(true), false); } catch (e) {} })();
+    (async () => { try { await firebaseSet('last-code', JSON.stringify(code), false); await firebaseSet(isAdminKey(code), JSON.stringify(true), false); } catch (e) {} })();
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
-  const handleJoin = (code) => { const c = code.toUpperCase(); (async () => { try { await window.storage.set('last-code', JSON.stringify(c), false); } catch (e) {} })(); setRoundCode(c); };
+  const handleJoin = (code) => { const c = code.toUpperCase(); (async () => { try { await firebaseSet('last-code', JSON.stringify(c), false); } catch (e) {} })(); setRoundCode(c); };
   const handleLoadDemo = async () => {
     const code = genCode();
     const demo = generateDemoTournament();
@@ -3495,22 +3496,22 @@ export default function DuffBook() {
     preloadedRef.current = { code, tournament: demo.tournament, chat: demo.chat, whoamiId: demo.whoamiId };
     (async () => {
       try {
-        await window.storage.set('last-code', JSON.stringify(code), false);
-        await window.storage.set(isAdminKey(code), JSON.stringify(true), false);
-        await window.storage.set(whoamiKey(code), JSON.stringify(demo.whoamiId), false);
-        await window.storage.set(tournamentKey(code), JSON.stringify(demo.tournament), true);
-        await window.storage.set(chatKey(code), JSON.stringify(demo.chat), true);
+        await firebaseSet('last-code', JSON.stringify(code), false);
+        await firebaseSet(isAdminKey(code), JSON.stringify(true), false);
+        await firebaseSet(whoamiKey(code), JSON.stringify(demo.whoamiId), false);
+        await firebaseSet(tournamentKey(code), JSON.stringify(demo.tournament), true);
+        await firebaseSet(chatKey(code), JSON.stringify(demo.chat), true);
       } catch (e) {}
     })();
     setIsAdmin(true);
     setRoundCode(code);
   };
-  const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await window.storage.set('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
-  const handleLeave = () => { (async () => { try { await window.storage.delete('last-code', false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setSettingsOpen(false); };
-  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await window.storage.set(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
-  const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await window.storage.set('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
+  const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await firebaseSet('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
+  const handleLeave = () => { (async () => { try { await storage.delete('last-code', false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setSettingsOpen(false); };
+  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await firebaseSet(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
+  const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await firebaseSet('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
 
-  const setIdentity = (playerId) => { setWhoamiId(playerId); (async () => { try { await window.storage.set(whoamiKey(roundCode), JSON.stringify(playerId), false); } catch (e) {} })(); };
+  const setIdentity = (playerId) => { setWhoamiId(playerId); (async () => { try { await firebaseSet(whoamiKey(roundCode), JSON.stringify(playerId), false); } catch (e) {} })(); };
   const addSelf = (name) => {
     if (!deviceName) saveDeviceProfile(name);
     const color = CHIP_COLORS[tournament.players.length % CHIP_COLORS.length];
@@ -3522,11 +3523,11 @@ export default function DuffBook() {
     }));
     setIdentity(id);
   };
-  const updateNotifPrefs = (next) => { setNotifPrefs(next); (async () => { try { await window.storage.set('notif-prefs', JSON.stringify(next), false); } catch (e) {} })(); };
+  const updateNotifPrefs = (next) => { setNotifPrefs(next); (async () => { try { await firebaseSet('notif-prefs', JSON.stringify(next), false); } catch (e) {} })(); };
   const sendChat = (text) => {
     const author = tournament.players.find(p => p.id === whoamiId);
     const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: whoamiId, authorName: author ? author.name : (deviceName || 'Guest'), text, ts: Date.now() };
-    setChat(prev => { const next = [...prev, msg].slice(-150); (async () => { try { await window.storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })(); return next; });
+    setChat(prev => { const next = [...prev, msg].slice(-150); (async () => { try { await firebaseSet(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })(); return next; });
   };
 
   const addPlayer = () => {
@@ -3631,8 +3632,8 @@ export default function DuffBook() {
   const resolveTournamentCustomBet = (id, winnerIds) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
   const reopenTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
 
-  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; (async () => { try { await window.storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
-  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); (async () => { try { await window.storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
+  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; (async () => { try { await firebaseSet('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
+  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); (async () => { try { await firebaseSet('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
 
   const addRound = () => {
     setTournament(prev => {
@@ -3663,7 +3664,7 @@ export default function DuffBook() {
     const ny = Math.max(80, Math.min(window.innerHeight - 60, bubbleDragRef.current.origin.y + dy));
     setBubblePos({ x: nx, y: ny });
   };
-  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) (async () => { try { await window.storage.set('chat-bubble-pos', JSON.stringify(bubblePos), false); } catch (e) {} })(); };
+  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) (async () => { try { await firebaseSet('chat-bubble-pos', JSON.stringify(bubblePos), false); } catch (e) {} })(); };
   const onBubbleClick = () => { if (bubbleJustDraggedRef.current) { bubbleJustDraggedRef.current = false; return; } setChatOpen(true); setChatSeenLen(chat.length); };
 
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
@@ -3768,7 +3769,7 @@ export default function DuffBook() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await window.storage.set('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await firebaseSet('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
