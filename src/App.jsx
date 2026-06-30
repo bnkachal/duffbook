@@ -3376,7 +3376,7 @@ export default function DuffBook() {
       return () => { mounted = false; };
     }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) setTournament(res ? JSON.parse(res.value) : defaultTournament()); } catch (e) { if (mounted) setTournament(defaultTournament()); }
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { setTournament(res ? JSON.parse(res.value) : defaultTournament()); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
       try { const cres = await storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
       try { const wres = await storage.get(whoamiKey(roundCode), false); if (mounted) setWhoamiId(wres ? JSON.parse(wres.value) : null); } catch (e) { if (mounted) setWhoamiId(null); }
       if (mounted) { loadedRef.current = true; setLoading(false); }
