@@ -18,14 +18,17 @@ function sanitizeKey(key) {
   return key.replace(/[.#$[\]/]/g, '_');
 }
 
-function sanitizeData(data) {
-  if (data === null || data === undefined) return null;
-  if (typeof data !== 'object') return data;
-  if (Array.isArray(data)) return data.map(sanitizeData);
+function restoreArrays(data) {
+  if (data === null || data === undefined) return data;
+  if (typeof data !== 'object' || Array.isArray(data)) return data;
+  const keys = Object.keys(data);
+  if (keys.length > 0) {
+    const isArray = keys.every((k, i) => String(i) === k);
+    if (isArray) return keys.map(k => restoreArrays(data[k]));
+  }
   const result = {};
-  for (const key of Object.keys(data)) {
-    const cleanKey = sanitizeKey(key);
-    result[cleanKey] = sanitizeData(data[key]);
+  for (const key of keys) {
+    result[key] = restoreArrays(data[key]);
   }
   return result;
 }
@@ -36,7 +39,8 @@ export const storage = {
       const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
       const snapshot = await get(ref(db, path));
       if (snapshot.exists()) {
-        return { key, value: JSON.stringify(snapshot.val()), shared };
+        const restored = restoreArrays(snapshot.val());
+        return { key, value: JSON.stringify(restored), shared };
       }
       return null;
     } catch (e) {
@@ -49,8 +53,7 @@ export const storage = {
       const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
       let parsed;
       try { parsed = JSON.parse(value); } catch { parsed = value; }
-      const clean = sanitizeData(parsed);
-      await set(ref(db, path), clean);
+      await set(ref(db, path), parsed);
       return { key, value, shared };
     } catch (e) {
       console.error('Firebase set error:', e);
