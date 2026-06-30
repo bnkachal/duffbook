@@ -3360,7 +3360,7 @@ export default function DuffBook() {
   const rememberTournament = (code, name) => {
     setMyTournaments(prev => {
       const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 20);
-      (async () => { try { await firebaseSet('my-tournaments', JSON.stringify(next), false); } catch (e) {} })();
+      (async () => { try { await storage.set('my-tournaments', JSON.stringify(next), false); } catch (e) {} })();
       return next;
     });
   };
@@ -3388,7 +3388,7 @@ export default function DuffBook() {
 
   useEffect(() => {
     if (!roundCode || !loadedRef.current) return;
-    const t = setTimeout(async () => { try { await firebaseSet(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
+    const t = setTimeout(async () => { try { await storage.set(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
     return () => clearTimeout(t);
   }, [tournament, roundCode]);
 
@@ -3484,11 +3484,11 @@ export default function DuffBook() {
   const handleCreate = () => {
     const code = genCode(), pin = genPin();
     justCreatedRef.current = code;
-    (async () => { try { await firebaseSet('last-code', JSON.stringify(code), false); await firebaseSet(isAdminKey(code), JSON.stringify(true), false); } catch (e) {} })();
+    (async () => { try { await storage.set('last-code', JSON.stringify(code), false); await storage.set(isAdminKey(code), JSON.stringify(true), false); } catch (e) {} })();
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
-  const handleJoin = (code) => { const c = code.toUpperCase(); (async () => { try { await firebaseSet('last-code', JSON.stringify(c), false); } catch (e) {} })(); setRoundCode(c); };
+  const handleJoin = (code) => { const c = code.toUpperCase(); (async () => { try { await storage.set('last-code', JSON.stringify(c), false); } catch (e) {} })(); setRoundCode(c); };
   const handleLoadDemo = async () => {
     const code = genCode();
     const demo = generateDemoTournament();
@@ -3496,22 +3496,22 @@ export default function DuffBook() {
     preloadedRef.current = { code, tournament: demo.tournament, chat: demo.chat, whoamiId: demo.whoamiId };
     (async () => {
       try {
-        await firebaseSet('last-code', JSON.stringify(code), false);
-        await firebaseSet(isAdminKey(code), JSON.stringify(true), false);
-        await firebaseSet(whoamiKey(code), JSON.stringify(demo.whoamiId), false);
-        await firebaseSet(tournamentKey(code), JSON.stringify(demo.tournament), true);
-        await firebaseSet(chatKey(code), JSON.stringify(demo.chat), true);
+        await storage.set('last-code', JSON.stringify(code), false);
+        await storage.set(isAdminKey(code), JSON.stringify(true), false);
+        await storage.set(whoamiKey(code), JSON.stringify(demo.whoamiId), false);
+        await storage.set(tournamentKey(code), JSON.stringify(demo.tournament), true);
+        await storage.set(chatKey(code), JSON.stringify(demo.chat), true);
       } catch (e) {}
     })();
     setIsAdmin(true);
     setRoundCode(code);
   };
-  const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await firebaseSet('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
+  const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await storage.set('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
   const handleLeave = () => { (async () => { try { await storage.delete('last-code', false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setSettingsOpen(false); };
-  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await firebaseSet(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
-  const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await firebaseSet('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
+  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await storage.set(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
+  const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await storage.set('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
 
-  const setIdentity = (playerId) => { setWhoamiId(playerId); (async () => { try { await firebaseSet(whoamiKey(roundCode), JSON.stringify(playerId), false); } catch (e) {} })(); };
+  const setIdentity = (playerId) => { setWhoamiId(playerId); (async () => { try { await storage.set(whoamiKey(roundCode), JSON.stringify(playerId), false); } catch (e) {} })(); };
   const addSelf = (name) => {
     if (!deviceName) saveDeviceProfile(name);
     const color = CHIP_COLORS[tournament.players.length % CHIP_COLORS.length];
@@ -3523,11 +3523,11 @@ export default function DuffBook() {
     }));
     setIdentity(id);
   };
-  const updateNotifPrefs = (next) => { setNotifPrefs(next); (async () => { try { await firebaseSet('notif-prefs', JSON.stringify(next), false); } catch (e) {} })(); };
+  const updateNotifPrefs = (next) => { setNotifPrefs(next); (async () => { try { await storage.set('notif-prefs', JSON.stringify(next), false); } catch (e) {} })(); };
   const sendChat = (text) => {
     const author = tournament.players.find(p => p.id === whoamiId);
     const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: whoamiId, authorName: author ? author.name : (deviceName || 'Guest'), text, ts: Date.now() };
-    setChat(prev => { const next = [...prev, msg].slice(-150); (async () => { try { await firebaseSet(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })(); return next; });
+    setChat(prev => { const next = [...prev, msg].slice(-150); (async () => { try { await storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })(); return next; });
   };
 
   const addPlayer = () => {
@@ -3632,8 +3632,8 @@ export default function DuffBook() {
   const resolveTournamentCustomBet = (id, winnerIds) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
   const reopenTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
 
-  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; (async () => { try { await firebaseSet('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
-  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); (async () => { try { await firebaseSet('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
+  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; (async () => { try { await storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
+  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); (async () => { try { await storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
 
   const addRound = () => {
     setTournament(prev => {
@@ -3664,7 +3664,7 @@ export default function DuffBook() {
     const ny = Math.max(80, Math.min(window.innerHeight - 60, bubbleDragRef.current.origin.y + dy));
     setBubblePos({ x: nx, y: ny });
   };
-  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) (async () => { try { await firebaseSet('chat-bubble-pos', JSON.stringify(bubblePos), false); } catch (e) {} })(); };
+  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) (async () => { try { await storage.set('chat-bubble-pos', JSON.stringify(bubblePos), false); } catch (e) {} })(); };
   const onBubbleClick = () => { if (bubbleJustDraggedRef.current) { bubbleJustDraggedRef.current = false; return; } setChatOpen(true); setChatSeenLen(chat.length); };
 
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
@@ -3769,7 +3769,7 @@ export default function DuffBook() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await firebaseSet('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await storage.set('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
