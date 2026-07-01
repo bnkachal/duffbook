@@ -18,16 +18,26 @@ function sanitizeKey(key) {
   return key.replace(/[.#$[\]/]/g, '_');
 }
 
+function isNumericObject(obj) {
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return false;
+  return keys.every(k => /^\d+$/.test(k) && parseInt(k) < keys.length + 10);
+}
+
 function restoreArrays(data) {
   if (data === null || data === undefined) return data;
-  if (typeof data !== 'object' || Array.isArray(data)) return data;
-  const keys = Object.keys(data);
-  if (keys.length > 0) {
-    const isArray = keys.every((k, i) => String(i) === k);
-    if (isArray) return keys.map(k => restoreArrays(data[k]));
+  if (typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(restoreArrays);
+  if (isNumericObject(data)) {
+    const maxIndex = Math.max(...Object.keys(data).map(Number));
+    const arr = Array(maxIndex + 1).fill(null);
+    for (const key of Object.keys(data)) {
+      arr[parseInt(key)] = restoreArrays(data[key]);
+    }
+    return arr;
   }
   const result = {};
-  for (const key of keys) {
+  for (const key of Object.keys(data)) {
     result[key] = restoreArrays(data[key]);
   }
   return result;
@@ -70,6 +80,4 @@ export const storage = {
     }
   },
   async list(prefix, shared = false) {
-    return { keys: [], prefix, shared };
-  }
-};
+    return { keys: [], prefix, shared
