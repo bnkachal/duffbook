@@ -363,8 +363,8 @@ function defaultTournament() {
 }
 function getRoundView(tournament, roundId) {
   const round = tournament.rounds.find(r => r.id === roundId) || tournament.rounds[0] || defaultRound(0);
-  const players = Array.isArray(tournament.players) ? tournament.players : [];
-  const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
+  const players = Array.isArray(tournament.players) ? tournament.players.filter(p => p && p.id) : [];
+  const flights = Array.isArray(tournament.flights) ? tournament.flights.filter(f => f && f.id) : [];
   const pars = Array.isArray(round.pars) ? round.pars : DEFAULT_PARS_18.slice();
   const strokeIndex = Array.isArray(round.strokeIndex) ? round.strokeIndex : DEFAULT_SI_18.slice();
   const scores = round.scores && typeof round.scores === 'object' ? round.scores : {};
