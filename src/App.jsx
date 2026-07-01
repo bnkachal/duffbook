@@ -3354,7 +3354,7 @@ export default function DuffBook() {
 
   useEffect(() => {
     (async () => {
-      // last-code loading disabled temporarily
+      try { const r = await storage.get('last-code', false); if (r) setRoundCode(JSON.parse(r.value)); } catch (e) {}
       try { const r2 = await storage.get('notif-prefs', false); if (r2) setNotifPrefs(JSON.parse(r2.value)); } catch (e) {}
       try { const r3 = await storage.get('chat-bubble-pos', false); if (r3) setBubblePos(JSON.parse(r3.value)); } catch (e) {}
       try { const r4 = await storage.get('bet-templates', false); setBetTemplates(r4 ? JSON.parse(r4.value) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
