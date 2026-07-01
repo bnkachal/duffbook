@@ -1,4 +1,3 @@
-import { storage } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
@@ -358,7 +357,7 @@ function defaultTournament() {
     players: [], flights: [], handicapsEnabled: false,
     rounds: [r0], activeRoundId: r0.id,
     tournamentCustomBets: [],
-    ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null },
+    ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
   };
 }
 function getRoundView(tournament, roundId) {
@@ -367,14 +366,18 @@ function getRoundView(tournament, roundId) {
   const flights = Array.isArray(tournament.flights) ? tournament.flights.filter(f => f && f.id) : [];
   const pars = Array.isArray(round.pars) ? round.pars : DEFAULT_PARS_18.slice();
   const strokeIndex = Array.isArray(round.strokeIndex) ? round.strokeIndex : DEFAULT_SI_18.slice();
+  const customBets = Array.isArray(round.customBets) ? round.customBets : [];
+  const flowGroups = Array.isArray(round.flowGroups) ? round.flowGroups : [];
+  const tournamentCustomBets = Array.isArray(tournament.tournamentCustomBets) ? tournament.tournamentCustomBets : [];
   const scores = round.scores && typeof round.scores === 'object' ? round.scores : {};
   const safeScores = {};
   players.forEach(p => { safeScores[p.id] = Array.isArray(scores[p.id]) ? scores[p.id] : Array(round.numHoles || 18).fill(null); });
   return {
     ...round,
-    pars, strokeIndex, scores: safeScores,
+    pars, strokeIndex, customBets, flowGroups, scores: safeScores,
     players, flights, handicapsEnabled: tournament.handicapsEnabled,
     adminPin: tournament.adminPin, roundName: round.name, tournamentName: tournament.name,
+    tournamentCustomBets,
   };
 }
 function roundIsFullyPlayed(round) {
@@ -1704,11 +1707,13 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, color: ryderCup.totalA > ryderCup.totalB ? C.goldBright : C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamA.name}</div>
               <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalA > ryderCup.totalB ? C.goldBright : C.ivory }}>{ryderCup.totalA}</div>
+              {tournament.ryderCup?.captainA && <div style={{ fontSize: 10, color: C.ivoryDim }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainA)?.name || ''}</div>}
             </div>
             <div style={{ fontSize: 16, color: C.ivoryDim }}>–</div>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, color: ryderCup.totalB > ryderCup.totalA ? C.goldBright : C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamB.name}</div>
               <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalB > ryderCup.totalA ? C.goldBright : C.ivory }}>{ryderCup.totalB}</div>
+              {tournament.ryderCup?.captainB && <div style={{ fontSize: 10, color: C.ivoryDim }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainB)?.name || ''}</div>}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -2307,6 +2312,24 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
             <input value={rc.teamAName} onChange={e => setRyderCup('teamAName', e.target.value)} style={{ ...inputStyle, padding: '7px 10px', fontSize: 13 }} placeholder="Team A" />
             <input value={rc.teamBName} onChange={e => setRyderCup('teamBName', e.target.value)} style={{ ...inputStyle, padding: '7px 10px', fontSize: 13 }} placeholder="Team B" />
           </div>
+          {tournament.players.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>{rc.teamAName} Captain</div>
+                <select value={rc.captainA || ''} onChange={e => setRyderCup('captainA', e.target.value || null)} style={{ ...inputStyle, padding: '7px 8px', fontSize: 12 }}>
+                  <option value="">— pick captain —</option>
+                  {tournament.players.filter(p => !p.flightId || p.flightId === tournament.flights[0]?.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>{rc.teamBName} Captain</div>
+                <select value={rc.captainB || ''} onChange={e => setRyderCup('captainB', e.target.value || null)} style={{ ...inputStyle, padding: '7px 8px', fontSize: 12 }}>
+                  <option value="">— pick captain —</option>
+                  {tournament.players.filter(p => !p.flightId || p.flightId === tournament.flights[1]?.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 11, color: C.ivoryDim }}>Total players expected</span>
             <input type="number" min={2} value={rc.totalPlayers ?? ''} onChange={e => setRyderCup('totalPlayers', e.target.value ? parseInt(e.target.value, 10) : null)} style={{ ...inputStyle, width: 56, padding: '5px 8px' }} placeholder="e.g. 8" />
@@ -2404,7 +2427,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
    Used the first time a round is configured, and re-enterable any time via "Add another round"
    or "Redo this round's wizard". Single-tap steps (course, holes) auto-advance; anything with
    free text or multiple toggles needs an explicit Next so it doesn't feel like it's racing ahead. */
-function WizardShell({ step, total, onJump, onClose, children, title }) {
+function WizardShell({ step, total, onJump, onClose, onOpenSetup, children, title }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 55, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 440, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -2420,7 +2443,7 @@ function WizardShell({ step, total, onJump, onClose, children, title }) {
           <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 21, textTransform: 'uppercase', marginBottom: 14, marginTop: 2 }}>{title}</div>
           {children}
         </div>
-        <button onClick={onClose} style={{ flexShrink: 0, background: 'transparent', border: 'none', borderTop: `1px solid ${C.turfBorder}`, color: C.ivoryDim, fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: '10px 0' }}>Skip to full settings</button>
+        <button onClick={onOpenSetup || onClose} style={{ flexShrink: 0, background: 'transparent', border: 'none', borderTop: `1px solid ${C.turfBorder}`, color: C.ivoryDim, fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: '10px 0' }}>Skip to full settings</button>
       </div>
     </div>
   );
@@ -2429,7 +2452,7 @@ function WizardNextButton({ onClick, disabled, label }) {
   return <GoldButton onClick={onClick} disabled={disabled} style={{ width: '100%', padding: '14px 0', fontSize: 15, marginTop: 18 }}>{label || 'Next'}</GoldButton>;
 }
 
-function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, setCourseField, startRound, isNewRound, onFinish }) {
+function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, setCourseField, startRound, isNewRound, onFinish }) {
   const baseSteps = isNewRound ? ['course', 'holes', 'games', 'review'] : ['basics', 'course', 'holes', 'players', 'games', 'review'];
   const [step, setStep] = useState(0);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -2463,7 +2486,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
   const finish = () => { startRound(); onFinish(); };
 
   return (
-    <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} title={
+    <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
       { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', players: 'Who\u2019s playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
       {stepKey === 'basics' && (
@@ -3160,8 +3183,50 @@ function FontLoader() {
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
+      @keyframes birdFly {
+        0%   { transform: translateX(-80px) translateY(0px) scaleX(1); opacity: 0; }
+        5%   { opacity: 1; }
+        50%  { transform: translateX(50vw) translateY(-30px) scaleX(1); }
+        95%  { opacity: 1; }
+        100% { transform: translateX(110vw) translateY(10px) scaleX(1); opacity: 0; }
+      }
+      @keyframes birdFlap { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(0.5); } }
+      @keyframes birdieLabel {
+        0%   { opacity: 0; transform: translateY(20px) scale(0.7); }
+        15%  { opacity: 1; transform: translateY(0px) scale(1.1); }
+        80%  { opacity: 1; transform: translateY(-10px) scale(1); }
+        100% { opacity: 0; transform: translateY(-30px) scale(0.9); }
+      }
+      .bird-fly { animation: birdFly 3.2s ease-in-out forwards; }
+      .bird-flap { animation: birdFlap 0.28s ease-in-out infinite; }
+      .birdie-label { animation: birdieLabel 2.8s ease-out forwards; }
       @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     `}</style>
+  );
+}
+
+function BirdieAnimation({ events, players }) {
+  if (!events || events.length === 0) return null;
+  return (
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99, overflow: 'hidden' }}>
+      {events.map((ev, idx) => {
+        const player = players.find(p => p.id === ev.playerId);
+        const yPos = 15 + (idx % 5) * 14;
+        const delay = idx * 0.35;
+        const isEagle = ev.diff <= -2;
+        const label = isEagle ? '🦅 Eagle!' : '🐦 Birdie!';
+        return (
+          <div key={ev.id} style={{ position: 'absolute', left: 0, top: `${yPos}%`, animationDelay: `${delay}s` }} className="bird-fly">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="bird-flap" style={{ fontSize: isEagle ? 32 : 26 }}>{isEagle ? '🦅' : '🐦'}</div>
+              <div className="birdie-label" style={{ background: isEagle ? C.flagRed : C.gold, color: C.pineDark, borderRadius: 999, padding: '4px 12px', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
+                {player?.name} · {label}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 function LibraryLoader() {
@@ -3333,6 +3398,7 @@ export default function DuffBook() {
   const [myPositionOpen, setMyPositionOpen] = useState(false);
   const [roundSwitcherOpen, setRoundSwitcherOpen] = useState(false);
   const [roundFlowOpen, setRoundFlowOpen] = useState(false);
+  const [birdieEvents, setBirdieEvents] = useState([]);
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [notifPrefs, setNotifPrefs] = useState({ leadChange: true, skinsWon: true, matchDecided: true, allSquare: true, playerFinished: true, bettingClosingSoon: true, roundComplete: true, chat: true });
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -3384,7 +3450,7 @@ export default function DuffBook() {
       return () => { mounted = false; };
     }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : defaultTournament(); const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players : [], flights: Array.isArray(raw.flights) ? raw.flights : [], rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => ({ ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {} })) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : defaultTournament(); const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
       try { const cres = await storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
       try { const wres = await storage.get(whoamiKey(roundCode), false); if (mounted) setWhoamiId(wres ? JSON.parse(wres.value) : null); } catch (e) { if (mounted) setWhoamiId(null); }
       if (mounted) { loadedRef.current = true; setLoading(false); }
@@ -3409,11 +3475,63 @@ export default function DuffBook() {
     if (!roundCode) return;
     const iv = setInterval(async () => {
       if (setupOpen || wizardOpen) return;
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (res) setTournament(prev => JSON.stringify(prev) === res.value ? prev : JSON.parse(res.value)); } catch (e) {}
+      try {
+        const res = await storage.get(tournamentKey(roundCode), true);
+        if (res) {
+          setTournament(prev => {
+            try {
+              const raw = JSON.parse(res.value);
+              if (!raw || !Array.isArray(raw.players)) return prev;
+              // detect new birdies from other players
+              const activeRound = raw.rounds?.find(r => r.id === raw.activeRoundId);
+              const prevRound = prev.rounds?.find(r => r.id === prev.activeRoundId);
+              if (activeRound && prevRound && raw.players) {
+                raw.players.forEach(p => {
+                  const newScores = activeRound.scores?.[p.id] || [];
+                  const oldScores = prevRound.scores?.[p.id] || [];
+                  newScores.forEach((s, h) => {
+                    if (s != null && oldScores[h] == null && p.id !== whoamiId) {
+                      const par = activeRound.pars?.[h] ?? 4;
+                      if (s - par <= -1) {
+                        const ev = { id: `birdie_sync_${Date.now()}_${h}`, playerId: p.id, holeIndex: h, diff: s - par, ts: Date.now() };
+                        setBirdieEvents(prev2 => [...prev2, ev]);
+                        setTimeout(() => setBirdieEvents(prev2 => prev2.filter(e => e.id !== ev.id)), 4000);
+                      }
+                    }
+                  });
+                });
+              }
+              if (JSON.stringify(prev) === res.value) return prev;
+              // apply same sanitizer as initial load
+              const sanitize = (raw) => ({ ...defaultTournament(), ...raw,
+                players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [],
+                flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [],
+                ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup,
+                tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [],
+                rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r,
+                  pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(),
+                  strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(),
+                  yardage: Array.isArray(r.yardage) ? r.yardage : [],
+                  customBets: Array.isArray(r.customBets) ? r.customBets : [],
+                  flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [],
+                  scoreUpdatedAt: (r.scoreUpdatedAt && typeof r.scoreUpdatedAt === 'object' && !Array.isArray(r.scoreUpdatedAt)) ? r.scoreUpdatedAt : {},
+                  scores: r.scores && typeof r.scores === 'object' ? r.scores : {},
+                  games: r.games ? { ...defaultRound(0).games, ...r.games,
+                    matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] },
+                    wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} },
+                    parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] },
+                  } : defaultRound(0).games,
+                }; }).filter(Boolean) : [defaultRound(0)],
+              });
+              return sanitize(raw);
+            } catch(e) { return prev; }
+          });
+        }
+      } catch (e) {}
       try { const cres = await storage.get(chatKey(roundCode), true); if (cres) setChat(prev => JSON.stringify(prev) === cres.value ? prev : JSON.parse(cres.value)); } catch (e) {}
     }, 10000);
     return () => clearInterval(iv);
-  }, [roundCode, setupOpen, wizardOpen]);
+  }, [roundCode, setupOpen, wizardOpen, whoamiId]);
 
   useEffect(() => {
     if (pendingAdminPin && !loading && !tournament.adminPin) { setTournament(prev => ({ ...prev, adminPin: pendingAdminPin })); setPendingAdminPin(null); }
@@ -3442,7 +3560,6 @@ export default function DuffBook() {
   useEffect(() => {
     if (!loadedRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const state = getRoundView(tournament, tournament.activeRoundId);
-  if (!state || !state.players) return null;
     const fire = (title, body) => { try { new Notification(title, { body }); } catch (e) {} };
     const stats = computeStats(state);
     const inProgress = stats.filter(s => s.thru > 0);
@@ -3604,10 +3721,18 @@ export default function DuffBook() {
   const startRound = () => updateRound(prev => ({ ...prev, started: true }));
   const resetScores = () => updateRound(prev => ({ ...prev, scores: Object.fromEntries(Object.keys(prev.scores).map(pid => [pid, Array(prev.numHoles).fill(null)])) }));
   const applyScan = (rows) => updateRound(prev => { const scores = { ...prev.scores }; rows.forEach(r => { scores[r.playerId] = r.scores.map((s, i) => s != null ? s : (scores[r.playerId]?.[i] ?? null)); }); return { ...prev, scores }; });
+  const fireBirdie = (playerId, holeIndex, score, pars) => {
+    const par = pars[holeIndex] ?? 4;
+    const diff = score - par;
+    if (diff > -1) return;
+    const ev = { id: `birdie_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, playerId, holeIndex, diff, ts: Date.now() };
+    setBirdieEvents(prev => [...prev, ev]);
+    setTimeout(() => setBirdieEvents(prev => prev.filter(e => e.id !== ev.id)), 4000);
+  };
   const setScoreVal = (playerId, holeIndex, val) => updateRound(prev => {
     const arr = (prev.scores[playerId] || []).slice(); arr[holeIndex] = val;
     const scoreUpdatedAt = { ...(prev.scoreUpdatedAt || {}) };
-    if (val != null) scoreUpdatedAt[`${playerId}-${holeIndex}`] = Date.now(); else delete scoreUpdatedAt[`${playerId}-${holeIndex}`];
+    if (val != null) { scoreUpdatedAt[`${playerId}-${holeIndex}`] = Date.now(); fireBirdie(playerId, holeIndex, val, prev.pars); } else delete scoreUpdatedAt[`${playerId}-${holeIndex}`];
     return { ...prev, scores: { ...prev.scores, [playerId]: arr }, scoreUpdatedAt };
   });
   const stateNow = getRoundView(tournament, tournament.activeRoundId);
@@ -3631,10 +3756,10 @@ export default function DuffBook() {
   const resolveMarket = (winnerId) => updateRound(prev => ({ ...prev, games: { ...prev.games, parimutuel: { ...prev.games.parimutuel, resolved: true, winnerId } } }));
   const reopenMarket = () => updateRound(prev => ({ ...prev, games: { ...prev.games, parimutuel: { ...prev.games.parimutuel, resolved: false, winnerId: null } } }));
 
-  const addCustomBet = (bet) => updateRound(prev => ({ ...prev, customBets: [...prev.customBets, { id: 'cb_' + Date.now(), resolved: false, winnerIds: null, ...bet }] }));
-  const removeCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: prev.customBets.filter(b => b.id !== id) }));
-  const resolveCustomBet = (id, winnerIds) => updateRound(prev => ({ ...prev, customBets: prev.customBets.map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
-  const reopenCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: prev.customBets.map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
+  const addCustomBet = (bet) => updateRound(prev => ({ ...prev, customBets: [...(Array.isArray(prev.customBets) ? prev.customBets : []), { id: 'cb_' + Date.now(), resolved: false, winnerIds: null, ...bet }] }));
+  const removeCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).filter(b => b.id !== id) }));
+  const resolveCustomBet = (id, winnerIds) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
+  const reopenCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
 
   const addTournamentCustomBet = (bet) => updateTournament(prev => ({ ...prev, tournamentCustomBets: [...prev.tournamentCustomBets, { id: 'tcb_' + Date.now(), resolved: false, winnerIds: null, ...bet }] }));
   const removeTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.filter(b => b.id !== id) }));
@@ -3701,6 +3826,7 @@ export default function DuffBook() {
     <div style={{ height: '100vh', overflow: 'hidden', background: `radial-gradient(ellipse at top, ${C.turf} 0%, ${C.pine} 55%, ${C.pineDark} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column' }}>
       <FontLoader />
       <LibraryLoader />
+      <BirdieAnimation events={birdieEvents} players={tournament.players} />
       <div style={{ flexShrink: 0, background: C.pineDark, borderBottom: `1px solid ${C.turfBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontWeight: 600, fontSize: 18, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tournament.name}</div>
@@ -3775,7 +3901,7 @@ export default function DuffBook() {
         <SetupModal tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => setSetupOpen(false)} roundCode={roundCode} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} startRound={startRound} resetScores={resetScores} onPreview={() => { setSetupOpen(false); setPreviewMode(true); setActiveTab('card'); }} onAddRound={addRound} onSwitchRound={switchRound} />
       )}
       {wizardOpen && isAdmin && (
-        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
+        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
         <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await storage.set('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
