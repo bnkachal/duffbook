@@ -80,4 +80,6 @@ export const storage = {
     }
   },
   async list(prefix, shared = false) {
-    return { keys: [], prefix, shared
+    return { keys: [], prefix, shared };
+  }
+};
