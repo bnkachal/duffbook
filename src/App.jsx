@@ -363,9 +363,17 @@ function defaultTournament() {
 }
 function getRoundView(tournament, roundId) {
   const round = tournament.rounds.find(r => r.id === roundId) || tournament.rounds[0] || defaultRound(0);
+  const players = Array.isArray(tournament.players) ? tournament.players : [];
+  const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
+  const pars = Array.isArray(round.pars) ? round.pars : DEFAULT_PARS_18.slice();
+  const strokeIndex = Array.isArray(round.strokeIndex) ? round.strokeIndex : DEFAULT_SI_18.slice();
+  const scores = round.scores && typeof round.scores === 'object' ? round.scores : {};
+  const safeScores = {};
+  players.forEach(p => { safeScores[p.id] = Array.isArray(scores[p.id]) ? scores[p.id] : Array(round.numHoles || 18).fill(null); });
   return {
     ...round,
-    players: tournament.players, flights: tournament.flights, handicapsEnabled: tournament.handicapsEnabled,
+    pars, strokeIndex, scores: safeScores,
+    players, flights, handicapsEnabled: tournament.handicapsEnabled,
     adminPin: tournament.adminPin, roundName: round.name, tournamentName: tournament.name,
   };
 }
@@ -3434,6 +3442,7 @@ export default function DuffBook() {
   useEffect(() => {
     if (!loadedRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const state = getRoundView(tournament, tournament.activeRoundId);
+  if (!state || !state.players) return null;
     const fire = (title, body) => { try { new Notification(title, { body }); } catch (e) {} };
     const stats = computeStats(state);
     const inProgress = stats.filter(s => s.thru > 0);
