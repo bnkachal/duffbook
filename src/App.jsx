@@ -1,3 +1,4 @@
+import { storage } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
@@ -4121,4 +4122,3 @@ export default function DuffBook() {
     </div>
   );
 }
-
