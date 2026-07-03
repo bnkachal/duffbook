@@ -559,23 +559,26 @@ function makeSetRyderCup(updateTournament) {
 const HOLE_DURATION_BY_PAR = { 3: 12, 4: 14, 5: 16 };
 
 function computeGroupCompletedCount(group, scores, numHoles) {
+  const playerIds = Array.isArray(group.playerIds) ? group.playerIds : [];
+  if (playerIds.length === 0) return 0;
   let completed = 0;
   for (let h = 0; h < numHoles; h++) {
-    const allIn = group.playerIds.length > 0 && group.playerIds.every(pid => scores[pid]?.[h] != null);
+    const allIn = playerIds.every(pid => scores[pid]?.[h] != null);
     if (allIn) completed++; else break;
   }
   return completed;
 }
 function computeGroupHoleProgress(group, scores, pars, numHoles, betWinnersByHole, scoreUpdatedAt) {
+  const playerIds = Array.isArray(group.playerIds) ? group.playerIds : [];
   const holes = [];
   for (let h = 0; h < numHoles; h++) {
-    const par = pars[h] ?? 4;
-    const playerScores = group.playerIds.map(pid => scores[pid]?.[h]).filter(s => s != null);
-    const completed = group.playerIds.length > 0 && playerScores.length === group.playerIds.length;
+    const par = (Array.isArray(pars) ? pars[h] : null) ?? 4;
+    const playerScores = playerIds.map(pid => scores[pid]?.[h]).filter(s => s != null);
+    const completed = playerIds.length > 0 && playerScores.length === playerIds.length;
     const hasBirdieOrBetter = playerScores.some(s => s - par <= -1);
     const winnersHere = (betWinnersByHole && betWinnersByHole[h]) || [];
-    const winnerPlayerId = group.playerIds.find(pid => winnersHere.includes(pid)) || null;
-    const completedAt = completed ? (Math.max(0, ...group.playerIds.map(pid => (scoreUpdatedAt || {})[`${pid}-${h}`] || 0)) || null) : null;
+    const winnerPlayerId = playerIds.find(pid => winnersHere.includes(pid)) || null;
+    const completedAt = completed ? (Math.max(0, ...playerIds.map(pid => (scoreUpdatedAt || {})[`${pid}-${h}`] || 0)) || null) : null;
     holes.push({ holeNumber: h + 1, par, completed, scoresEntered: playerScores.length, hasBirdieOrBetter, hasBetWin: !!winnerPlayerId, winnerPlayerId, completedAt });
   }
   return holes;
@@ -1209,8 +1212,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
       <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.72) 100%)' }} />
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: 320 }}>
-        <div style={{ fontSize: 40, marginBottom: 6 }}>⛳</div>
-        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 46, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF' }}>DuffBook</div>
+        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 46, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF', marginTop: 0 }}>DuffBook</div>
         <div style={{ color: 'rgba(255,255,255,0.75)', marginBottom: 24, fontSize: 14, maxWidth: 260 }}>Live scoring, side games, and trash talk for the trip.</div>
         <input value={deviceName || ''} onChange={e => { if (e.target.value.trim()) onOpenProfile(); }} placeholder="Enter your name" style={{ width: '100%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 12, padding: '14px 14px', color: '#FFFFFF', fontSize: 16, textAlign: 'center', outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
         <div style={{ position: 'relative', width: '100%', marginBottom: 10 }}>
@@ -1740,7 +1742,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
     .sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar)) : [];
   const positionCard = whoami && ledger[whoami.id] ? (
     <button onClick={onOpenMyPosition} style={{ ...homeCard, justifyContent: 'space-between' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Receipt} color={C.gold} size={28} /><span style={{ fontSize: 13 }}>Your position {multiRound ? '(whole trip)' : ''}</span></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Receipt} color={C.gold} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Your position {multiRound ? '(whole trip)' : ''}</span></div>
       <span style={{ fontFamily: 'Anton, sans-serif', color: ledger[whoami.id].netPosition > 0 ? C.goldBright : ledger[whoami.id].netPosition < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(ledger[whoami.id].netPosition)}</span>
     </button>
   ) : null;
@@ -1768,10 +1770,12 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </button>
       )}
 
-      <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13 }}>Round Flow</span></div>
-        <span style={{ fontSize: 11, color: C.ivoryDim }}>where every group stands</span>
-      </button>
+      {isAdmin && (
+        <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between', color: C.ivory }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Round Flow</span></div>
+          <span style={{ fontSize: 11, color: C.bunker }}>where every group stands</span>
+        </button>
+      )}
 
       {ryderCup && (
         <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, flexDirection: 'column', alignItems: 'stretch', background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -1833,15 +1837,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </div>
       )}
 
-      {teamRace && (
-        <button onClick={() => setActiveTab('games')} style={{ ...homeCard, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-            <IconBadge icon={Swords} color={C.flagRed} size={28} />
-            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: teamRace.f1.color }}>{teamRace.f1.name} {teamRace.points[teamRace.f1.id] || 0}</div>
-          </div>
-          <div style={{ textAlign: 'right' }}><div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: teamRace.f2.color }}>{teamRace.points[teamRace.f2.id] || 0} {teamRace.f2.name}</div></div>
-        </button>
-      )}
 
       {!emphasizeSettle && positionCard}
 
@@ -1854,7 +1849,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 
       {pm && (
         <button onClick={() => setActiveTab('bets')} style={{ ...homeCard, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Ticket} color={C.gold} size={28} /><span style={{ fontSize: 13 }}>Pari-mutuel pot</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Ticket} color={C.gold} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Pari-mutuel pot</span></div>
           <span style={{ fontFamily: 'Oswald, sans-serif', color: C.goldBright }}>${pm.pot}</span>
         </button>
       )}
@@ -1862,7 +1857,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       <button onClick={onOpenChat} style={{ ...homeCard, justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
           <IconBadge icon={MessageCircle} color={C.blueBright} size={28} />
-          <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 11, color: C.ivoryDim }}>Group chat</div><div style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lastChat ? `${lastChat.authorName}: ${lastChat.text}` : 'No messages yet'}</div></div>
+          <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 11, color: C.ivoryDim }}>Group chat</div><div style={{ fontSize: 13, color: C.ivory, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lastChat ? `${lastChat.authorName}: ${lastChat.text}` : 'No messages yet'}</div></div>
         </div>
       </button>
     </div>
@@ -3042,9 +3037,9 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
                 <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 14 }}>Group {g.groupNumber}</span>
                 <button onClick={() => removeGroup(g.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={15} /></button>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
                 <Field label="Tee time"><input type="datetime-local" value={g.teeTime ? new Date(g.teeTime).toISOString().slice(0, 16) : ''} onChange={e => setGroupField(g.id, 'teeTime', e.target.value ? new Date(e.target.value).toISOString() : null)} style={inputStyle} /></Field>
-                <Field label="Starting hole"><input type="number" min={1} max={state.numHoles} value={g.startingHole} onChange={e => setGroupField(g.id, 'startingHole', parseInt(e.target.value || '1', 10))} style={inputStyle} /></Field>
+                <Field label="Starting hole"><input type="number" min={1} max={state.numHoles} value={g.startingHole} onChange={e => setGroupField(g.id, 'startingHole', parseInt(e.target.value || '1', 10))} style={{ ...inputStyle, width: 80 }} /></Field>
               </div>
               <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 6 }}>Players</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -3119,11 +3114,14 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
     <div style={{ position: 'fixed', inset: 0, background: C.pine, color: C.ivory, zIndex: 48, display: 'flex', flexDirection: 'column' }}>
       <div style={{ flexShrink: 0, background: C.pineDark, color: C.ivory, borderBottom: `1px solid ${C.turfBorder}`, padding: '14px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div>
-            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: 0.5 }}>Round Flow</div>
-            <div style={{ fontSize: 11, color: C.ivoryDim }}>{state.roundName}{usingMock ? ' \u00b7 showing example data' : ''}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, fontSize: 13, padding: 0 }}><ChevronLeft size={20} /> Back</button>
+            <div>
+              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, textTransform: 'uppercase', letterSpacing: 0.5 }}>Round Flow</div>
+              <div style={{ fontSize: 11, color: C.ivoryDim }}>{state.roundName}{usingMock ? ' · showing example data' : ''}</div>
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '10px 12px' }}>
           {summaryStat('First grp hole', summary.firstGroupCurrentHole ?? '\u2013')}
@@ -3313,22 +3311,25 @@ function FontLoader() {
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
       @keyframes birdFly {
-        0%   { transform: translateX(-80px) translateY(0px) scaleX(1); opacity: 0; }
-        5%   { opacity: 1; }
-        50%  { transform: translateX(50vw) translateY(-30px) scaleX(1); }
-        95%  { opacity: 1; }
-        100% { transform: translateX(110vw) translateY(10px) scaleX(1); opacity: 0; }
+        0%   { transform: translateX(-120px) translateY(0px); opacity: 0; }
+        8%   { opacity: 1; }
+        92%  { opacity: 1; }
+        100% { transform: translateX(115vw) translateY(-20px); opacity: 0; }
       }
-      @keyframes birdFlap { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(0.5); } }
+      @keyframes birdFlap { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(0.45); } }
       @keyframes birdieLabel {
-        0%   { opacity: 0; transform: translateY(20px) scale(0.7); }
-        15%  { opacity: 1; transform: translateY(0px) scale(1.1); }
-        80%  { opacity: 1; transform: translateY(-10px) scale(1); }
-        100% { opacity: 0; transform: translateY(-30px) scale(0.9); }
+        0%   { opacity: 0; transform: scale(0.6); }
+        12%  { opacity: 1; transform: scale(1.08); }
+        85%  { opacity: 1; transform: scale(1); }
+        100% { opacity: 0; transform: scale(0.9); }
       }
-      .bird-fly { animation: birdFly 3.2s ease-in-out forwards; }
-      .bird-flap { animation: birdFlap 0.28s ease-in-out infinite; }
-      .birdie-label { animation: birdieLabel 2.8s ease-out forwards; }
+      @keyframes birdieFlash {
+        0%   { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      .bird-fly { animation: birdFly 5s ease-in-out forwards; }
+      .bird-flap { animation: birdFlap 0.32s ease-in-out infinite; }
+      .birdie-label { animation: birdieLabel 4.8s ease-out forwards; }
       @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     `}</style>
   );
@@ -3337,19 +3338,22 @@ function FontLoader() {
 function BirdieAnimation({ events, players }) {
   if (!events || events.length === 0) return null;
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99, overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 199, overflow: 'hidden' }}>
+      {/* Screen flash */}
+      <div style={{ position: 'absolute', inset: 0, background: events[0]?.diff <= -2 ? 'rgba(220,50,50,0.18)' : 'rgba(0,117,74,0.15)', animation: 'birdieFlash 0.6s ease-out forwards' }} />
       {events.map((ev, idx) => {
         const player = players.find(p => p.id === ev.playerId);
-        const yPos = 15 + (idx % 5) * 14;
-        const delay = idx * 0.35;
         const isEagle = ev.diff <= -2;
-        const label = isEagle ? '🦅 Eagle!' : '🐦 Birdie!';
+        const label = isEagle ? '🦅  Eagle!' : '🐦  Birdie!';
+        const yPos = 28 + (idx % 3) * 18;
+        const delay = idx * 0.4;
         return (
           <div key={ev.id} style={{ position: 'absolute', left: 0, top: `${yPos}%`, animationDelay: `${delay}s` }} className="bird-fly">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div className="bird-flap" style={{ fontSize: isEagle ? 32 : 26 }}>{isEagle ? '🦅' : '🐦'}</div>
-              <div className="birdie-label" style={{ background: isEagle ? C.flagRed : C.emerald, color: '#FFFFFF', borderRadius: 999, padding: '4px 12px', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', boxShadow: `0 2px 12px ${isEagle ? C.flagRed : C.emerald}80` }}>
-                {player?.name} · {label}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 24px' }}>
+              <span style={{ fontSize: isEagle ? 56 : 48, lineHeight: 1 }} className="bird-flap">{isEagle ? '🦅' : '🐦'}</span>
+              <div className="birdie-label" style={{ background: isEagle ? C.flagRed : C.emerald, color: '#FFFFFF', borderRadius: 16, padding: '10px 20px', fontFamily: 'Anton, sans-serif', fontSize: 22, letterSpacing: 1, whiteSpace: 'nowrap', boxShadow: `0 4px 20px ${isEagle ? C.flagRed : C.emerald}80` }}>
+                {player?.name && <div style={{ fontSize: 13, fontFamily: 'Oswald, sans-serif', opacity: 0.9, marginBottom: 2 }}>{player.name}</div>}
+                {label}
               </div>
             </div>
           </div>
@@ -3878,20 +3882,30 @@ export default function DuffBook() {
     if (diff > -1) return;
     const ev = { id: `birdie_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, playerId, holeIndex, diff, ts: Date.now() };
     setBirdieEvents(prev => [...prev, ev]);
-    setTimeout(() => setBirdieEvents(prev => prev.filter(e => e.id !== ev.id)), 4000);
+    setTimeout(() => setBirdieEvents(prev => prev.filter(e => e.id !== ev.id)), 6000);
   };
   const setScoreVal = (playerId, holeIndex, val) => updateRound(prev => {
     const arr = (prev.scores[playerId] || []).slice(); arr[holeIndex] = val;
     const scoreUpdatedAt = { ...(prev.scoreUpdatedAt || {}) };
-    if (val != null) { scoreUpdatedAt[`${playerId}-${holeIndex}`] = Date.now(); fireBirdie(playerId, holeIndex, val, prev.pars); } else delete scoreUpdatedAt[`${playerId}-${holeIndex}`];
+    if (val != null) { scoreUpdatedAt[`${playerId}-${holeIndex}`] = Date.now(); } else delete scoreUpdatedAt[`${playerId}-${holeIndex}`];
     return { ...prev, scores: { ...prev.scores, [playerId]: arr }, scoreUpdatedAt };
   });
   const stateNow = getRoundView(tournament, tournament.activeRoundId);
-  const tapPlus = (playerId, holeIndex) => { const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, cur == null ? par : cur + 1); };
-  const tapMinus = (playerId, holeIndex) => { const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, cur == null ? par : Math.max(1, cur - 1)); };
-  const tapCenter = (playerId, holeIndex) => { const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; if (cur == null) setScoreVal(playerId, holeIndex, par); };
+  const tapPlus  = (playerId, holeIndex) => { const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, cur == null ? par + 1 : cur + 1); };
+  const tapMinus = (playerId, holeIndex) => { const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, Math.max(1, cur == null ? par - 1 : cur - 1)); };
+  const tapCenter = (playerId, holeIndex) => { const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, par); };
   const clearScore = (playerId, holeIndex) => setScoreVal(playerId, holeIndex, null);
-  const goHole = (delta) => setViewHole(v => Math.max(0, Math.min(stateNow.numHoles - 1, v + delta)));
+  const goHole = (delta) => {
+    if (delta > 0) {
+      // Fire birdies for the hole we're leaving
+      const currentH = Math.max(0, Math.min(viewHole, stateNow.numHoles - 1));
+      stateNow.players.forEach(p => {
+        const score = stateNow.scores[p.id]?.[currentH];
+        if (score != null) fireBirdie(p.id, currentH, score, stateNow.pars);
+      });
+    }
+    setViewHole(v => Math.max(0, Math.min(stateNow.numHoles - 1, v + delta)));
+  };
   goHoleRef.current = goHole;
 
   const adjustTicket = (entrantId, delta) => {
