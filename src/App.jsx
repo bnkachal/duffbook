@@ -1774,26 +1774,26 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       </button>
 
       {ryderCup && (
-        <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, background: 'linear-gradient(135deg, #0D0F1A, #141822)', border: '1.5px solid transparent', borderRadius: 14, backgroundClip: 'padding-box', boxShadow: `0 0 0 1.5px linear-gradient(135deg, ${C.blueBright}, ${C.goldBright}), 0 4px 0 rgba(0,0,0,0.6), 0 0 20px ${C.blueBright}18` }}>
+        <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, flexDirection: 'column', alignItems: 'stretch', background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           <SectionHeader title="Ryder Cup" sub={ryderCup.target ? `first to ${ryderCup.target} wins the cup` : 'add match pairings to get started'} icon={Swords} iconColor={C.flagRed} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '4px 0 12px' }}>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: ryderCup.totalA > ryderCup.totalB ? C.goldBright : C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamA.name}</div>
-              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalA > ryderCup.totalB ? C.goldBright : C.ivory }}>{ryderCup.totalA}</div>
-              {tournament.ryderCup?.captainA && <div style={{ fontSize: 10, color: C.ivoryDim }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainA)?.name || ''}</div>}
+              <div style={{ fontSize: 11, color: ryderCup.totalA > ryderCup.totalB ? C.gold : C.bunker, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamA.name}</div>
+              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalA > ryderCup.totalB ? C.gold : C.ivory }}>{ryderCup.totalA}</div>
+              {tournament.ryderCup?.captainA && <div style={{ fontSize: 10, color: C.bunker }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainA)?.name || ''}</div>}
             </div>
             <div style={{ fontSize: 16, color: C.ivoryDim }}>–</div>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: ryderCup.totalB > ryderCup.totalA ? C.goldBright : C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamB.name}</div>
-              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalB > ryderCup.totalA ? C.goldBright : C.ivory }}>{ryderCup.totalB}</div>
-              {tournament.ryderCup?.captainB && <div style={{ fontSize: 10, color: C.ivoryDim }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainB)?.name || ''}</div>}
+              <div style={{ fontSize: 11, color: ryderCup.totalB > ryderCup.totalA ? C.gold : C.bunker, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamB.name}</div>
+              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 30, color: ryderCup.totalB > ryderCup.totalA ? C.gold : C.ivory }}>{ryderCup.totalB}</div>
+              {tournament.ryderCup?.captainB && <div style={{ fontSize: 10, color: C.bunker }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainB)?.name || ''}</div>}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {ryderCup.rows.map(r => (
               <div key={r.roundId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, padding: '6px 0', borderTop: `1px solid ${C.turfBorder}` }}>
-                <span style={{ color: C.ivoryDim, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-                <span style={{ fontFamily: 'Oswald, sans-serif' }}>{r.matchCount > 0 ? `${r.aPts} – ${r.bPts}` : 'not set up'}</span>
+                <span style={{ color: C.bunker, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                <span style={{ fontFamily: 'Oswald, sans-serif', color: C.ivory }}>{r.matchCount > 0 ? `${r.aPts} – ${r.bPts}` : 'not set up'}</span>
               </div>
             ))}
           </div>
@@ -1991,7 +1991,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
   if (selectedCourse) {
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 46, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ background: C.pine, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
           <button onClick={() => setSelectedCourse(null)} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', fontSize: 12, marginBottom: 10 }}><ChevronLeft size={14} /> Back to results</button>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>{selectedCourse.courseName}</div>
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 16 }}>{selectedCourse.address}, {selectedCourse.city}, {selectedCourse.state} · {selectedCourse.numberOfHoles} holes</div>
@@ -1999,7 +1999,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {selectedCourse.teeBoxes.map(tee => (
               <button key={tee.teeName} onClick={() => onSelect(selectedCourse, tee.teeName)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{tee.teeName}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.ivory }}>{tee.teeName}</span>
                 <span style={{ fontSize: 12, color: C.ivoryDim }}>{tee.totalYards} yds · {tee.rating}/{tee.slope}</span>
               </button>
             ))}
@@ -2011,7 +2011,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 46, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ flexShrink: 0, padding: '18px 18px 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Select a course</div>
@@ -2050,7 +2050,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
               {results.map(c => (
                 <button key={c.courseId} onClick={() => setSelectedCourse(c)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.courseName}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: C.ivory, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.courseName}</div>
                     <div style={{ fontSize: 11, color: C.ivoryDim }}>{c.city}, {c.state} · {c.numberOfHoles} holes · {c.teeBoxes.length} tees{c.distanceMiles != null ? ` \u00b7 ${c.distanceMiles} mi` : ''}</div>
                   </div>
                   <ChevronRight size={16} color={C.ivoryDim} style={{ flexShrink: 0 }} />
