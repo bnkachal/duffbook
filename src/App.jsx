@@ -106,6 +106,24 @@ const MOCK_COURSES = [
     },
   }),
   buildMockCourse({
+    courseId: 'mock-river-ridge', courseName: 'River Ridge Golf Club',
+    address: '2311 Auburn Church Rd', city: 'Raleigh', state: 'NC', latitude: 35.868, longitude: -78.638,
+    pars:      [4,3,4,5,4,5,4,4,3, 4,4,4,5,4,3,4,3,5],
+    handicaps: [9,15,1,13,7,5,3,17,11, 8,16,10,6,12,14,2,4,18],
+    teeBoxes: [
+      { teeName: 'Black', totalYards: 6769, rating: 72.4, slope: 138 },
+      { teeName: 'Blue',  totalYards: 6206, rating: 70.1, slope: 130 },
+      { teeName: 'White', totalYards: 5756, rating: 68.5, slope: 120 },
+      { teeName: 'Gold',  totalYards: 5354, rating: 66.8, slope: 115 },
+    ],
+    _holeYardagesByTee: {
+      Black: [398,163,432,549,375,523,395,362,189, 414,315,375,541,410,173,485,197,473],
+      Blue:  [362,150,410,480,335,485,369,345,173, 392,290,340,508,375,154,419,157,462],
+      White: [331,120,379,438,300,470,350,325,155, 355,270,319,464,350,142,389,144,455],
+      Gold:  [319,111,314,410,288,449,300,291,142, 321,260,285,456,338,129,364,140,437],
+    },
+  }),
+  buildMockCourse({
     courseId: 'mock-ironwood', courseName: 'Ironwood Golf & Country Club',
     address: "1455 Bell's Fork Rd", city: 'Greenville', state: 'NC', latitude: 35.633, longitude: -77.366,
     pars:      [4,4,3,5,4,4,5,3,4, 4,3,4,5,4,4,5,3,4],
@@ -123,6 +141,7 @@ const MOCK_COURSES = [
       Gold:   [306,353,147,499,342,345,488,171,335, 352,128,356,473,308,324,473,136,276],
     },
   }),
+
 ];
 
 /* ============================== COURSE PROVIDER SERVICE ==============================
@@ -3563,7 +3582,9 @@ export default function DuffBook() {
 
   useEffect(() => {
     (async () => {
-      try { const r = await storage.get('last-code', false); if (r) setRoundCode(JSON.parse(r.value)); } catch (e) {}
+      // last-code is history only — never used for auto-navigation on startup.
+      // A new device always starts at the landing page with roundCode = null.
+      // Only handleCreate(), handleJoin(), and handleQuickJoin() may set roundCode.
       try { const r2 = await storage.get('notif-prefs', false); if (r2) setNotifPrefs(JSON.parse(r2.value)); } catch (e) {}
       try { const r3 = await storage.get('chat-bubble-pos', false); if (r3) setBubblePos(JSON.parse(r3.value)); } catch (e) {}
       try { const r4 = await storage.get('bet-templates', false); setBetTemplates(r4 ? JSON.parse(r4.value) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
@@ -3790,7 +3811,9 @@ export default function DuffBook() {
     setRoundCode(code);
   };
   const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await storage.set('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
-  const handleLeave = () => { (async () => { try { await storage.delete('last-code', false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setSettingsOpen(false); };
+  // handleLeave: clears the active session completely. last-code is also deleted
+  // so the next startup doesn't show a stale resume button for this round.
+  const handleLeave = () => { (async () => { try { await storage.delete('last-code', false); await storage.delete(isAdminKey(roundCode), false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
   const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await storage.set(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
   const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await storage.set('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
 
