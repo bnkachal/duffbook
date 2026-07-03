@@ -607,17 +607,18 @@ function computeGroupPace(group, holeProgress, notStarted, finished, now) {
   return { paceStatus, deltaMinutes: Math.round(delta), projectedFinishTime };
 }
 function computeGroupFlow(group, source, betWinnersByHole, now) {
+  const safeGroup = { ...group, playerIds: Array.isArray(group.playerIds) ? group.playerIds : [] };
   const numHoles = source.numHoles || 18;
   const scoreUpdatedAt = source.scoreUpdatedAt || {};
-  const completedCount = computeGroupCompletedCount(group, source.scores, numHoles);
-  const holeProgress = computeGroupHoleProgress(group, source.scores, source.pars, numHoles, betWinnersByHole, scoreUpdatedAt);
-  const { status, currentHole, notStarted, finished } = computeGroupStatus(group, completedCount, numHoles, now);
-  const effectiveCurrentHole = group.overrideCurrentHole != null ? group.overrideCurrentHole : currentHole;
-  const pace = computeGroupPace(group, holeProgress, notStarted, finished, now);
-  const stamps = group.playerIds.flatMap(pid => Array.from({ length: numHoles }, (_, h) => scoreUpdatedAt[`${pid}-${h}`] || 0));
-  const lastUpdated = Math.max(0, ...stamps) || null;
+  const completedCount = computeGroupCompletedCount(safeGroup, source.scores || {}, numHoles);
+  const holeProgress = computeGroupHoleProgress(safeGroup, source.scores || {}, Array.isArray(source.pars) ? source.pars : [], numHoles, betWinnersByHole, scoreUpdatedAt);
+  const { status, currentHole, notStarted, finished } = computeGroupStatus(safeGroup, completedCount, numHoles, now);
+  const effectiveCurrentHole = safeGroup.overrideCurrentHole != null ? safeGroup.overrideCurrentHole : currentHole;
+  const pace = computeGroupPace(safeGroup, holeProgress, notStarted, finished, now);
+  const stamps = safeGroup.playerIds.flatMap(pid => Array.from({ length: numHoles }, (_, h) => scoreUpdatedAt[`${pid}-${h}`] || 0));
+  const lastUpdated = stamps.length > 0 ? (Math.max(0, ...stamps) || null) : null;
   return {
-    ...group, completedHolesCount: completedCount, currentHole: effectiveCurrentHole, holeProgress,
+    ...safeGroup, completedHolesCount: completedCount, currentHole: effectiveCurrentHole, holeProgress,
     status, notStarted, finished, paceStatus: pace.paceStatus, deltaMinutes: pace.deltaMinutes,
     projectedFinishTime: pace.projectedFinishTime, lastUpdated, numHoles,
   };
