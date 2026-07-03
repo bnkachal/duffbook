@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get } from 'firebase/database';
+import { getDatabase, ref, set, get, onValue } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBGLaOTtQaeGX4gYtlcSaRAp-fMdwsAWOE",
@@ -58,6 +58,7 @@ export const storage = {
       return null;
     }
   },
+
   async set(key, value, shared = false) {
     try {
       const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
@@ -70,6 +71,7 @@ export const storage = {
       return null;
     }
   },
+
   async delete(key, shared = false) {
     try {
       const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
@@ -79,7 +81,35 @@ export const storage = {
       return null;
     }
   },
+
   async list(prefix, shared = false) {
     return { keys: [], prefix, shared };
-  }
+  },
+
+  // Offline-capable real-time subscription — uses onValue() so Firebase
+  // caches data locally and serves from cache when there's no signal.
+  // Returns an unsubscribe function to call on cleanup.
+  subscribe(key, shared = false, callback) {
+    try {
+      const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
+      const unsubscribe = onValue(ref(db, path), (snapshot) => {
+        try {
+          if (snapshot.exists()) {
+            const restored = restoreArrays(snapshot.val());
+            callback({ key, value: JSON.stringify(restored), shared });
+          } else {
+            callback(null);
+          }
+        } catch (e) {
+          console.error('Firebase subscribe callback error:', e);
+        }
+      }, (error) => {
+        console.error('Firebase subscribe error:', error);
+      });
+      return unsubscribe;
+    } catch (e) {
+      console.error('Firebase subscribe setup error:', e);
+      return () => {};
+    }
+  },
 };
