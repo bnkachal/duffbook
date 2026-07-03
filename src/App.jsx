@@ -3013,7 +3013,7 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
   const addGroup = () => updateGroups(gs => [...gs, { id: 'flow_' + Date.now(), groupNumber: gs.length + 1, teeTime: null, startingHole: 1, playerIds: [], adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null }]);
   const removeGroup = (id) => updateGroups(gs => gs.filter(g => g.id !== id).map((g, i) => ({ ...g, groupNumber: i + 1 })));
   const setGroupField = (id, field, val) => updateGroups(gs => gs.map(g => g.id === id ? { ...g, [field]: val } : g));
-  const togglePlayer = (id, pid) => updateGroups(gs => gs.map(g => g.id === id ? { ...g, playerIds: g.playerIds.includes(pid) ? g.playerIds.filter(x => x !== pid) : [...g.playerIds, pid] } : g));
+  const togglePlayer = (id, pid) => updateGroups(gs => gs.map(g => { if (g.id !== id) return g; const ids = Array.isArray(g.playerIds) ? g.playerIds : []; return { ...g, playerIds: ids.includes(pid) ? ids.filter(x => x !== pid) : [...ids, pid] }; }));
   const autoCreate = () => {
     const ids = tournament.players.map(p => p.id);
     const chunks = []; for (let i = 0; i < ids.length; i += 4) chunks.push(ids.slice(i, i + 4));
@@ -3044,7 +3044,7 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
               </div>
               <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 6 }}>Players</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {tournament.players.map(p => <button key={p.id} onClick={() => togglePlayer(g.id, p.id)} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${g.playerIds.includes(p.id) ? C.gold : C.turfBorder}`, background: g.playerIds.includes(p.id) ? C.gold : 'transparent', color: g.playerIds.includes(p.id) ? C.pineDark : C.ivory, cursor: 'pointer' }}>{p.name}</button>)}
+                {tournament.players.map(p => <button key={p.id} onClick={() => togglePlayer(g.id, p.id)} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${Array.isArray(g.playerIds) && g.playerIds.includes(p.id) ? C.gold : C.turfBorder}`, background: Array.isArray(g.playerIds) && g.playerIds.includes(p.id) ? C.gold : 'transparent', color: Array.isArray(g.playerIds) && g.playerIds.includes(p.id) ? C.pineDark : C.ivory, cursor: 'pointer' }}>{p.name}</button>)}
               </div>
             </div>
           ))}
@@ -3078,7 +3078,7 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
 
   const groupsFlow = useMemo(() => groups.map(g => computeGroupFlow(g, source, betWinnersByHole, now)), [groups, source, betWinnersByHole, now]);
   const summary = useMemo(() => computeRoundFlowSummary(groupsFlow), [groupsFlow]);
-  const myGroup = whoami ? groupsFlow.find(g => g.playerIds.includes(whoami.id)) : null;
+  const myGroup = whoami ? groupsFlow.find(g => Array.isArray(g.playerIds) && g.playerIds.includes(whoami.id)) : null;
 
   const refresh = () => { setNow(Date.now()); setLastRefreshed(Date.now()); };
   const FILTERS = [['all', 'All groups'], ['mine', 'My group'], ['ahead', 'Ahead'], ['behind', 'Behind'], ['slow', 'Slow'], ['finished', 'Finished']];
