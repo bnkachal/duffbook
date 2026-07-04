@@ -1223,9 +1223,10 @@ function Collage() {
 
 
 
-function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile }) {
+function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, joinError, joinChecking }) {
   const [code, setCode] = useState('');
   const [loadingDemo, setLoadingDemo] = useState(false);
+  const doJoin = () => { if (code.trim()) onJoin(code.trim()); };
   return (
     <div style={{ minHeight: '100vh', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter, sans-serif', textAlign: 'center', overflow: 'hidden' }} data-testid="landing-page">
       <FontLoader />
@@ -1241,12 +1242,19 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
         </div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: 10 }}>Starting one makes you its admin · or join one already in progress</div>
         <div style={{ display: 'flex', gap: 8, width: '100%', marginBottom: 4 }}>
-          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} onKeyDown={e => { if (e.key === 'Enter' && code.trim()) onJoin(code.trim()); }} data-testid="join-code-input" placeholder="ROUND CODE" style={{ flex: 1, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '12px 10px', color: '#FFFFFF', fontSize: 16, textAlign: 'center', letterSpacing: 3, outline: 'none' }} />
+          <input value={code} onChange={e => { setCode(e.target.value.toUpperCase()); }} onKeyDown={e => { if (e.key === 'Enter') doJoin(); }} data-testid="join-code-input" placeholder="ROUND CODE" style={{ flex: 1, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: `1.5px solid ${joinError ? '#F87171' : 'rgba(255,255,255,0.3)'}`, borderRadius: 10, padding: '12px 10px', color: '#FFFFFF', fontSize: 16, textAlign: 'center', letterSpacing: 3, outline: 'none' }} />
           <div style={{ position: 'relative' }}>
-            <div style={{ position: 'absolute', inset: -3, borderRadius: 13, background: 'linear-gradient(135deg, #00754A, #B8860B, #00754A)', opacity: 0.5, filter: 'blur(5px)' }} />
-            <button onClick={() => code.trim() && onJoin(code.trim())} data-testid="join-btn" style={{ position: 'relative', padding: '12px 20px', background: 'linear-gradient(135deg, #00874A 0%, #B8860B 55%, #C8960B 100%)', border: 'none', borderRadius: 10, color: '#FFF', fontSize: 15, fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 0.5, cursor: 'pointer', boxShadow: '0 4px 0 rgba(0,0,0,0.2)' }}>Join</button>
+            <div style={{ position: 'absolute', inset: -3, borderRadius: 13, background: 'linear-gradient(135deg, #00754A, #B8860B, #00754A)', opacity: joinChecking ? 0.2 : 0.5, filter: 'blur(5px)' }} />
+            <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking} style={{ position: 'relative', padding: '12px 20px', background: joinChecking ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #00874A 0%, #B8860B 55%, #C8960B 100%)', border: 'none', borderRadius: 10, color: '#FFF', fontSize: 15, fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 0.5, cursor: joinChecking ? 'default' : 'pointer', boxShadow: '0 4px 0 rgba(0,0,0,0.2)', minWidth: 64 }}>
+              {joinChecking ? '...' : 'Join'}
+            </button>
           </div>
         </div>
+        {joinError && (
+          <div style={{ width: '100%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '10px 14px', marginBottom: 8, fontSize: 13, color: '#FCA5A5', textAlign: 'left' }}>
+            ⚠️ {joinError}
+          </div>
+        )}
         {myTournaments && myTournaments.length > 0 && (
           <button onClick={() => onQuickJoin(myTournaments[0].code)} style={{ marginTop: 8, background: 'linear-gradient(135deg, #00874A 0%, #B8860B 100%)', border: 'none', borderRadius: 8, padding: '5px 14px', color: '#FFF', fontSize: 11, fontFamily: 'Oswald, sans-serif', fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ opacity: 0.75, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>Resume</span>
@@ -1257,7 +1265,6 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
     </div>
   );
 }
-
 function WhoAreYouScreen({ players, onPick, onAddSelf, onBack }) {
   const [selected, setSelected] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
@@ -3533,6 +3540,8 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
 /* ============================== MAIN APP ============================== */
 export default function DuffBook() {
   const [roundCode, setRoundCode] = useState(null);
+  const [joinError, setJoinError] = useState(null);
+  const [joinChecking, setJoinChecking] = useState(false);
   const [initChecked, setInitChecked] = useState(false);
   const [tournament, setTournament] = useState(defaultTournament());
   const [chat, setChat] = useState([]);
@@ -3792,7 +3801,34 @@ export default function DuffBook() {
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
-  const handleJoin = (code) => { const c = code.toUpperCase(); (async () => { try { await storage.set('last-code', JSON.stringify(c), false); } catch (e) {} })(); setRoundCode(c); };
+  const handleJoin = (code) => {
+    const c = code.toUpperCase().trim();
+    if (!c) return;
+    setJoinError(null);
+    setJoinChecking(true);
+    (async () => {
+      try {
+        const res = await storage.get(tournamentKey(c), true);
+        if (!res || !res.value) {
+          setJoinError('That code doesn\'t exist — check with your admin.');
+          setJoinChecking(false);
+          return;
+        }
+        const data = JSON.parse(res.value);
+        if (!data || !data.rounds) {
+          setJoinError('That code doesn\'t exist — check with your admin.');
+          setJoinChecking(false);
+          return;
+        }
+        await storage.set('last-code', JSON.stringify(c), false);
+        setJoinChecking(false);
+        setRoundCode(c);
+      } catch (e) {
+        setJoinError('Couldn\'t connect — check your signal and try again.');
+        setJoinChecking(false);
+      }
+    })();
+  };
   const handleLoadDemo = async () => {
     const code = genCode();
     const demo = generateDemoTournament();
@@ -3995,7 +4031,7 @@ export default function DuffBook() {
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
     <>
-      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} />
+      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} joinError={joinError} joinChecking={joinChecking} />
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );
