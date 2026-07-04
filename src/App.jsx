@@ -1632,7 +1632,7 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
     <div style={{ marginTop: 22 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
         <SectionHeader title={title} sub={sub} />
-        {isAdmin && onOpenBuilder && <GoldButton onClick={onOpenBuilder} style={{ padding: '7px 12px', fontSize: 12, flexShrink: 0 }}>+ New bet</GoldButton>}
+        {onOpenBuilder && <GoldButton onClick={onOpenBuilder} style={{ padding: '7px 12px', fontSize: 12, flexShrink: 0 }}>+ New bet</GoldButton>}
       </div>
       {list.length === 0 ? (
         <div style={{ color: C.ivoryDim, fontSize: 13 }}>{isAdmin ? emptyAdmin : emptyPlayer}</div>
@@ -1797,12 +1797,10 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </button>
       )}
 
-      {isAdmin && (
-        <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between', color: C.ivory }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Round Flow</span></div>
-          <span style={{ fontSize: 11, color: C.bunker }}>where every group stands</span>
-        </button>
-      )}
+      <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between', color: C.ivory }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Round Flow</span></div>
+        <span style={{ fontSize: 11, color: C.bunker }}>where every group stands</span>
+      </button>
 
       {ryderCup && (
         <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, flexDirection: 'column', alignItems: 'stretch', background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -3327,7 +3325,8 @@ function FontLoader() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
       * { box-sizing: border-box; }
-      html, body { overflow-x: hidden; }
+      html, body { overflow: hidden; position: fixed; width: 100%; height: 100%; }
+      @supports not (height: 100dvh) { .app-root { height: -webkit-fill-available !important; } }
       input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
       input[type=number] { -moz-appearance: textfield; }
       input, select, textarea { font-size: 16px !important; }
@@ -4062,7 +4061,7 @@ export default function DuffBook() {
   const isLastRound = tournament.rounds[tournament.rounds.length - 1]?.id === tournament.activeRoundId;
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100dvh', overflow: 'hidden', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', position: 'fixed', inset: 0 }}>
       <FontLoader />
       <LibraryLoader />
       <BirdieAnimation events={birdieEvents} players={tournament.players} />
@@ -4116,7 +4115,7 @@ export default function DuffBook() {
         </div>
       )}
 
-      <div onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <div onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
         {!hasPlayers && (
           <div style={{ textAlign: 'center', marginTop: 60, padding: '0 12px' }}>
             <Flag size={40} color={C.gold} style={{ marginBottom: 14 }} />
@@ -4165,7 +4164,7 @@ export default function DuffBook() {
             background: C.gold, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 4px 0 rgba(0,0,0,0.35)', cursor: 'grab', zIndex: 25, touchAction: 'none', userSelect: 'none',
           }}>
-          <span style={{ fontSize: 26, lineHeight: 1 }}>💩</span>
+          <MessageCircle size={24} color="#FFFFFF" strokeWidth={2} />
           {chat.length > chatSeenLen && (
             <span style={{ position: 'absolute', top: -4, right: -4, background: C.flagRed, color: C.ivory, borderRadius: 999, fontSize: 10, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', fontFamily: 'Oswald, sans-serif', fontWeight: 700 }}>
               {Math.min(chat.length - chatSeenLen, 9)}{chat.length - chatSeenLen > 9 ? '+' : ''}
@@ -4186,7 +4185,7 @@ export default function DuffBook() {
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
       {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
-      {betBuilderOpen && isAdmin && <BetBuilderModal state={state} templates={betTemplates} onCreate={addCustomBet} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
+      {betBuilderOpen && <BetBuilderModal state={state} templates={betTemplates} onCreate={addCustomBet} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
       {tournamentBetBuilderOpen && isAdmin && <BetBuilderModal state={{ players: tournament.players, numHoles: 18, handicapsEnabled: tournament.handicapsEnabled }} templates={betTemplates} onCreate={addTournamentCustomBet} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setTournamentBetBuilderOpen(false)} scopeLabel="whole trip" />}
       {myPositionOpen && <MyPositionModal state={state} bets={bets} ledger={ledger} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onClose={() => setMyPositionOpen(false)} />}
       {chatOpen && <ChatModal state={state} chat={chat} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} sendChat={sendChat} onClose={() => setChatOpen(false)} />}
