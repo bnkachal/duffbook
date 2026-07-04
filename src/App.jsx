@@ -3640,9 +3640,14 @@ export default function DuffBook() {
   }, [tournament, roundCode]);
 
   useEffect(() => {
-    if (!loadedRef.current || !roundCode) return;
-    rememberTournament(roundCode, tournament.name);
-  }, [roundCode, loadedRef.current, tournament.name]);
+    if (!loadedRef.current || !roundCode || !tournament.name) return;
+    // Only remember this tournament on THIS device if it was explicitly created or joined
+    // (not just because the subscription received data). The isAdmin flag or whoamiId
+    // confirms the device actively participated.
+    if (isAdmin || whoamiId) {
+      rememberTournament(roundCode, tournament.name);
+    }
+  }, [roundCode, tournament.name]);
 
   // Real-time sync + offline mode: onValue() caches data locally in Firebase,
   // so the app loads from cache instantly when signal drops mid-round.
