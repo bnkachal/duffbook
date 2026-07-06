@@ -1224,7 +1224,7 @@ function Collage() {
 
 
 
-function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, joinError, joinChecking }) {
+function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, onSaveName, joinError, joinChecking }) {
   const [code, setCode] = useState('');
   const [loadingDemo, setLoadingDemo] = useState(false);
   const doJoin = () => { if (code.trim()) onJoin(code.trim()); };
@@ -1236,7 +1236,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: 320 }}>
         <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 46, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF', marginTop: 0 }}>DuffBook</div>
         <div style={{ color: 'rgba(255,255,255,0.75)', marginBottom: 24, fontSize: 14, maxWidth: 260 }}>Live scoring, side games, and trash talk for the trip.</div>
-        <input value={deviceName || ''} onChange={e => { if (e.target.value.trim()) onOpenProfile(); }} data-testid="name-input" placeholder="Enter your name" style={{ width: '100%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 12, padding: '14px 14px', color: '#FFFFFF', fontSize: 16, textAlign: 'center', outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
+        <input value={deviceName || ''} onChange={e => { if (e.target.value.trim()) onSaveName(e.target.value.trim()); }} data-testid="name-input" placeholder="Enter your name" style={{ width: '100%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(255,255,255,0.3)', borderRadius: 12, padding: '14px 14px', color: '#FFFFFF', fontSize: 16, textAlign: 'center', outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
         <div style={{ position: 'relative', width: '100%', marginBottom: 10 }}>
           <div style={{ position: 'absolute', inset: -3, borderRadius: 18, background: 'linear-gradient(135deg, #00754A, #B8860B, #00754A)', opacity: 0.7, filter: 'blur(6px)' }} />
           <button onClick={onCreate} data-testid="start-tournament-btn" style={{ position: 'relative', width: '100%', padding: '18px 0', fontSize: 17, background: 'linear-gradient(135deg, #00874A 0%, #B8860B 55%, #C8960B 100%)', color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', border: 'none', borderRadius: 16, cursor: 'pointer', boxShadow: '0 6px 0 rgba(0,0,0,0.3), 0 2px 20px rgba(0,117,74,0.4)' }}>🏌️ Start a New Tournament</button>
@@ -4131,13 +4131,6 @@ export default function DuffBook() {
   }, [loading, whoamiId, tournament.activeRoundId]);
 
   useEffect(() => {
-    if (loading || whoamiId || !deviceName || !roundCode) return;
-    const existing = tournament.players.find(p => p.name.trim().toLowerCase() === deviceName.trim().toLowerCase());
-    if (existing) { setIdentity(existing.id); return; }
-    addSelf(deviceName);
-  }, [loading, whoamiId, deviceName, roundCode, tournament.players]);
-
-  useEffect(() => {
     if (!loadedRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const state = getRoundView(tournament, tournament.activeRoundId);
     const fire = (title, body) => { try { new Notification(title, { body }); } catch (e) {} };
@@ -4451,7 +4444,7 @@ export default function DuffBook() {
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
     <>
-      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} joinError={joinError} joinChecking={joinChecking} />
+      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} />
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );
