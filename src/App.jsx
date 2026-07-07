@@ -881,7 +881,8 @@ function computeParimutuel(state) {
     tickets.forEach(t => { if (t.entrantId === pm.winnerId) grossByBettor[t.bettorId] = (grossByBettor[t.bettorId] || 0) + t.count * perTicket; });
     new Set(tickets.map(t => t.bettorId)).forEach(id => { payoutNet[id] = (grossByBettor[id] || 0) - (spendByBettor[id] || 0); });
   }
-  return { entrants, ticketCount, spendByBettor, totalTickets, pot, suggestedId, payoutNet };
+  const enrichedEntrants = entrants.map(e => ({ ...e, tickets: ticketCount[e.id] || 0, odds: ticketCount[e.id] > 0 && totalTickets > 0 ? Math.round((totalTickets / ticketCount[e.id]) - 1) : 0 }));
+  return { entrants: enrichedEntrants, ticketCount, spendByBettor, totalTickets, pot, suggestedId, payoutNet, winnerId: pm.winnerId };
 }
 
 /* ============================== UNIVERSAL BETTING ENGINE ==============================
@@ -2038,7 +2039,7 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
             {pmData?.entrants?.map(e => (
               <div key={e.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', flex: '1 1 120px', minWidth: 120 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color}>{initials(e.name)}</Chip><span style={{ fontSize: 13, fontWeight: 600 }}>{e.name}</span></div>
-                <div style={{ fontSize: 11, color: C.ivoryDim }}>{e.tickets} ticket{e.tickets !== 1 ? 's' : ''} · ${e.tickets * 5}</div>
+                <div style={{ fontSize: 11, color: C.ivoryDim }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''} · ${(e.tickets ?? 0) * 5}</div>
                 {e.odds > 0 && <div style={{ fontSize: 11, color: C.gold }}>{e.odds}:1 odds</div>}
               </div>
             ))}
@@ -2047,12 +2048,13 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
             <span style={{ fontSize: 13, color: C.ivoryDim }}>Total pot</span>
             <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: C.gold }}>${(pmData?.pot ?? 0)}</span>
           </div>
-          {bettingOpen && whoami && (
+          {bettingOpen && (whoami || viewAsAdmin) && (
             <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-              <div style={{ fontSize: 12, color: C.ivoryDim }}>Your tickets</div>
+              <div style={{ fontSize: 12, color: C.ivoryDim }}>Your tickets · tap + to buy ($5 each)</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {pmData?.entrants?.map(e => {
-                  const myTickets = (pm.tickets || []).filter(t => t.bettorId === whoami?.id && t.entrantId === e.id).length;
+                  const activeBettorId = whoami?.id || (viewAsAdmin ? tournament?.players?.find(p => p.name === deviceName)?.id : null);
+                  const myTickets = activeBettorId ? (Array.isArray(pm.tickets) ? pm.tickets : []).filter(t => t.bettorId === activeBettorId && t.entrantId === e.id).reduce((sum, t) => sum + (t.count || 1), 0) : 0;
                   return (
                     <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Chip color={e.color}>{initials(e.name)}</Chip>
@@ -2065,7 +2067,7 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
               </div>
             </div>
           )}
-          {pm.resolved && pmData.winnerId && (
+          {pm.resolved && pmData?.winnerId && (
             <div style={{ ...rowCard, background: C.turfLight, gap: 8 }}>
               <Trophy size={16} color={C.goldBright} />
               <span style={{ fontSize: 13 }}>Winner: <strong>{state.players.find(p => p.id === pmData.winnerId)?.name}</strong> · payouts calculated in Settle</span>
@@ -4788,13 +4790,15 @@ export default function DuffBook() {
   goHoleRef.current = goHole;
 
   const adjustTicket = (entrantId, delta) => {
-    if (!whoamiId) return;
+    const bettorId = whoamiId || (viewAsAdmin ? tournament.players.find(p => p.name === deviceName)?.id : null);
+    if (!bettorId) return;
+    const bettorName = tournament.players.find(p => p.id === bettorId)?.name || deviceName || 'Admin';
     updateRound(prev => {
-      const tickets = prev.games.parimutuel.tickets || [];
-      const existing = tickets.find(t => t.bettorId === whoamiId && t.entrantId === entrantId);
+      const tickets = Array.isArray(prev.games?.parimutuel?.tickets) ? prev.games.parimutuel.tickets : [];
+      const existing = tickets.find(t => t.bettorId === bettorId && t.entrantId === entrantId);
       let next;
-      if (delta > 0) { next = existing ? tickets.map(t => t === existing ? { ...t, count: t.count + 1 } : t) : [...tickets, { id: 't_' + Date.now(), bettorId: whoamiId, bettorName: tournament.players.find(p => p.id === whoamiId)?.name || '', entrantId, count: 1, ts: Date.now() }]; }
-      else { if (!existing) return prev; next = existing.count <= 1 ? tickets.filter(t => t !== existing) : tickets.map(t => t === existing ? { ...t, count: t.count - 1 } : t); }
+      if (delta > 0) { next = existing ? tickets.map(t => t === existing ? { ...t, count: (t.count||0) + 1 } : t) : [...tickets, { id: 't_' + Date.now(), bettorId, bettorName, entrantId, count: 1, ts: Date.now() }]; }
+      else { if (!existing || !existing.count) return prev; next = existing.count <= 1 ? tickets.filter(t => t !== existing) : tickets.map(t => t === existing ? { ...t, count: t.count - 1 } : t); }
       return { ...prev, games: { ...prev.games, parimutuel: { ...prev.games.parimutuel, tickets: next } } };
     });
   };
