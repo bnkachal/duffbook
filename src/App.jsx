@@ -1302,20 +1302,20 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack }) {
   }
 
   return (
-    <div data-testid="who-are-you-screen" style={{ minHeight: '100vh', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, display: 'flex', flexDirection: 'column', padding: 24, fontFamily: 'Inter, sans-serif', overflowY: 'auto' }}>
+    <div data-testid="who-are-you-screen" style={{ height: '100dvh', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, display: 'flex', flexDirection: 'column', padding: 24, fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
       <FontLoader />
-      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', fontSize: 13, marginBottom: 24, alignSelf: 'flex-start' }}><ChevronLeft size={16} /> Different code</button>
-      <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 28, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, textAlign: 'center' }}>Who are you?</div>
-      <div style={{ color: C.ivoryDim, fontSize: 14, marginBottom: 28, textAlign: 'center' }}>Tap your name to join the round</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', fontSize: 13, marginBottom: 24, alignSelf: 'flex-start', flexShrink: 0 }}><ChevronLeft size={16} /> Different code</button>
+      <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 28, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, textAlign: 'center', flexShrink: 0 }}>Who are you?</div>
+      <div style={{ color: C.ivoryDim, fontSize: 14, marginBottom: 20, textAlign: 'center', flexShrink: 0 }}>Tap your name to join the round</div>
+      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
         {players.map(p => (
-          <button key={p.id} data-testid={`player-pick-btn-${p.id}`} onClick={() => setSelected(p)} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', boxShadow: '0 2px 8px rgba(0,0,0,0.10)', width: '100%' }}>
+          <button key={p.id} data-testid={`player-pick-btn-${p.id}`} onClick={() => setSelected(p)} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', boxShadow: '0 2px 8px rgba(0,0,0,0.10)', width: '100%', flexShrink: 0 }}>
             <Chip color={p.color} style={{ width: 40, height: 40, fontSize: 16, flexShrink: 0 }}>{initials(p.name)}</Chip>
             <span style={{ fontSize: 18, fontWeight: 700, color: C.ivory }}>{p.name}</span>
           </button>
         ))}
+        <button onClick={() => setAddingNew(true)} data-testid="not-on-list-btn" style={{ background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 14, padding: '14px 16px', color: C.ivoryDim, fontSize: 15, cursor: 'pointer', textAlign: 'center', flexShrink: 0 }}>I'm not on the list</button>
       </div>
-      <button onClick={() => setAddingNew(true)} data-testid="not-on-list-btn" style={{ background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 14, padding: '14px 16px', color: C.ivoryDim, fontSize: 15, cursor: 'pointer', textAlign: 'center' }}>I'm not on the list</button>
     </div>
   );
 }
