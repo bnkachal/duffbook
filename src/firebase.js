@@ -14,8 +14,35 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 
+// ─── DEVICE ID ────────────────────────────────────────────────────────────────
+// Scopes all "private" Firebase keys to this specific device so that
+// joining the same round on two phones doesn't mix up identity or admin state.
+// Stored in localStorage so it persists across page reloads on the same browser.
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem('duffbook_device_id');
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
+      localStorage.setItem('duffbook_device_id', id);
+    }
+    return id;
+  } catch {
+    // localStorage unavailable (private browsing edge case) — use session-only id
+    if (!getDeviceId._fallback) {
+      getDeviceId._fallback = 'dev_' + Math.random().toString(36).slice(2, 10);
+    }
+    return getDeviceId._fallback;
+  }
+}
+
 function sanitizeKey(key) {
   return key.replace(/[.#$[\]/]/g, '_');
+}
+
+function makePath(key, shared) {
+  if (shared) return 'shared/' + sanitizeKey(key);
+  // Device-scoped private path — prevents cross-device identity bleed
+  return 'private/' + sanitizeKey(getDeviceId()) + '/' + sanitizeKey(key);
 }
 
 function isNumericObject(obj) {
@@ -46,8 +73,7 @@ function restoreArrays(data) {
 export const storage = {
   async get(key, shared = false) {
     try {
-      const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
-      const snapshot = await get(ref(db, path));
+      const snapshot = await get(ref(db, makePath(key, shared)));
       if (snapshot.exists()) {
         const restored = restoreArrays(snapshot.val());
         return { key, value: JSON.stringify(restored), shared };
@@ -61,10 +87,9 @@ export const storage = {
 
   async set(key, value, shared = false) {
     try {
-      const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
       let parsed;
       try { parsed = JSON.parse(value); } catch { parsed = value; }
-      await set(ref(db, path), parsed);
+      await set(ref(db, makePath(key, shared)), parsed);
       return { key, value, shared };
     } catch (e) {
       console.error('Firebase set error:', e);
@@ -74,8 +99,7 @@ export const storage = {
 
   async delete(key, shared = false) {
     try {
-      const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
-      await set(ref(db, path), null);
+      await set(ref(db, makePath(key, shared)), null);
       return { key, deleted: true, shared };
     } catch (e) {
       return null;
@@ -86,30 +110,33 @@ export const storage = {
     return { keys: [], prefix, shared };
   },
 
-  // Offline-capable real-time subscription — uses onValue() so Firebase
-  // caches data locally and serves from cache when there's no signal.
-  // Returns an unsubscribe function to call on cleanup.
+  // Offline-capable real-time subscription via onValue().
+  // Firebase caches onValue data locally so the app works offline.
   subscribe(key, shared = false, callback) {
     try {
-      const path = (shared ? 'shared/' : 'private/') + sanitizeKey(key);
-      const unsubscribe = onValue(ref(db, path), (snapshot) => {
-        try {
-          if (snapshot.exists()) {
-            const restored = restoreArrays(snapshot.val());
-            callback({ key, value: JSON.stringify(restored), shared });
-          } else {
-            callback(null);
+      const unsubscribe = onValue(
+        ref(db, makePath(key, shared)),
+        (snapshot) => {
+          try {
+            if (snapshot.exists()) {
+              const restored = restoreArrays(snapshot.val());
+              callback({ key, value: JSON.stringify(restored), shared });
+            } else {
+              callback(null);
+            }
+          } catch (e) {
+            console.error('Firebase subscribe callback error:', e);
           }
-        } catch (e) {
-          console.error('Firebase subscribe callback error:', e);
-        }
-      }, (error) => {
-        console.error('Firebase subscribe error:', error);
-      });
+        },
+        (error) => console.error('Firebase subscribe error:', error)
+      );
       return unsubscribe;
     } catch (e) {
       console.error('Firebase subscribe setup error:', e);
       return () => {};
     }
   },
+
+  // Expose device ID so tests can inject a known ID for isolation
+  getDeviceId,
 };
