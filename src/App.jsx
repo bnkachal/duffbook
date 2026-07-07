@@ -3188,6 +3188,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
         </Field>
         <PlayersSection state={state} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} flights={tournament.flights} onOpenImport={() => setImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} />
         <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} />
+        <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
         <Accordion title="Round Roster" badge={state.roundPlayers?.length > 0 ? state.roundPlayers.length + ' overrides' : null}>
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 10, lineHeight: 1.5 }}>By default this round uses the full tournament roster. Remove players here to exclude them from this round only.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
