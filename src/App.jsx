@@ -853,11 +853,11 @@ function computeWolf(state, scoreFn) {
 
 function parimutuelEntrants(state) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
-  if (pm.marketType === 'flights') return state.flights.map(f => ({ id: f.id, name: f.name, color: f.color }));
+  if (pm.marketType === 'flights') return (Array.isArray(state.flights) ? state.flights : []).map(f => ({ id: f.id, name: f.name, color: f.color }));
   return state.players.map(p => ({ id: p.id, name: p.name, color: p.color }));
 }
 function computeParimutuel(state) {
-  const pm = state.games.parimutuel, entrants = parimutuelEntrants(state), tickets = pm.tickets || [];
+  const pm = state.games?.parimutuel || {}, entrants = parimutuelEntrants(state), tickets = Array.isArray(pm.tickets) ? pm.tickets : [];
   const ticketCount = {}, spendByBettor = {};
   entrants.forEach(e => { ticketCount[e.id] = 0; });
   tickets.forEach(t => { ticketCount[t.entrantId] = (ticketCount[t.entrantId] || 0) + t.count; spendByBettor[t.bettorId] = (spendByBettor[t.bettorId] || 0) + t.count * 5; });
@@ -937,7 +937,7 @@ function buildStablefordBets(state, tournamentId, roundId) {
 function buildMatchplayBets(state, tournamentId, roundId) {
   const g = state.games.matchplay; if (!g.enabled) return [];
   const matchplay = computeMatchplay(state);
-  return matchplay.results.map(m => {
+  return (Array.isArray(matchplay.results) ? matchplay.results : []).map(m => {
     const isH2H = m.sideA.length === 1 && m.sideB.length === 1;
     return {
       id: `bet-match-${roundId}-${m.id}`, tournamentId, roundId,
@@ -969,7 +969,7 @@ function buildParimutuelBets(state, tournamentId, roundId) {
   const bettorIds = Array.from(new Set((g.tickets || []).map(t => t.bettorId)));
   return [{
     id: `bet-parimutuel-${roundId}`, tournamentId, roundId, betName: `Pari-Mutuel \u00b7 ${state.roundName}`, betType: BET_TYPES.PARIMUTUEL,
-    participants: bettorIds, fakeMoneyStake: pmData.pot, scoringMethod: 'pool', settlementMethod: 'manual',
+    participants: bettorIds, fakeMoneyStake: (pmData?.pot ?? 0), scoringMethod: 'pool', settlementMethod: 'manual',
     currentStatus: g.resolved ? 'settled' : 'pending',
     winningPlayer: g.resolved ? g.winnerId : null,
     calculatedPayout: pmData.payoutNet, notes: `$5/ticket \u00b7 ${pmData.totalTickets} ticket${pmData.totalTickets !== 1 ? 's' : ''} sold`,
@@ -1607,14 +1607,14 @@ function LeaderboardTab({ state, stats }) {
 /* ============================== GAMES TAB ============================== */
 function GamesTab({ state }) {
   const g = state.games;
-  const skinsFn = holeScoreFn(state, g.skins.net), nassauFn = holeScoreFn(state, g.nassau.net), stablefordFn = holeScoreFn(state, g.stableford.net), wolfFn = holeScoreFn(state, g.wolf.net);
-  const skins = g.skins.enabled ? computeSkins(state, skinsFn) : null;
-  const nassau = g.nassau.enabled ? computeNassau(state, nassauFn) : null;
+  const skinsFn = holeScoreFn(state, g.skins?.net), nassauFn = holeScoreFn(state, g.nassau?.net), stablefordFn = holeScoreFn(state, g.stableford.net), wolfFn = holeScoreFn(state, g.wolf.net);
+  const skins = g.skins?.enabled ? computeSkins(state, skinsFn) : null;
+  const nassau = g.nassau?.enabled ? computeNassau(state, nassauFn) : null;
   const stableford = g.stableford.enabled ? computeStableford(state, stablefordFn) : null;
   const matchplay = g.matchplay.enabled ? computeMatchplay(state) : null;
   const wolf = g.wolf.enabled ? computeWolf(state, wolfFn) : null;
   const teamRace = matchplay ? computeTeamRace(state, matchplay.results) : null;
-  const anyOn = g.skins.enabled || g.nassau.enabled || g.stableford.enabled || g.matchplay.enabled || g.wolf.enabled;
+  const anyOn = g.skins?.enabled || g.nassau?.enabled || g.stableford?.enabled || g.matchplay?.enabled || g.wolf.enabled;
   const playerName = (id) => state.players.find(p => p.id === id)?.name || '—';
   const playerColor = (id) => state.players.find(p => p.id === id)?.color || C.gold;
   if (!anyOn) return <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 40 }}>No games are turned on for this round.</div>;
@@ -1627,9 +1627,9 @@ function GamesTab({ state }) {
           <div style={{ textAlign: 'right' }}><div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: teamRace.f2.color }}>{teamRace.points[teamRace.f2.id] || 0} {teamRace.f2.name}</div><div style={{ fontSize: 10, color: C.ivoryDim }}>{teamRace.total} matches</div></div>
         </div>
       )}
-      {g.skins.enabled && skins && (
+      {g.skins?.enabled && skins && (
         <div style={{ marginBottom: 22 }}>
-          <SectionHeader title="Skins" sub={`$${g.skins.value} per hole · ${g.skins.net ? 'net' : 'gross'}`} />
+          <SectionHeader title="Skins" sub={`$${g.skins?.value ?? 5} per hole · ${g.skins?.net ? 'net' : 'gross'}`} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>{state.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Chip color={p.color}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{p.name}</span></div><span style={{ fontFamily: 'IBM Plex Mono, monospace', color: (skins.net[p.id] || 0) >= 0 ? C.goldBright : C.flagRed, fontWeight: 600 }}>{fmtMoney(skins.net[p.id] || 0)}</span></div>)}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {skins.results.map(r => (
@@ -1643,10 +1643,10 @@ function GamesTab({ state }) {
           </div>
         </div>
       )}
-      {g.nassau.enabled && nassau && (
+      {g.nassau?.enabled && nassau && (
         <div style={{ marginBottom: 22 }}>
-          <SectionHeader title="Nassau" sub={`$${g.nassau.value} per segment · ${g.nassau.net ? 'net' : 'gross'}`} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{nassau.segmentResults.map(seg => <div key={seg.label} style={rowCard}><div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{seg.label}</div><div style={{ fontSize: 12, color: C.ivoryDim }}>{seg.status === 'pending' ? 'in progress' : seg.status === 'push' ? 'tied — push' : `${playerName(seg.winnerId)} wins`}</div></div>{seg.status === 'won' && <span style={{ color: C.goldBright, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 }}>+${g.nassau.value * (state.players.length - 1)}</span>}</div>)}</div>
+          <SectionHeader title="Nassau" sub={`$${g.nassau?.value ?? 10} per segment · ${g.nassau?.net ? 'net' : 'gross'}`} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{(Array.isArray(nassau?.segmentResults) ? nassau.segmentResults : []).map(seg => <div key={seg.label} style={rowCard}><div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{seg.label}</div><div style={{ fontSize: 12, color: C.ivoryDim }}>{seg.status === 'pending' ? 'in progress' : seg.status === 'push' ? 'tied — push' : `${playerName(seg.winnerId)} wins`}</div></div>{seg.status === 'won' && <span style={{ color: C.goldBright, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 }}>+${g.nassau.value * (state.players.length - 1)}</span>}</div>)}</div>
         </div>
       )}
       {g.stableford.enabled && stableford && (
@@ -1657,14 +1657,14 @@ function GamesTab({ state }) {
       )}
       {g.matchplay.enabled && matchplay && (
         <div style={{ marginBottom: 22 }}>
-          <SectionHeader title="Match play" sub={`$${g.matchplay.value} per match · net, low handicap in match plays scratch`} />
-          {matchplay.results.length === 0 && <div style={{ color: C.ivoryDim, fontSize: 13 }}>No matches set up yet.</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{matchplay.results.map(m => <div key={m.id} style={rowCard}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{sideNames(m.sideA, state)} <span style={{ color: C.ivoryDim }}>vs</span> {sideNames(m.sideB, state)}</div><div style={{ fontSize: 12, color: C.ivoryDim }}>{m.holesPlayed === 0 ? 'not started' : m.finished ? describeMatch(m, state, m) : (m.upA === 0 ? `All square thru ${m.holesPlayed}` : `${Math.abs(m.upA)} UP thru ${m.holesPlayed}`)}</div></div>{m.finished && m.outcome !== 'halved' && <span style={{ color: C.goldBright, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 }}>${g.matchplay.value}</span>}</div>)}</div>
+          <SectionHeader title="Match play" sub={`$${g.matchplay?.value ?? 20} per match · net, low handicap in match plays scratch`} />
+          {(matchplay.results?.length ?? 0) === 0 && <div style={{ color: C.ivoryDim, fontSize: 13 }}>No matches set up yet.</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{(Array.isArray(matchplay.results) ? matchplay.results : []).map(m => <div key={m.id} style={rowCard}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{sideNames(m.sideA, state)} <span style={{ color: C.ivoryDim }}>vs</span> {sideNames(m.sideB, state)}</div><div style={{ fontSize: 12, color: C.ivoryDim }}>{m.holesPlayed === 0 ? 'not started' : m.finished ? describeMatch(m, state, m) : (m.upA === 0 ? `All square thru ${m.holesPlayed}` : `${Math.abs(m.upA)} UP thru ${m.holesPlayed}`)}</div></div>{m.finished && m.outcome !== 'halved' && <span style={{ color: C.goldBright, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 }}>${g.matchplay.value}</span>}</div>)}</div>
         </div>
       )}
-      {g.wolf.enabled && wolf && (
+      {g.wolf?.enabled && wolf && (
         <div>
-          <SectionHeader title="Wolf" sub={`$${g.wolf.value} per point · rotates each hole`} />
+          <SectionHeader title="Wolf" sub={`$${g.wolf?.value ?? 5} per point · rotates each hole`} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{state.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Chip color={p.color}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{p.name}</span></div><span style={{ fontFamily: 'IBM Plex Mono, monospace', color: (wolf.net[p.id] || 0) >= 0 ? C.goldBright : C.flagRed, fontWeight: 600 }}>{fmtMoney(wolf.net[p.id] || 0)}</span></div>)}</div>
         </div>
       )}
@@ -2035,7 +2035,7 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
         <div style={{ marginBottom: 22 }}>
           <SectionHeader title="Pari-mutuel" sub={pm.resolved ? 'Resolved' : bettingOpen ? `Open · $5/ticket · closes after hole ${pm.lockAfterHole}` : 'Betting closed'} icon={Ticket} iconColor={C.gold} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {pmData.entrants.map(e => (
+            {pmData?.entrants?.map(e => (
               <div key={e.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', flex: '1 1 120px', minWidth: 120 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color}>{initials(e.name)}</Chip><span style={{ fontSize: 13, fontWeight: 600 }}>{e.name}</span></div>
                 <div style={{ fontSize: 11, color: C.ivoryDim }}>{e.tickets} ticket{e.tickets !== 1 ? 's' : ''} · ${e.tickets * 5}</div>
@@ -2045,13 +2045,13 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
           </div>
           <div style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 13, color: C.ivoryDim }}>Total pot</span>
-            <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: C.gold }}>${pmData.pot}</span>
+            <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: C.gold }}>${(pmData?.pot ?? 0)}</span>
           </div>
           {bettingOpen && whoami && (
             <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
               <div style={{ fontSize: 12, color: C.ivoryDim }}>Your tickets</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {pmData.entrants.map(e => {
+                {pmData?.entrants?.map(e => {
                   const myTickets = (pm.tickets || []).filter(t => t.bettorId === whoami?.id && t.entrantId === e.id).length;
                   return (
                     <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2073,9 +2073,9 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
           )}
           {isAdmin && pm.enabled && !pm.resolved && (
             <div style={{ marginTop: 8 }}>
-              <SectionHeader title="Admin: resolve market" sub={pmData.suggestedId ? `Suggested winner: ${pmData.entrants.find(e => e.id === pmData.suggestedId)?.name}` : 'No clear leader yet'} />
+              <SectionHeader title="Admin: resolve market" sub={pmData?.suggestedId ? `Suggested winner: ${pmData?.entrants.find(e => e.id === pmData?.suggestedId)?.name}` : 'No clear leader yet'} />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                {pmData.entrants.map(e => (
+                {pmData?.entrants?.map(e => (
                   <button key={e.id} onClick={() => resolveMarket(e.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '6px 10px', cursor: 'pointer' }}>
                     <Chip color={e.color}>{initials(e.name)}</Chip>
                     <span style={{ fontSize: 12 }}>{e.name} wins</span>
@@ -2091,7 +2091,7 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
             <div style={{ marginTop: 12 }}>
               <SectionHeader title="Payouts" sub="wagered vs. won — a $0 net just means that bettor broke even" />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                {pmData.payouts.map(row => (
+                {pmData?.payouts?.map(row => (
                   <div key={row.id} style={{ ...rowCard, justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={row.color}>{initials(row.name)}</Chip><span style={{ fontSize: 13 }}>{row.name}</span></div>
                     <div style={{ textAlign: 'right' }}>
@@ -2160,7 +2160,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const matchplay = g.matchplay.enabled ? computeMatchplay(state) : null;
   const teamRace = matchplay ? computeTeamRace(state, matchplay.results) : null;
   const pm = g.parimutuel.enabled ? computeParimutuel(state) : null;
-  const skinsResults = g.skins.enabled ? computeSkins(state, holeScoreFn(state, g.skins.net)).results : [];
+  const skinsResults = g.skins?.enabled ? computeSkins(state, holeScoreFn(state, g.skins?.net)).results : [];
   const lastSkin = [...skinsResults].reverse().find(r => r.status === 'won');
   const lastChat = chat[chat.length - 1];
   const homeCard = { background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 0 rgba(0,0,0,0.04)', cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box' };
@@ -3092,8 +3092,8 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
           </div>
         </div>
       )}
-      <ToggleRow label="Skins" sub="Lowest score on a hole wins the pot, ties carry over" enabled={g.skins.enabled} onToggle={() => setGame('skins', 'enabled', !g.skins.enabled)} right={g.skins.enabled && <DollarInput value={g.skins.value} onChange={v => setGame('skins', 'value', v)} />} />
-      {g.skins.enabled && state.handicapsEnabled && <NetToggle value={g.skins.net} onChange={v => setGame('skins', 'net', v)} />}
+      <ToggleRow label="Skins" sub="Lowest score on a hole wins the pot, ties carry over" enabled={g.skins?.enabled ?? false} onToggle={() => setGame('skins', 'enabled', !g.skins.enabled)} right={g.skins.enabled && <DollarInput value={g.skins.value} onChange={v => setGame('skins', 'value', v)} />} />
+      {g.skins?.enabled && state.handicapsEnabled && <NetToggle value={g.skins.net} onChange={v => setGame('skins', 'net', v)} />}
       <ToggleRow label="Best Ball" sub="Each pair's lowest score per hole counts — set up pairs below" enabled={g.bestBall?.enabled} onToggle={() => setGame('bestBall', 'enabled', !g.bestBall?.enabled)} />
       {g.bestBall?.enabled && (
         <BestBallPairBuilder label="Best Ball" gameKey="bestBall" state={state} updateRound={updateRound} />
@@ -3102,8 +3102,8 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
       {g.scramble?.enabled && (
         <BestBallPairBuilder label="Scramble" gameKey="scramble" state={state} updateRound={updateRound} />
       )}
-      <ToggleRow label="Nassau" sub="Front 9 / back 9 / total — three separate bets" enabled={g.nassau.enabled} onToggle={() => setGame('nassau', 'enabled', !g.nassau.enabled)} right={g.nassau.enabled && <DollarInput value={g.nassau.value} onChange={v => setGame('nassau', 'value', v)} />} />
-      {g.nassau.enabled && state.handicapsEnabled && <NetToggle value={g.nassau.net} onChange={v => setGame('nassau', 'net', v)} />}
+      <ToggleRow label="Nassau" sub="Front 9 / back 9 / total — three separate bets" enabled={g.nassau?.enabled ?? false} onToggle={() => setGame('nassau', 'enabled', !g.nassau.enabled)} right={g.nassau.enabled && <DollarInput value={g.nassau.value} onChange={v => setGame('nassau', 'value', v)} />} />
+      {g.nassau?.enabled && state.handicapsEnabled && <NetToggle value={g.nassau.net} onChange={v => setGame('nassau', 'net', v)} />}
       <ToggleRow label="Stableford" sub="Points per hole vs par, $ per point above the field average" enabled={g.stableford.enabled} onToggle={() => setGame('stableford', 'enabled', !g.stableford.enabled)} right={g.stableford.enabled && <DollarInput value={g.stableford.value} onChange={v => setGame('stableford', 'value', v)} />} />
       {g.stableford.enabled && state.handicapsEnabled && <NetToggle value={g.stableford.net} onChange={v => setGame('stableford', 'net', v)} />}
       <ToggleRow label="Match play" sub="Head-to-head or best-ball pairs, net off the low handicap" enabled={g.matchplay.enabled} onToggle={() => setGame('matchplay', 'enabled', !g.matchplay.enabled)} right={g.matchplay.enabled && <DollarInput value={g.matchplay.value} onChange={v => setGame('matchplay', 'value', v)} />} />
@@ -4559,9 +4559,9 @@ export default function DuffBook() {
       });
     }
     stats.forEach(s => { if (s.thru === state.numHoles && s.thru > 0 && !watchRef.current.finished.has(s.id)) { watchRef.current.finished.add(s.id); if (notifPrefs.playerFinished) fire('Round finished', `${s.name} finished at ${fmtToPar(s.toPar)}.`); } });
-    if (state.games.parimutuel.enabled && !state.games.parimutuel.resolved && !watchRef.current.bettingClosingNotified) {
+    if (state.games?.parimutuel?.enabled && !state.games?.parimutuel?.resolved && !watchRef.current.bettingClosingNotified) {
       const maxThru = stats.length ? Math.max(...stats.map(s => s.thru)) : 0;
-      if (maxThru === state.games.parimutuel.lockAfterHole) { watchRef.current.bettingClosingNotified = true; if (notifPrefs.bettingClosingSoon) fire('Betting closing soon', 'Pari-mutuel betting closes after this hole.'); }
+      if (maxThru === state.games?.parimutuel?.lockAfterHole) { watchRef.current.bettingClosingNotified = true; if (notifPrefs.bettingClosingSoon) fire('Betting closing soon', 'Pari-mutuel betting closes after this hole.'); }
     }
     const allFinished = stats.length > 0 && stats.every(s => s.thru === state.numHoles);
     if (allFinished && !buildBetsFromState(state, roundCode, tournament.activeRoundId).some(b => b.currentStatus === 'pending') && !watchRef.current.roundCompleteNotified) {
