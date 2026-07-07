@@ -2688,22 +2688,35 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
 
 function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
   const players = tournament.players;
+
+  const makeGroups = (count) => Array.from({ length: count }, (_, i) => ({
+    id: 'flow_g' + (i + 1) + '_' + Date.now(),
+    groupNumber: i + 1,
+    teeTime: null, startingHole: 1,
+    playerIds: i === 0 ? players.map(p => p.id) : [],
+    adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+  }));
+
   const [groups, setGroups] = React.useState(() => {
     const existing = Array.isArray(state.flowGroups) && state.flowGroups.length > 0 ? state.flowGroups : null;
     if (existing) return existing;
-    const gs = [];
-    for (let i = 0; i < players.length; i += 4) {
-      const chunk = players.slice(i, i + 4);
-      gs.push({
-        id: 'flow_' + Date.now() + '_' + i,
-        groupNumber: gs.length + 1,
-        teeTime: null, startingHole: 1,
-        playerIds: chunk.map(p => p.id),
-        adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
-      });
-    }
-    return gs;
+    const numGroups = Math.max(1, Math.ceil(players.length / 4));
+    return makeGroups(numGroups);
   });
+
+  const [pickerOpen, setPickerOpen] = React.useState(null);
+
+  const autoSplit = () => {
+    const numGroups = Math.max(1, Math.ceil(players.length / 4));
+    const newGroups = Array.from({ length: numGroups }, (_, i) => ({
+      id: groups[i]?.id || ('flow_g' + (i + 1) + '_' + Date.now()),
+      groupNumber: i + 1, teeTime: groups[i]?.teeTime || null,
+      startingHole: groups[i]?.startingHole || 1, playerIds: [],
+      adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+    }));
+    players.forEach((p, idx) => { newGroups[idx % numGroups].playerIds.push(p.id); });
+    setGroups(newGroups);
+  };
 
   const movePlayer = (playerId, toGroupId) => {
     setGroups(prev => prev.map(g => ({
@@ -2712,73 +2725,84 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
         ? g.playerIds.includes(playerId) ? g.playerIds : [...g.playerIds, playerId]
         : g.playerIds.filter(id => id !== playerId),
     })));
+    setPickerOpen(null);
   };
 
   const addGroup = () => setGroups(prev => [...prev, {
-    id: 'flow_' + Date.now(), groupNumber: prev.length + 1,
-    teeTime: null, startingHole: 1, playerIds: [],
-    adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+    id: 'flow_g' + (prev.length + 1) + '_' + Date.now(), groupNumber: prev.length + 1,
+    teeTime: null, startingHole: 1, playerIds: [], adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
   }]);
 
-  const saveGroups = () => {
-    updateRound(prev => ({ ...prev, flowGroups: groups }));
-    goNext();
-  };
-
-  const allPairedIds = groups.flatMap(g => g.playerIds);
-  const unassigned = players.filter(p => !allPairedIds.includes(p.id));
+  const saveGroups = () => { updateRound(prev => ({ ...prev, flowGroups: groups })); goNext(); };
+  const getPlayerGroup = (playerId) => groups.find(g => g.playerIds.includes(playerId));
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>
-        Players auto-split into groups of 4. Tap a player chip to move them to the next group.
-      </div>
-      {groups.map((g, gi) => (
-        <div key={g.id} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, fontWeight: 700, color: C.ivory }}>Group {gi + 1}</div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="time" value={g.teeTime ? new Date(g.teeTime).toTimeString().slice(0,5) : ''} onChange={e => {
-                const [h, m] = e.target.value.split(':');
-                const d = new Date(); d.setHours(parseInt(h)||0, parseInt(m)||0, 0, 0);
-                setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, teeTime: d.toISOString() } : gr));
-              }} style={{ ...inputStyle, fontSize: 11, padding: '4px 8px', width: 90 }} />
-              <span style={{ fontSize: 11, color: C.ivoryDim }}>Hole</span>
-              <input type="number" min={1} max={state.numHoles} value={g.startingHole || 1} onChange={e => setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, startingHole: parseInt(e.target.value || '1') } : gr))} style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', width: 50 }} />
+      {pickerOpen && (() => {
+        const p = players.find(pl => pl.id === pickerOpen);
+        const currentGroup = getPlayerGroup(pickerOpen);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setPickerOpen(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: C.turf, color: C.ivory, borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 480, padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <Chip color={p?.color}>{initials(p?.name || '')}</Chip>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: C.ivory }}>{p?.name}</div>
+                  <div style={{ fontSize: 12, color: C.bunker }}>currently in {currentGroup ? 'Group ' + currentGroup.groupNumber : 'no group'}</div>
+                </div>
+              </div>
+              <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 10 }}>Move to</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {groups.map(g => (
+                  <button key={g.id} onClick={() => movePlayer(pickerOpen, g.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: g.id === currentGroup?.id ? C.pineDark : 'transparent', border: '1.5px solid ' + (g.id === currentGroup?.id ? C.gold : C.turfBorder), borderRadius: 10, padding: '11px 14px', cursor: 'pointer' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: C.ivory }}>Group {g.groupNumber}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: C.bunker }}>{g.playerIds.length} players</span>
+                      {g.id === currentGroup?.id && <span style={{ fontSize: 11, color: C.gold }}>current</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setPickerOpen(null)} style={{ marginTop: 14, width: '100%', background: 'transparent', border: 'none', color: C.bunker, fontSize: 13, cursor: 'pointer', padding: '8px 0' }}>Cancel</button>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {g.playerIds.map(id => {
-              const p = players.find(pl => pl.id === id);
-              if (!p) return null;
-              return (
-                <button key={id} onClick={() => {
-                  const nextGroup = groups[(gi + 1) % groups.length];
-                  movePlayer(id, nextGroup.id);
-                }} style={{ display: 'flex', alignItems: 'center', gap: 5, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
-                  <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
-                  {p.name}
-                </button>
-              );
-            })}
-            {g.playerIds.length === 0 && <span style={{ fontSize: 12, color: C.turfBorder, padding: '5px 0' }}>Empty</span>}
+        );
+      })()}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.5, flex: 1 }}>Tap any player to assign them to a group.</div>
+        <button onClick={autoSplit} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer', flexShrink: 0, marginLeft: 10 }}>Auto-split</button>
+      </div>
+
+      {groups.map((g, gi) => (
+        <div key={g.id} style={{ background: C.turf, border: '1px solid ' + C.turfBorder, borderRadius: 12, padding: 12, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 14, fontWeight: 700, color: C.ivory }}>Group {gi + 1} · {g.playerIds.length} players</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="time" value={g.teeTime ? new Date(g.teeTime).toTimeString().slice(0,5) : ''} onChange={e => { const [h, m] = e.target.value.split(':'); const d = new Date(); d.setHours(parseInt(h)||0, parseInt(m)||0, 0, 0); setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, teeTime: d.toISOString() } : gr)); }} style={{ ...inputStyle, fontSize: 11, padding: '4px 8px', width: 90 }} />
+              <span style={{ fontSize: 11, color: C.ivoryDim }}>H</span>
+              <input type="number" min={1} max={state.numHoles} value={g.startingHole || 1} onChange={e => setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, startingHole: parseInt(e.target.value || '1') } : gr))} style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', width: 46 }} />
+            </div>
           </div>
+          {g.playerIds.length === 0
+            ? <div style={{ fontSize: 12, color: C.turfBorder, padding: '4px 0' }}>Empty</div>
+            : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {g.playerIds.map(id => {
+                  const p = players.find(pl => pl.id === id);
+                  if (!p) return null;
+                  return (
+                    <button key={id} onClick={() => setPickerOpen(id)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
+                      <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+          }
         </div>
       ))}
-      {unassigned.length > 0 && (
-        <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10, padding: 10, marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, marginBottom: 6 }}>Unassigned</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {unassigned.map(p => (
-              <button key={p.id} onClick={() => movePlayer(p.id, groups[0]?.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#FFF', border: '1px solid #F59E0B', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
-                <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
-                {p.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <button onClick={addGroup} style={{ width: '100%', background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 10, padding: '10px 0', color: C.bunker, fontSize: 13, cursor: 'pointer', marginBottom: 12 }}>+ Add another group</button>
+
+      <button onClick={addGroup} style={{ width: '100%', background: 'transparent', border: '1px dashed ' + C.turfBorder, borderRadius: 10, padding: '10px 0', color: C.bunker, fontSize: 13, cursor: 'pointer', marginBottom: 14 }}>+ Add another group</button>
       <GoldButton onClick={saveGroups}>Save groups & continue</GoldButton>
       <GhostButton onClick={goNext} style={{ marginTop: 8, width: '100%', textAlign: 'center' }}>Skip — set up later in Round Flow</GhostButton>
     </div>
