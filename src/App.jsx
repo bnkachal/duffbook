@@ -1913,7 +1913,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
   );
 }
 
-
+function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
   const pm = state.games.parimutuel;
   const matches = state.games.matchplay.matches || [];
   const customBets = state.customBets || [];
@@ -2004,7 +2004,6 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
     </div>
   );
 
-function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
   const pm = state.games.parimutuel;
   const matches = state.games.matchplay.matches || [];
   const customBets = state.customBets || [];
@@ -3983,12 +3982,12 @@ export default function DuffBook() {
       // last-code is history only — never used for auto-navigation on startup.
       // A new device always starts at the landing page with roundCode = null.
       // Only handleCreate(), handleJoin(), and handleQuickJoin() may set roundCode.
-      try { const r2 = await storage.get('notif-prefs', false); if (r2) setNotifPrefs(JSON.parse(r2.value)); } catch (e) {}
-      try { const r3 = await storage.get('chat-bubble-pos', false); if (r3) setBubblePos(JSON.parse(r3.value)); } catch (e) {}
-      try { const r4 = await storage.get('bet-templates', false); setBetTemplates(r4 ? JSON.parse(r4.value) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
-      try { const r5 = await storage.get('guidance-enabled', false); if (r5) setGuidanceEnabled(JSON.parse(r5.value)); } catch (e) {}
-      try { const r6 = await storage.get('device-profile', false); if (r6) setDeviceName(JSON.parse(r6.value).name || ''); } catch (e) {}
-      try { const r7 = await storage.get('my-tournaments', false); if (r7) setMyTournaments(JSON.parse(r7.value)); } catch (e) {}
+      try { const r2v = localStorage.getItem('db:notif-prefs'); if (r2v) setNotifPrefs(JSON.parse(r2v)); } catch (e) {}
+      try { const r3v = localStorage.getItem('db:chat-bubble-pos'); if (r3v) setBubblePos(JSON.parse(r3v)); } catch (e) {}
+      try { const r4v = localStorage.getItem('db:bet-templates'); setBetTemplates(r4v ? JSON.parse(r4v) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
+      try { const r5v = localStorage.getItem('db:guidance-enabled'); if (r5v) setGuidanceEnabled(JSON.parse(r5v)); } catch (e) {}
+      try { const r6v = localStorage.getItem('db:device-profile'); if (r6v) { try { setDeviceName(JSON.parse(r6v).name || ''); } catch(e){} } } catch (e) {}
+      try { const r7v = localStorage.getItem('db:my-tournaments'); if (r7v) { try { setMyTournaments(JSON.parse(r7v)); } catch(e){} } } catch (e) {}
       setInitChecked(true);
     })();
   }, []);
@@ -3996,7 +3995,7 @@ export default function DuffBook() {
   const rememberTournament = (code, name) => {
     setMyTournaments(prev => {
       const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 20);
-      (async () => { try { await storage.set('my-tournaments', JSON.stringify(next), false); } catch (e) {} })();
+      try { localStorage.setItem('db:my-tournaments', JSON.stringify(next)); } catch(e) {}
       return next;
     });
   };
@@ -4013,11 +4012,11 @@ export default function DuffBook() {
     }
     const isJustCreated = justCreatedRef.current === roundCode;
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
-    else { (async () => { try { const r = await storage.get(isAdminKey(roundCode), false); setIsAdmin(r ? JSON.parse(r.value) : false); } catch (e) { setIsAdmin(false); } })(); }
+    else { (async () => { try { const rv = localStorage.getItem('db:isadmin-' + roundCode); setIsAdmin(rv ? JSON.parse(rv) : false); } catch (e) { setIsAdmin(false); } })(); }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } await storage.delete('last-code', false); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
       try { const cres = await storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
-      try { const wres = await storage.get(whoamiKey(roundCode), false); if (mounted) setWhoamiId(wres ? JSON.parse(wres.value) : null); } catch (e) { if (mounted) setWhoamiId(null); }
+      try { const wresv = localStorage.getItem('db:whoami-' + roundCode); if (mounted) setWhoamiId(wresv ? JSON.parse(wresv) : null); } catch (e) { if (mounted) setWhoamiId(null); }
       if (mounted) { loadedRef.current = true; setLoading(false); }
     })();
     return () => { mounted = false; };
@@ -4184,7 +4183,7 @@ export default function DuffBook() {
   const handleCreate = () => {
     const code = genCode(), pin = genPin();
     justCreatedRef.current = code;
-    (async () => { try { await storage.set('last-code', JSON.stringify(code), false); await storage.set(isAdminKey(code), JSON.stringify(true), false); } catch (e) {} })();
+    (async () => { try { localStorage.setItem('db:last-code', JSON.stringify(code)); localStorage.setItem('db:isadmin-' + code, JSON.stringify(true)); } catch (e) {} })();
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
@@ -4207,7 +4206,7 @@ export default function DuffBook() {
           setJoinChecking(false);
           return;
         }
-        await storage.set('last-code', JSON.stringify(c), false);
+        localStorage.setItem('db:last-code', JSON.stringify(c));
         setJoinChecking(false);
         setRoundCode(c);
       } catch (e) {
@@ -4223,9 +4222,9 @@ export default function DuffBook() {
     preloadedRef.current = { code, tournament: demo.tournament, chat: demo.chat, whoamiId: demo.whoamiId };
     (async () => {
       try {
-        await storage.set('last-code', JSON.stringify(code), false);
-        await storage.set(isAdminKey(code), JSON.stringify(true), false);
-        await storage.set(whoamiKey(code), JSON.stringify(demo.whoamiId), false);
+        localStorage.setItem('db:last-code', JSON.stringify(code));
+        localStorage.setItem('db:isadmin-' + code, JSON.stringify(true));
+        localStorage.setItem('db:whoami-' + code, JSON.stringify(demo.whoamiId));
         await storage.set(tournamentKey(code), JSON.stringify(demo.tournament), true);
         await storage.set(chatKey(code), JSON.stringify(demo.chat), true);
       } catch (e) {}
@@ -4233,14 +4232,14 @@ export default function DuffBook() {
     setIsAdmin(true);
     setRoundCode(code);
   };
-  const handleQuickJoin = (code) => { setRoundCode(code); (async () => { try { await storage.set('last-code', JSON.stringify(code), false); } catch (e) {} })(); };
+  const handleQuickJoin = (code) => { setRoundCode(code); try { localStorage.setItem('db:last-code', JSON.stringify(code)); } catch(e) {} };
   // handleLeave: clears the active session completely. last-code is also deleted
   // so the next startup doesn't show a stale resume button for this round.
-  const handleLeave = () => { (async () => { try { await storage.delete('last-code', false); await storage.delete(isAdminKey(roundCode), false); } catch (e) {} })(); setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
-  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); (async () => { try { await storage.set(isAdminKey(roundCode), JSON.stringify(true), false); } catch (e) {} })(); return true; } return false; };
-  const saveDeviceProfile = (name) => { setDeviceName(name); (async () => { try { await storage.set('device-profile', JSON.stringify({ name }), false); } catch (e) {} })(); };
+  const handleLeave = () => { try { localStorage.removeItem('db:last-code'); localStorage.removeItem('db:isadmin-' + roundCode); } catch(e) {} setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
+  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
+  const saveDeviceProfile = (name) => { setDeviceName(name); try { localStorage.setItem('db:device-profile', JSON.stringify({ name })); } catch(e) {} };
 
-  const setIdentity = (playerId) => { setWhoamiId(playerId); if (!isAdmin) setActiveTab('card'); (async () => { try { await storage.set(whoamiKey(roundCode), JSON.stringify(playerId), false); } catch (e) {} })(); };
+  const setIdentity = (playerId) => { setWhoamiId(playerId); if (!isAdmin) setActiveTab('card'); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {} };
   const addSelf = (name) => {
     if (!deviceName) saveDeviceProfile(name);
     const color = CHIP_COLORS[tournament.players.length % CHIP_COLORS.length];
@@ -4252,7 +4251,7 @@ export default function DuffBook() {
     }));
     setIdentity(id);
   };
-  const updateNotifPrefs = (next) => { setNotifPrefs(next); (async () => { try { await storage.set('notif-prefs', JSON.stringify(next), false); } catch (e) {} })(); };
+  const updateNotifPrefs = (next) => { setNotifPrefs(next); try { localStorage.setItem('db:notif-prefs', JSON.stringify(next)); } catch(e) {} };
   const chatFlashRef = useRef(0);
   const [chatFlash, setChatFlash] = useState(false);
 
@@ -4406,8 +4405,8 @@ export default function DuffBook() {
   const resolveTournamentCustomBet = (id, winnerIds) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
   const reopenTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
 
-  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; (async () => { try { await storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
-  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); (async () => { try { await storage.set('bet-templates', JSON.stringify(next), false); } catch (e) {} })(); return next; });
+  const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; try { localStorage.setItem('db:bet-templates', JSON.stringify(next)); } catch(e) {} return next; });
+  const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); try { localStorage.setItem('db:bet-templates', JSON.stringify(next)); } catch(e) {} return next; });
 
   const addRound = () => {
     setTournament(prev => {
@@ -4438,7 +4437,7 @@ export default function DuffBook() {
     const ny = Math.max(80, Math.min(window.innerHeight - 60, bubbleDragRef.current.origin.y + dy));
     setBubblePos({ x: nx, y: ny });
   };
-  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) (async () => { try { await storage.set('chat-bubble-pos', JSON.stringify(bubblePos), false); } catch (e) {} })(); };
+  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) try { localStorage.setItem('db:chat-bubble-pos', JSON.stringify(bubblePos)); } catch(e) {} };
   const onBubbleClick = () => { if (bubbleJustDraggedRef.current) { bubbleJustDraggedRef.current = false; return; } setChatOpen(true); setChatSeenLen(chat.length); };
 
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
@@ -4595,7 +4594,7 @@ export default function DuffBook() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); (async () => { try { await storage.set('guidance-enabled', JSON.stringify(next), false); } catch (e) {} })(); }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
