@@ -1442,7 +1442,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', borderRadius: 20, border: `1.5px solid ${C.turfBorder}`, boxShadow: '0 4px 20px rgba(0,0,0,0.08)', padding: 32, marginBottom: 16 }}>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.5, color: C.bunker, marginBottom: 8 }}>Hole {h + 1}</div>
-          <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 88, lineHeight: 1, color: isDefault ? C.turfBorder : diffColor, marginBottom: 8 }}>{displayVal}</div>
+          <button onClick={() => tapCenter(whoami.id, h)} style={{ fontFamily: 'Anton, sans-serif', fontSize: 88, lineHeight: 1, color: isDefault ? C.turfBorder : diffColor, marginBottom: 8, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>{displayVal}</button>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, color: C.bunker, marginBottom: 8 }}>Par {par}</div>
           {!isDefault && <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 22, color: diffColor, fontWeight: 700 }}>{termForDiff(diff)}</div>}
           {isDefault && <div style={{ fontSize: 13, color: C.turfBorder }}>swipe or tap +/− to enter score</div>}
@@ -2680,6 +2680,105 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
   );
 }
 
+function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
+  const players = tournament.players;
+  const [groups, setGroups] = React.useState(() => {
+    const existing = Array.isArray(state.flowGroups) && state.flowGroups.length > 0 ? state.flowGroups : null;
+    if (existing) return existing;
+    const gs = [];
+    for (let i = 0; i < players.length; i += 4) {
+      const chunk = players.slice(i, i + 4);
+      gs.push({
+        id: 'flow_' + Date.now() + '_' + i,
+        groupNumber: gs.length + 1,
+        teeTime: null, startingHole: 1,
+        playerIds: chunk.map(p => p.id),
+        adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+      });
+    }
+    return gs;
+  });
+
+  const movePlayer = (playerId, toGroupId) => {
+    setGroups(prev => prev.map(g => ({
+      ...g,
+      playerIds: g.id === toGroupId
+        ? g.playerIds.includes(playerId) ? g.playerIds : [...g.playerIds, playerId]
+        : g.playerIds.filter(id => id !== playerId),
+    })));
+  };
+
+  const addGroup = () => setGroups(prev => [...prev, {
+    id: 'flow_' + Date.now(), groupNumber: prev.length + 1,
+    teeTime: null, startingHole: 1, playerIds: [],
+    adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+  }]);
+
+  const saveGroups = () => {
+    updateRound(prev => ({ ...prev, flowGroups: groups }));
+    goNext();
+  };
+
+  const allPairedIds = groups.flatMap(g => g.playerIds);
+  const unassigned = players.filter(p => !allPairedIds.includes(p.id));
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>
+        Players auto-split into groups of 4. Tap a player chip to move them to the next group.
+      </div>
+      {groups.map((g, gi) => (
+        <div key={g.id} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, fontWeight: 700, color: C.ivory }}>Group {gi + 1}</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="time" value={g.teeTime ? new Date(g.teeTime).toTimeString().slice(0,5) : ''} onChange={e => {
+                const [h, m] = e.target.value.split(':');
+                const d = new Date(); d.setHours(parseInt(h)||0, parseInt(m)||0, 0, 0);
+                setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, teeTime: d.toISOString() } : gr));
+              }} style={{ ...inputStyle, fontSize: 11, padding: '4px 8px', width: 90 }} />
+              <span style={{ fontSize: 11, color: C.ivoryDim }}>Hole</span>
+              <input type="number" min={1} max={state.numHoles} value={g.startingHole || 1} onChange={e => setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, startingHole: parseInt(e.target.value || '1') } : gr))} style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', width: 50 }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {g.playerIds.map(id => {
+              const p = players.find(pl => pl.id === id);
+              if (!p) return null;
+              return (
+                <button key={id} onClick={() => {
+                  const nextGroup = groups[(gi + 1) % groups.length];
+                  movePlayer(id, nextGroup.id);
+                }} style={{ display: 'flex', alignItems: 'center', gap: 5, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
+                  <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
+                  {p.name}
+                </button>
+              );
+            })}
+            {g.playerIds.length === 0 && <span style={{ fontSize: 12, color: C.turfBorder, padding: '5px 0' }}>Empty</span>}
+          </div>
+        </div>
+      ))}
+      {unassigned.length > 0 && (
+        <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10, padding: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, marginBottom: 6 }}>Unassigned</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {unassigned.map(p => (
+              <button key={p.id} onClick={() => movePlayer(p.id, groups[0]?.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#FFF', border: '1px solid #F59E0B', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
+                <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button onClick={addGroup} style={{ width: '100%', background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 10, padding: '10px 0', color: C.bunker, fontSize: 13, cursor: 'pointer', marginBottom: 12 }}>+ Add another group</button>
+      <GoldButton onClick={saveGroups}>Save groups & continue</GoldButton>
+      <GhostButton onClick={goNext} style={{ marginTop: 8, width: '100%', textAlign: 'center' }}>Skip — set up later in Round Flow</GhostButton>
+    </div>
+  );
+}
+
 function MatchBuilder({ state, updateRound }) {
   const [pending, setPending] = useState({});
   const togglePending = (id) => setPending(prev => { const cur = prev[id]; const next = { ...prev }; if (!cur) next[id] = 'A'; else if (cur === 'A') next[id] = 'B'; else delete next[id]; return next; });
@@ -3015,105 +3114,9 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         </div>
       )}
 
-      {stepKey === 'groups' && (() => {
-        const players = tournament.players;
-        const [groups, setGroups] = React.useState(() => {
-          const existing = state.flowGroups;
-          if (existing && existing.length > 0) return existing;
-          // Auto-split into groups of 4
-          const gs = [];
-          const chunkSize = 4;
-          for (let i = 0; i < players.length; i += chunkSize) {
-            const chunk = players.slice(i, i + chunkSize);
-            gs.push({
-              id: 'flow_' + Date.now() + '_' + i,
-              groupNumber: gs.length + 1,
-              teeTime: null, startingHole: 1,
-              playerIds: chunk.map(p => p.id),
-              adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
-            });
-          }
-          return gs;
-        });
-
-        const movePlayer = (playerId, toGroupId) => {
-          setGroups(prev => prev.map(g => ({
-            ...g,
-            playerIds: g.id === toGroupId
-              ? g.playerIds.includes(playerId) ? g.playerIds : [...g.playerIds, playerId]
-              : g.playerIds.filter(id => id !== playerId),
-          })));
-        };
-
-        const addGroup = () => setGroups(prev => [...prev, {
-          id: 'flow_' + Date.now(), groupNumber: prev.length + 1,
-          teeTime: null, startingHole: 1, playerIds: [], adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
-        }]);
-
-        const saveGroups = () => {
-          updateRound(prev => ({ ...prev, flowGroups: groups }));
-          goNext();
-        };
-
-        const unassigned = players.filter(p => !groups.some(g => g.playerIds.includes(p.id)));
-
-        return (
-          <div>
-            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>
-              Players have been split into groups of 4. Tap a player's name to move them to a different group.
-            </div>
-            {groups.map((g, gi) => (
-              <div key={g.id} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, fontWeight: 700, color: C.ivory }}>Group {gi + 1}</div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input type="time" value={g.teeTime ? new Date(g.teeTime).toTimeString().slice(0,5) : ''} onChange={e => {
-                      const [h, m] = e.target.value.split(':');
-                      const d = new Date(); d.setHours(parseInt(h), parseInt(m), 0, 0);
-                      setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, teeTime: d.toISOString() } : gr));
-                    }} style={{ ...inputStyle, fontSize: 11, padding: '4px 8px', width: 90 }} />
-                    <span style={{ fontSize: 11, color: C.ivoryDim }}>Hole</span>
-                    <input type="number" min={1} max={state.numHoles} value={g.startingHole || 1} onChange={e => setGroups(prev => prev.map(gr => gr.id === g.id ? { ...gr, startingHole: parseInt(e.target.value || '1') } : gr))} style={{ ...inputStyle, fontSize: 11, padding: '4px 6px', width: 50 }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {g.playerIds.map(id => {
-                    const p = players.find(pl => pl.id === id);
-                    if (!p) return null;
-                    return (
-                      <button key={id} onClick={() => {
-                        // Show group picker inline — tap player to open a small group selector
-                        const nextGroup = groups[(gi + 1) % groups.length];
-                        movePlayer(id, nextGroup.id);
-                      }} style={{ display: 'flex', alignItems: 'center', gap: 5, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
-                        <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
-                        {p.name}
-                      </button>
-                    );
-                  })}
-                  {g.playerIds.length === 0 && <span style={{ fontSize: 12, color: C.turfBorder }}>Empty — tap players from other groups to move here</span>}
-                </div>
-              </div>
-            ))}
-            {unassigned.length > 0 && (
-              <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, marginBottom: 6 }}>Unassigned players</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {unassigned.map(p => (
-                    <button key={p.id} onClick={() => movePlayer(p.id, groups[0]?.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#FFF', border: '1px solid #F59E0B', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 13, color: C.ivory }}>
-                      <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8 }}>{initials(p.name)}</Chip>
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <button onClick={addGroup} style={{ width: '100%', background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 10, padding: '10px 0', color: C.bunker, fontSize: 13, cursor: 'pointer', marginBottom: 12 }}>+ Add another group</button>
-            <GoldButton onClick={saveGroups}>Save groups & continue</GoldButton>
-            <GhostButton onClick={goNext} style={{ marginTop: 8, width: '100%', textAlign: 'center' }}>Skip — set up later in Round Flow</GhostButton>
-          </div>
-        );
-      })()}
+      {stepKey === 'groups' && (
+        <WizardGroupsStep tournament={tournament} state={state} updateRound={updateRound} goNext={goNext} />
+      )}
 
       {stepKey === 'games' && (
         <div>
