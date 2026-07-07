@@ -1314,10 +1314,16 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
           </div>
         )}
         {myTournaments && myTournaments.length > 0 && (
-          <button onClick={() => onQuickJoin(myTournaments[0].code)} style={{ marginTop: 8, background: 'linear-gradient(135deg, #00874A 0%, #B8860B 100%)', border: 'none', borderRadius: 8, padding: '5px 14px', color: '#FFF', fontSize: 11, fontFamily: 'Oswald, sans-serif', fontWeight: 600, letterSpacing: 0.3, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ opacity: 0.75, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>Resume</span>
-            {myTournaments[0].name} ›
-          </button>
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 5, marginTop: 10 }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: 0.8, textAlign: 'center', marginBottom: 2 }}>Recent rounds</div>
+            {myTournaments.map((t, i) => (
+              <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: i === 0 ? 'linear-gradient(135deg, #00874A 0%, #B8860B 100%)' : 'rgba(255,255,255,0.07)', border: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                <div style={{ width: 5, height: 5, borderRadius: 999, background: i === 0 ? '#FFF' : 'rgba(255,255,255,0.35)', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, flexShrink: 0 }}>{t.code}</span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -4034,7 +4040,7 @@ export default function DuffBook() {
 
   const rememberTournament = (code, name) => {
     setMyTournaments(prev => {
-      const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 20);
+      const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 5);
       try { localStorage.setItem('db:my-tournaments', JSON.stringify(next)); } catch(e) {}
       return next;
     });
@@ -4275,7 +4281,7 @@ export default function DuffBook() {
   const handleQuickJoin = (code) => { setRoundCode(code); try { localStorage.setItem('db:last-code', JSON.stringify(code)); } catch(e) {} };
   // handleLeave: clears the active session completely. last-code is also deleted
   // so the next startup doesn't show a stale resume button for this round.
-  const handleLeave = () => { try { localStorage.removeItem('db:last-code'); localStorage.removeItem('db:isadmin-' + roundCode); } catch(e) {} setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
+  const handleLeave = () => { try { localStorage.removeItem('db:last-code'); } catch(e) {} setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
   const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
   const saveDeviceProfile = (name) => { setDeviceName(name); try { localStorage.setItem('db:device-profile', JSON.stringify({ name })); } catch(e) {} };
 
