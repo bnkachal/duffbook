@@ -4,7 +4,7 @@ import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
   MessageCircle, Swords, Shuffle, Copy, LogOut, Loader2, Home, Ticket, KeyRound,
-  Calendar, User, ChevronsUpDown, RefreshCw,
+  Calendar, User, ChevronsUpDown, RefreshCw, Share2,
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
@@ -852,7 +852,7 @@ function computeWolf(state, scoreFn) {
 }
 
 function parimutuelEntrants(state) {
-  const pm = state.games.parimutuel;
+  const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (pm.marketType === 'flights') return state.flights.map(f => ({ id: f.id, name: f.name, color: f.color }));
   return state.players.map(p => ({ id: p.id, name: p.name, color: p.color }));
 }
@@ -952,7 +952,7 @@ function buildMatchplayBets(state, tournamentId, roundId) {
   });
 }
 function buildWolfBets(state, tournamentId, roundId) {
-  const g = state.games.wolf; if (!g.enabled || state.players.length < 3) return [];
+  const g = state.games?.wolf; if (!g?.enabled || state.players.length < 3) return [];
   const wolf = computeWolf(state, holeScoreFn(state, g.net));
   const pending = wolf.results.some(r => r.status === 'pending');
   return [{
@@ -1156,7 +1156,7 @@ function getRoundPhase(state, stats, bets) {
   return bets.some(b => b.currentStatus === 'pending') ? 'wrapping-up' : 'complete';
 }
 function getNextStep(phase, state, whoami, isAdmin) {
-  const pm = state.games.parimutuel;
+  const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (phase === 'pre-round' || phase === 'in-progress') {
     if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so DuffBook knows whose score is whose.', action: 'card' };
     if (pm.enabled && !pm.resolved) {
@@ -1802,14 +1802,14 @@ function KoSModal({ tournament, updateTournament, onClose }) {
   const setKs = (updates) => updateTournament(prev => ({ ...prev, kingsOfSwing: { ...prev.kingsOfSwing, ...updates } }));
 
   const startBracket = () => {
-    const seeded = ks.seededPlayers.length > 0 ? ks.seededPlayers : players.map(p => p.id);
+    const seeded = (Array.isArray(ks.seededPlayers) && ks.seededPlayers.length > 0) ? ks.seededPlayers : players.map(p => p.id);
     const seededObjs = seeded.map(id => players.find(p => p.id === id)).filter(Boolean);
     const rounds = generateBracket(seededObjs);
     setKs({ rounds, seededPlayers: seeded });
   };
 
   const recordWinner = (roundIndex, matchIndex, winnerId) => {
-    const newRounds = advanceBracket(ks.rounds, roundIndex, matchIndex, winnerId);
+    const newRounds = advanceBracket(Array.isArray(ks.rounds) ? ks.rounds : [], roundIndex, matchIndex, winnerId);
     const finalMatch = newRounds[newRounds.length - 1]?.matches[0];
     const champion = finalMatch?.winnerId || null;
     setKs({ rounds: newRounds, ...(champion ? { champion } : {}) });
@@ -1843,7 +1843,7 @@ function KoSModal({ tournament, updateTournament, onClose }) {
             <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
               <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 10 }}>Player seeding (drag to reorder)</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {(ks.seededPlayers.length > 0 ? ks.seededPlayers.map(id => players.find(p => p.id === id)).filter(Boolean) : players).map((p, i) => (
+                {(Array.isArray(ks.seededPlayers) && ks.seededPlayers.length > 0 ? ks.seededPlayers.map(id => players.find(p => p.id === id)).filter(Boolean) : players).map((p, i) => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.pineDark, borderRadius: 8, padding: '8px 12px' }}>
                     <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: C.bunker, width: 24 }}>#{i+1}</span>
                     <Chip color={p.color}>{initials(p.name)}</Chip>
@@ -1859,7 +1859,7 @@ function KoSModal({ tournament, updateTournament, onClose }) {
           </div>
         ) : (
           <div>
-            {ks.rounds.map((round) => (
+            {(Array.isArray(ks.rounds) ? ks.rounds : []).map((round) => (
               <div key={round.roundIndex} style={{ marginBottom: 20 }}>
                 <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 8 }}>{round.label}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2021,9 +2021,9 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
 }
 
 function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
-  const pm = state.games.parimutuel;
-  const matches = state.games.matchplay.matches || [];
-  const customBets = state.customBets || [];
+  const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
+  const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
+  const customBets = Array.isArray(state.customBets) ? state.customBets : [];
   const tBets = tournamentCustomBets || [];
   if (!pm.enabled && matches.length === 0 && customBets.length === 0 && tBets.length === 0 && !isAdmin) return <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 40 }}>Nothing to bet on yet — ask the admin to turn on pari-mutuel betting or set up a bet in Round setup.</div>;
   const pmData = pm.enabled ? computeParimutuel(state) : null;
@@ -2110,8 +2110,8 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
           <SectionHeader title="Pairings" sub="who's playing whom this round" icon={Swords} iconColor={C.blue} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
             {matches.map((m, i) => {
-              const aPlayers = m.sideA.map(id => state.players.find(p => p.id === id)).filter(Boolean);
-              const bPlayers = m.sideB.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+              const aPlayers = (Array.isArray(m.sideA) ? m.sideA : []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
+              const bPlayers = (Array.isArray(m.sideB) ? m.sideB : []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
               return (
                 <div key={i} style={{ ...rowCard, justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', gap: 4 }}>{aPlayers.map(p => <Chip key={p.id} color={p.color}>{initials(p.name)}</Chip>)}</div>
@@ -3022,7 +3022,7 @@ function MatchBuilder({ state, updateRound }) {
         })}
       </div>
       <GoldButton onClick={createMatch} disabled={!sideA.length || !sideB.length} style={{ marginBottom: 12 }}>Create match</GoldButton>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{state.games.matchplay.matches.map(m => <div key={m.id} style={{ ...rowCard, justifyContent: 'space-between' }}><span style={{ fontSize: 13 }}>{sideNames(m.sideA, state)} vs {sideNames(m.sideB, state)}</span><button onClick={() => removeMatch(m.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={14} /></button></div>)}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{(Array.isArray(state.games.matchplay?.matches) ? state.games.matchplay.matches : []).map(m => <div key={m.id} style={{ ...rowCard, justifyContent: 'space-between' }}><span style={{ fontSize: 13 }}>{sideNames(m.sideA, state)} vs {sideNames(m.sideB, state)}</span><button onClick={() => removeMatch(m.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={14} /></button></div>)}</div>
     </div>
   );
 }
@@ -4054,6 +4054,95 @@ function FontLoader() {
   );
 }
 
+function QRShareModal({ roundCode, tournamentName, onClose }) {
+  const url = `https://duffbook.vercel.app?code=${roundCode}`;
+  const canvasRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const [qrReady, setQrReady] = useState(false);
+
+  useEffect(() => {
+    // Load QRCode library from CDN then render
+    if (window.QRCode) { renderQR(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.onload = renderQR;
+    document.head.appendChild(script);
+  }, []);
+
+  const renderQR = () => {
+    if (!canvasRef.current || !window.QRCode) return;
+    canvasRef.current.innerHTML = '';
+    new window.QRCode(canvasRef.current, {
+      text: url,
+      width: 240,
+      height: 240,
+      colorDark: '#111827',
+      colorLight: '#FFFFFF',
+      correctLevel: window.QRCode.CorrectLevel.H,
+    });
+    setQrReady(true);
+  };
+
+  const copyLink = () => {
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const shareLink = () => {
+    if (navigator.share) {
+      navigator.share({ title: `Join ${tournamentName} on DuffBook`, text: `Scan or tap to join: ${url}`, url });
+    } else {
+      copyLink();
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory, marginBottom: 4 }}>Join {tournamentName}</div>
+        <div style={{ fontSize: 12, color: C.bunker, marginBottom: 20 }}>Scan to join · or share the link below</div>
+
+        {/* QR Code */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ background: '#FFFFFF', padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
+            <div ref={canvasRef} style={{ width: 240, height: 240 }} />
+            {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13 }}>Loading QR…</div>}
+          </div>
+        </div>
+
+        {/* Round code badge */}
+        <div style={{ background: C.pineDark, borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>Round code</div>
+            <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 24, fontWeight: 700, color: C.ivory, letterSpacing: 4 }}>{roundCode}</div>
+          </div>
+          <button onClick={copyLink} style={{ background: copied ? C.emerald : C.turf, border: `1px solid ${copied ? C.emerald : C.turfBorder}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: copied ? '#FFF' : C.ivory, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}>
+            {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy code</>}
+          </button>
+        </div>
+
+        {/* Share buttons */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button onClick={shareLink} style={{ flex: 1, background: `linear-gradient(135deg, #00874A, ${C.gold})`, border: 'none', borderRadius: 12, padding: '13px 0', color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Share2 size={16} /> Share link
+          </button>
+          <button onClick={copyLink} style={{ flex: 1, background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '13px 0', color: C.ivory, fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Copy size={16} /> {copied ? 'Copied!' : 'Copy link'}
+          </button>
+        </div>
+
+        <div style={{ fontSize: 11, color: C.bunker, marginBottom: 16, lineHeight: 1.5 }}>
+          Players scan the QR or tap the link to land directly in your round — no code typing needed.
+        </div>
+
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.bunker, fontSize: 13, cursor: 'pointer', padding: '4px 0' }}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 function BirdieAnimation({ events, players }) {
   if (!events || events.length === 0) return null;
   return (
@@ -4231,7 +4320,18 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
 
 /* ============================== MAIN APP ============================== */
 export default function DuffBook() {
-  const [roundCode, setRoundCode] = useState(null);
+  const [roundCode, setRoundCode] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = params.get('code');
+      if (urlCode) {
+        // Clean the URL without reloading
+        window.history.replaceState({}, '', window.location.pathname);
+        return urlCode.toUpperCase();
+      }
+    } catch (e) {}
+    return null;
+  });
   const [joinError, setJoinError] = useState(null);
   const [joinChecking, setJoinChecking] = useState(false);
   const [initChecked, setInitChecked] = useState(false);
@@ -4254,6 +4354,7 @@ export default function DuffBook() {
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
   const [kosOpen, setKosOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [tournamentBetBuilderOpen, setTournamentBetBuilderOpen] = useState(false);
   const [betTemplates, setBetTemplates] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
@@ -4823,6 +4924,7 @@ export default function DuffBook() {
               {previewMode ? <><User size={13} /> Player</> : <><Settings size={13} /> Admin</>}
             </button>
           )}
+          <button onClick={() => setQrOpen(true)} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivory, cursor: 'pointer', flexShrink: 0 }} title="Share round QR"><Share2 size={17} /></button>
           <button onClick={() => setSettingsOpen(true)} aria-label="Settings" style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivory, cursor: 'pointer', flexShrink: 0 }}><Settings size={18} /></button>
         </div>
       </div>
@@ -4912,6 +5014,7 @@ export default function DuffBook() {
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
       {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
       {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
+      {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} onClose={() => setQrOpen(false)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </div>
   );
