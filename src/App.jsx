@@ -283,6 +283,9 @@ function defaultRound(index) {
     customBets: [],
     flowGroups: [], scoreUpdatedAt: {}, submittedPlayers: [],
     started: false,
+    handicapMode: 'none',
+    matchFormat: 'stroke-play',
+    roundPlayers: [],
   };
 }
 function defaultTournament() {
@@ -293,11 +296,16 @@ function defaultTournament() {
     rounds: [r0], activeRoundId: r0.id,
     tournamentCustomBets: [],
     ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
+    kingsOfSwing: { enabled: false, seededPlayers: [], rounds: [], champion: null },
   };
 }
 function getRoundView(tournament, roundId) {
   const round = tournament.rounds.find(r => r.id === roundId) || tournament.rounds[0] || defaultRound(0);
-  const players = Array.isArray(tournament.players) ? tournament.players.filter(p => p && p.id) : [];
+  const players = (() => {
+    const roundPlayers = Array.isArray(round.roundPlayers) ? round.roundPlayers.filter(p => p && p.id) : [];
+    if (roundPlayers.length > 0) return roundPlayers;
+    return Array.isArray(tournament.players) ? tournament.players.filter(p => p && p.id) : [];
+  })();
   const flights = Array.isArray(tournament.flights) ? tournament.flights.filter(f => f && f.id) : [];
   const pars = Array.isArray(round.pars) ? round.pars : DEFAULT_PARS_18.slice();
   const strokeIndex = Array.isArray(round.strokeIndex) ? round.strokeIndex : DEFAULT_SI_18.slice();
@@ -404,6 +412,47 @@ function generateDemoTournament() {
 }
 
 /* ============================== DERIVED STATS ============================== */
+/* ============================== KING OF SWING ============================== */
+function bracketSize(n) {
+  for (const s of [2,4,8,16,32,64]) { if (s >= n) return s; }
+  return 64;
+}
+function generateBracket(seededPlayers) {
+  const n = seededPlayers.length;
+  if (n < 2) return [];
+  const size = bracketSize(n);
+  const padded = [...seededPlayers, ...Array(size - n).fill(null)];
+  const numRounds = Math.log2(size);
+  const rounds = [];
+  for (let r = 0; r < numRounds; r++) {
+    const numMatches = size / Math.pow(2, r + 1);
+    const label = numMatches === 1 ? 'Final' : numMatches === 2 ? 'Semifinal' : `Round ${r + 1}`;
+    const matches = [];
+    for (let i = 0; i < numMatches; i++) {
+      const p1 = r === 0 ? padded[i * 2] : null;
+      const p2 = r === 0 ? padded[i * 2 + 1] : null;
+      const isBye = r === 0 && (!p1 || !p2);
+      matches.push({ id: `ks_r${r}_m${i}_${Date.now()}`, player1Id: p1?.id||null, player2Id: p2?.id||null, winnerId: isBye ? (p1?.id||p2?.id||null) : null, isBye, score1: null, score2: null });
+    }
+    rounds.push({ roundIndex: r, label, matches });
+  }
+  return rounds;
+}
+function advanceBracket(rounds, roundIndex, matchIndex, winnerId) {
+  const r = rounds.map(rd => ({ ...rd, matches: rd.matches.map(m => ({ ...m })) }));
+  const m = r[roundIndex]?.matches[matchIndex];
+  if (!m) return r;
+  m.winnerId = winnerId;
+  const next = r[roundIndex + 1];
+  if (!next) return r;
+  const nm = next.matches[Math.floor(matchIndex / 2)];
+  if (!nm) return r;
+  if (matchIndex % 2 === 0) nm.player1Id = winnerId;
+  else nm.player2Id = winnerId;
+  if (nm.player1Id && nm.player2Id === null) { nm.isBye = false; }
+  return r;
+}
+
 function computeBestBall(state) {
   const pairs = Array.isArray(state.games?.bestBall?.pairs) ? state.games.bestBall.pairs : [];
   if (pairs.length === 0) return [];
@@ -1708,6 +1757,146 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
     </div>
   );
 }
+function KoSBracketCard({ tournament, onOpen }) {
+  const ks = tournament.kingsOfSwing;
+  if (!ks?.enabled || !ks.rounds?.length) return null;
+  const currentRound = ks.rounds.find(r => r.matches.some(m => !m.winnerId && !m.isBye)) || ks.rounds[ks.rounds.length - 1];
+  const champion = ks.champion ? tournament.players.find(p => p.id === ks.champion) : null;
+  return (
+    <button onClick={onOpen} style={{ background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '14px 14px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.07)', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <IconBadge icon={Trophy} color="#7C3AED" size={28} />
+          <div>
+            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', color: C.ivory }}>King of Swing</div>
+            <div style={{ fontSize: 11, color: C.bunker }}>{champion ? `Champion: ${champion.name}` : currentRound ? currentRound.label : 'Bracket'}</div>
+          </div>
+        </div>
+        <ChevronRight size={18} color={C.bunker} />
+      </div>
+      {currentRound && !champion && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {currentRound.matches.filter(m => !m.isBye).slice(0, 3).map((m, i) => {
+            const p1 = tournament.players.find(p => p.id === m.player1Id);
+            const p2 = tournament.players.find(p => p.id === m.player2Id);
+            if (!p1 && !p2) return null;
+            return (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.pineDark, borderRadius: 8, padding: '6px 10px' }}>
+                <Chip color={p1?.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p1?.name||'?')}</Chip>
+                <span style={{ fontSize: 12, fontWeight: m.winnerId === p1?.id ? 700 : 400, color: m.winnerId === p2?.id ? C.bunker : C.ivory, flex: 1 }}>{p1?.name||'TBD'}</span>
+                <span style={{ fontSize: 10, color: C.bunker }}>vs</span>
+                <span style={{ fontSize: 12, fontWeight: m.winnerId === p2?.id ? 700 : 400, color: m.winnerId === p1?.id ? C.bunker : C.ivory, flex: 1, textAlign: 'right' }}>{p2?.name||'TBD'}</span>
+                <Chip color={p2?.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p2?.name||'?')}</Chip>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function KoSModal({ tournament, updateTournament, onClose }) {
+  const ks = tournament.kingsOfSwing || { enabled: false, seededPlayers: [], rounds: [], champion: null };
+  const players = tournament.players;
+  const setKs = (updates) => updateTournament(prev => ({ ...prev, kingsOfSwing: { ...prev.kingsOfSwing, ...updates } }));
+
+  const startBracket = () => {
+    const seeded = ks.seededPlayers.length > 0 ? ks.seededPlayers : players.map(p => p.id);
+    const seededObjs = seeded.map(id => players.find(p => p.id === id)).filter(Boolean);
+    const rounds = generateBracket(seededObjs);
+    setKs({ rounds, seededPlayers: seeded });
+  };
+
+  const recordWinner = (roundIndex, matchIndex, winnerId) => {
+    const newRounds = advanceBracket(ks.rounds, roundIndex, matchIndex, winnerId);
+    const finalMatch = newRounds[newRounds.length - 1]?.matches[0];
+    const champion = finalMatch?.winnerId || null;
+    setKs({ rounds: newRounds, ...(champion ? { champion } : {}) });
+  };
+
+  const resetBracket = () => { if (window.confirm('Reset the entire bracket? All results will be lost.')) setKs({ rounds: [], champion: null, seededPlayers: [] }); };
+
+  const champion = ks.champion ? players.find(p => p.id === ks.champion) : null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ background: C.pine, color: C.ivory, minHeight: '100vh', padding: 16, fontFamily: 'Inter, sans-serif', maxWidth: 600, margin: '0 auto', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24, textTransform: 'uppercase', letterSpacing: 0.5 }}>King of Swing</div>
+            <div style={{ fontSize: 12, color: C.bunker }}>Single elimination bracket · {bracketSize(players.length)} player bracket</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
+        </div>
+
+        {champion && (
+          <div style={{ background: `linear-gradient(135deg, #7C3AED, #4F46E5)`, borderRadius: 16, padding: '20px 16px', textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 32 }}>👑</div>
+            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 28, color: '#FFF', marginBottom: 4 }}>{champion.name}</div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>King of Swing Champion</div>
+          </div>
+        )}
+
+        {!ks.rounds?.length ? (
+          <div>
+            <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 10 }}>Player seeding (drag to reorder)</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(ks.seededPlayers.length > 0 ? ks.seededPlayers.map(id => players.find(p => p.id === id)).filter(Boolean) : players).map((p, i) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.pineDark, borderRadius: 8, padding: '8px 12px' }}>
+                    <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: C.bunker, width: 24 }}>#{i+1}</span>
+                    <Chip color={p.color}>{initials(p.name)}</Chip>
+                    <span style={{ fontSize: 14, color: C.ivory }}>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: C.bunker, marginBottom: 14, textAlign: 'center' }}>
+              {players.length} players → {bracketSize(players.length)}-player bracket · {bracketSize(players.length) - players.length} byes (top seeds)
+            </div>
+            <GoldButton onClick={startBracket}>Generate Bracket</GoldButton>
+          </div>
+        ) : (
+          <div>
+            {ks.rounds.map((round) => (
+              <div key={round.roundIndex} style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 8 }}>{round.label}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {round.matches.map((match, mi) => {
+                    const p1 = players.find(p => p.id === match.player1Id);
+                    const p2 = players.find(p => p.id === match.player2Id);
+                    if (match.isBye) return (
+                      <div key={match.id} style={{ background: C.pineDark, borderRadius: 10, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, opacity: 0.6 }}>
+                        <Chip color={p1?.color||p2?.color} style={{ width: 24, height: 24, fontSize: 9 }}>{initials((p1||p2)?.name||'?')}</Chip>
+                        <span style={{ fontSize: 13, color: C.ivory }}>{(p1||p2)?.name||'TBD'}</span>
+                        <span style={{ fontSize: 11, color: C.bunker, marginLeft: 'auto' }}>bye — advances</span>
+                      </div>
+                    );
+                    return (
+                      <div key={match.id} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, overflow: 'hidden' }}>
+                        {[{ player: p1, pid: match.player1Id }, { player: p2, pid: match.player2Id }].map(({ player, pid }, si) => (
+                          <button key={si} onClick={() => !match.winnerId && pid && recordWinner(round.roundIndex, mi, pid)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: match.winnerId === pid ? `${C.emeraldLight}` : 'transparent', border: 'none', borderBottom: si === 0 ? `1px solid ${C.turfBorder}` : 'none', padding: '10px 12px', cursor: !match.winnerId && pid ? 'pointer' : 'default', textAlign: 'left' }}>
+                            <Chip color={player?.color} style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(player?.name||'?')}</Chip>
+                            <span style={{ flex: 1, fontSize: 14, fontWeight: match.winnerId === pid ? 700 : 400, color: match.winnerId && match.winnerId !== pid ? C.bunker : C.ivory }}>{player?.name || (pid ? '?' : 'TBD')}</span>
+                            {match.winnerId === pid && <Check size={16} color={C.emerald} />}
+                            {!match.winnerId && pid && player && <span style={{ fontSize: 11, color: C.bunker }}>tap to advance →</span>}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <button onClick={resetBracket} style={{ background: 'transparent', border: `1px solid ${C.flagRed}`, color: C.flagRed, borderRadius: 10, padding: '10px 0', fontSize: 13, cursor: 'pointer', width: '100%', marginTop: 8 }}>Reset Bracket</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
   const ITEM_HEIGHT = 44;
   const VISIBLE = 5;
@@ -1954,7 +2143,7 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
   );
 }
 function getNextStepLocal(phase, state, whoami, isAdmin) { return getNextStep(phase, state, whoami, isAdmin); }
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS }) {
   if (!state.started && state.players.length === 0) return (
     <div style={{ textAlign: 'center', marginTop: 60, fontSize: 14, padding: '0 20px' }}>
       <div data-testid="no-players-state" style={{ color: C.ivoryDim, marginBottom: 14 }}>{isAdmin ? 'Finish setup and start this round to see the dashboard.' : "The admin hasn't started this round yet."}</div>
@@ -2089,6 +2278,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </button>
         );
       })()}
+
+      <KoSBracketCard tournament={tournament} onOpen={onOpenKoS} />
 
       <ScrollingLeaderboard
         leaderboard={leaderboard}
@@ -2867,6 +3058,7 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
   return (
     <Accordion title="Games" badge={Object.values(g).filter(x => x.enabled).length + (rc.enabled ? 1 : 0)}>
       <ToggleRow label="Ryder Cup" sub="Two teams, match play points, standings tracked across every round" enabled={rc.enabled} onToggle={toggleRyderCup} />
+      <ToggleRow label="👑 King of Swing" sub="Single elimination bracket tournament — full round per match" enabled={tournament.kingsOfSwing?.enabled} onToggle={() => updateTournament(p => ({ ...p, kingsOfSwing: { ...(p.kingsOfSwing||{}), enabled: !p.kingsOfSwing?.enabled } }))} />
       {rc.enabled && (
         <div style={{ marginLeft: 28, marginBottom: 14 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -2979,10 +3171,51 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
         </Accordion>
 
         <Field label={`Round ${roundIdx + 1} name`}><input value={state.roundName} onChange={e => updateRound(p => ({ ...p, name: e.target.value }))} style={inputStyle} placeholder={`Round ${roundIdx + 1}`} /></Field>
-        <CourseSection state={state} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} />
+        <Field label="Handicap mode">
+          <select value={state.handicapMode || 'none'} onChange={e => updateRound(p => ({ ...p, handicapMode: e.target.value }))} style={inputStyle}>
+            <option value="none">None — gross scores only</option>
+            <option value="full">Full course handicap</option>
+            <option value="low-man">Off low man — strokes vs lowest handicap in group</option>
+          </select>
+        </Field>
+        <Field label="Match format">
+          <select value={state.matchFormat || 'stroke-play'} onChange={e => updateRound(p => ({ ...p, matchFormat: e.target.value }))} style={inputStyle}>
+            <option value="stroke-play">Stroke Play</option>
+            <option value="best-ball">Best Ball</option>
+            <option value="captain-choice">Captain's Choice (Scramble)</option>
+            <option value="singles">Singles Match Play</option>
+          </select>
+        </Field>
         <PlayersSection state={state} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} flights={tournament.flights} onOpenImport={() => setImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} />
         <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} />
-        <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
+        <Accordion title="Round Roster" badge={state.roundPlayers?.length > 0 ? state.roundPlayers.length + ' overrides' : null}>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 10, lineHeight: 1.5 }}>By default this round uses the full tournament roster. Remove players here to exclude them from this round only.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+            {tournament.players.map(p => {
+              const excluded = state.roundPlayers?.length > 0 && !state.roundPlayers.find(rp => rp.id === p.id);
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: excluded ? 0.4 : 1 }}>
+                  <Chip color={p.color}>{initials(p.name)}</Chip>
+                  <span style={{ flex: 1, fontSize: 13, color: C.ivory }}>{p.name}</span>
+                  <button onClick={() => {
+                    const currentList = state.roundPlayers?.length > 0 ? state.roundPlayers : tournament.players;
+                    if (excluded) {
+                      updateRound(prev => ({ ...prev, roundPlayers: [...(prev.roundPlayers||[]), p] }));
+                    } else {
+                      const next = currentList.filter(rp => rp.id !== p.id);
+                      updateRound(prev => ({ ...prev, roundPlayers: next.length === tournament.players.length ? [] : next }));
+                    }
+                  }} style={{ background: 'transparent', border: 'none', color: excluded ? C.emerald : C.flagRed, cursor: 'pointer', fontSize: 12, padding: '2px 6px' }}>
+                    {excluded ? '+ Include' : '− Exclude'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {state.roundPlayers?.length > 0 && (
+            <GhostButton onClick={() => updateRound(prev => ({ ...prev, roundPlayers: [] }))}>Reset to full tournament roster</GhostButton>
+          )}
+        </Accordion>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 10 }}><GoldButton style={{ flex: 1, padding: '13px 0', fontSize: 15 }} disabled={state.players.length < 1} onClick={() => { startRound(); onClose(); }}>{state.started ? 'Save & close' : 'Start this round'}</GoldButton></div>
         {state.started && <GhostButton style={{ marginTop: 10, width: '100%', textAlign: 'center', color: C.flagRed, borderColor: C.flagRed }} onClick={resetScores}>Reset scores for this round</GhostButton>}
@@ -4019,6 +4252,7 @@ export default function DuffBook() {
   const [scanOpen, setScanOpen] = useState(false);
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
+  const [kosOpen, setKosOpen] = useState(false);
   const [tournamentBetBuilderOpen, setTournamentBetBuilderOpen] = useState(false);
   const [betTemplates, setBetTemplates] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
@@ -4612,7 +4846,7 @@ export default function DuffBook() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} />}
         {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={submitScorecard} onUnlock={unlockScorecard} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'games' && (
@@ -4676,6 +4910,7 @@ export default function DuffBook() {
       {roundCompleteOpen && <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} />}
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
       {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
+      {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </div>
   );
