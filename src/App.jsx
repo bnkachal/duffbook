@@ -1343,111 +1343,103 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
   const doJoin = () => { if (code.trim()) onJoin(code.trim()); };
 
   return (
-    <div style={{ minHeight: '100vh', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ height: '100dvh', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
       <FontLoader />
       {/* Layered background */}
       <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center 30%', backgroundRepeat: 'no-repeat' }} />
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,8,3,0.55) 0%, rgba(5,8,3,0.30) 40%, rgba(5,8,3,0.92) 100%)' }} />
-      {/* Gold top accent line */}
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,8,3,0.60) 0%, rgba(5,8,3,0.25) 35%, rgba(5,8,3,0.95) 80%)' }} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, #C4900A 30%, #D4A000 70%, transparent)', zIndex: 1 }} />
 
-      {/* Hero text — top of screen */}
-      <div style={{ position: 'absolute', top: '12%', left: 0, right: 0, textAlign: 'center', zIndex: 1, padding: '0 24px' }}>
-        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 58, letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 10 }}>DuffBook</div>
+      {/* Hero — top portion */}
+      <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 'max(40px, 10vh)', paddingBottom: 20 }}>
+        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 10 }}>DuffBook</div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(196,144,10,0.15)', border: '1px solid rgba(196,144,10,0.4)', borderRadius: 999, padding: '5px 16px', backdropFilter: 'blur(8px)' }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#C4900A' }} />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', fontWeight: 600 }}>Live Golf Scoring & Side Bets</span>
         </div>
       </div>
 
-      {/* Bottom card panel */}
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 430, padding: '28px 20px 44px' }}>
-        {/* Name field — only show if no name saved */}
-        {!hasName && (
-          <div style={{ marginBottom: 14 }}>
+      {/* Action panel — bottom portion, always visible */}
+      <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', width: '100%', maxWidth: 430, margin: '0 auto', padding: '0 20px max(24px, env(safe-area-inset-bottom, 24px)) 20px', boxSizing: 'border-box' }}>
+
+        {/* Name or welcome */}
+        {!hasName ? (
+          <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: 'Oswald, sans-serif', marginBottom: 6 }}>Your name</div>
             <input
               value={localName}
               onChange={e => { setLocalName(e.target.value); if (e.target.value.trim()) onSaveName(e.target.value.trim()); }}
-              placeholder="Enter your name"
+              placeholder="Enter your name to get started"
               data-testid="name-input"
-              style={{ width: '100%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: '1.5px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: '14px 16px', color: '#FFFFFF', fontSize: 16, outline: 'none', boxSizing: 'border-box', letterSpacing: 0.3 }}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: '1.5px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: '13px 16px', color: '#FFFFFF', fontSize: 16, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
-        )}
-
-        {/* Welcome back if name exists */}
-        {hasName && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Welcome back, <span style={{ color: '#FFF', fontWeight: 700 }}>{deviceName}</span></div>
-            <button onClick={onOpenProfile} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', padding: '2px 0' }}>Not you?</button>
+            <button onClick={onOpenProfile} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', padding: 0 }}>Not you?</button>
           </div>
         )}
 
-        {/* Primary CTA — Start */}
-        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ position: 'relative', width: '100%', padding: '18px 0', fontSize: 16, background: 'linear-gradient(135deg, #1a6b3c 0%, #C4900A 100%)', color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 6px 0 rgba(0,0,0,0.35), 0 2px 24px rgba(196,144,10,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>⛳</span> Start a Tournament
+        {/* Start button */}
+        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: 'linear-gradient(135deg, #1a6b3c 0%, #C4900A 100%)', color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 5px 0 rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <span>⛳</span> Start a Tournament
         </button>
 
         {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase' }}>or join with a code</span>
-          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>or join with a code</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
         </div>
 
         {/* Join code row */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: joinError ? 8 : 0 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: joinError ? 8 : 12 }}>
           <input
             ref={codeInputRef}
             value={code}
-            onChange={e => { setCode(e.target.value.toUpperCase()); }}
+            onChange={e => setCode(e.target.value.toUpperCase())}
             onFocus={() => setCodeFocused(true)}
             onBlur={() => setCodeFocused(false)}
             onKeyDown={e => { if (e.key === 'Enter') doJoin(); }}
             data-testid="join-code-input"
             placeholder="ROUND CODE"
             autoCapitalize="characters"
-            style={{ flex: 1, background: codeFocused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: `1.5px solid ${joinError ? 'rgba(220,38,38,0.7)' : codeFocused ? 'rgba(196,144,10,0.7)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, padding: '14px 12px', color: '#FFF', fontSize: 20, textAlign: 'center', letterSpacing: 5, outline: 'none', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, transition: 'all 0.2s', boxSizing: 'border-box' }}
+            style={{ flex: 1, background: codeFocused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: `1.5px solid ${joinError ? 'rgba(220,38,38,0.7)' : codeFocused ? 'rgba(196,144,10,0.7)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, padding: '14px 12px', color: '#FFF', fontSize: 20, textAlign: 'center', letterSpacing: 5, outline: 'none', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, boxSizing: 'border-box' }}
           />
-          <button
-            onClick={doJoin}
-            data-testid="join-btn"
-            disabled={joinChecking || !code.trim()}
-            style={{ padding: '0 22px', background: code.trim() ? 'linear-gradient(135deg, #C4900A, #D4A000)' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? '0 4px 0 rgba(0,0,0,0.25)' : 'none', transition: 'all 0.2s', opacity: joinChecking ? 0.7 : 1 }}
-          >
+          <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking || !code.trim()} style={{ padding: '0 20px', background: code.trim() ? 'linear-gradient(135deg, #C4900A, #D4A000)' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: '#FFF', fontFamily: 'Oswald, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? '0 4px 0 rgba(0,0,0,0.25)' : 'none', opacity: joinChecking ? 0.7 : 1, whiteSpace: 'nowrap' }}>
             {joinChecking ? '...' : 'Join'}
           </button>
         </div>
 
-        {/* Error message */}
         {joinError && (
-          <div style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: '#FCA5A5', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.35)', borderRadius: 10, padding: '9px 14px', marginBottom: 10, fontSize: 12, color: '#FCA5A5', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⚠</span> {joinError}
           </div>
         )}
 
-        {/* Recent rounds */}
+        {/* Recent rounds — compact */}
         {myTournaments && myTournaments.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textAlign: 'center', marginBottom: 8 }}>Recent rounds</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {myTournaments.map((t, i) => (
-                <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? 'linear-gradient(135deg, rgba(26,107,60,0.5), rgba(196,144,10,0.4))' : 'rgba(255,255,255,0.06)', border: i === 0 ? '1px solid rgba(196,144,10,0.35)' : '1px solid rgba(255,255,255,0.09)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', textAlign: 'left', width: '100%', backdropFilter: 'blur(8px)' }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? '#C4900A' : 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textAlign: 'center', marginBottom: 6 }}>Recent rounds</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {myTournaments.slice(0, 3).map((t, i) => (
+                <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? 'linear-gradient(135deg, rgba(26,107,60,0.45), rgba(196,144,10,0.35))' : 'rgba(255,255,255,0.06)', border: i === 0 ? '1px solid rgba(196,144,10,0.3)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? '#C4900A' : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 13, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
       </div>
+
+      {/* Spacer to push action panel down from center */}
+      <div style={{ flex: 1 }} />
     </div>
   );
 }
-
-
 function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
   const [selected, setSelected] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
