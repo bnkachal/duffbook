@@ -1805,6 +1805,136 @@ function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, reso
   );
 }
 function getNextStepLocal(phase, state, whoami, isAdmin) { return getNextStep(phase, state, whoami, isAdmin); }
+function KoSBracketCard({ tournament, onOpen }) {
+  const ks = tournament?.kingsOfSwing;
+  if (!ks?.enabled) return null;
+  const players = tournament.players;
+  const currentRound = Array.isArray(ks.rounds) ? ks.rounds.find(r => r.matches.some(m => !m.winnerId && !m.isBye)) || ks.rounds[ks.rounds.length - 1] : null;
+  const champion = ks.champion ? players.find(p => p.id === ks.champion) : null;
+  return (
+    <button onClick={onOpen} style={{ background: '#FFFFFF', border: 'none', borderRadius: 16, padding: '14px 14px 10px', boxShadow: C.shadow, width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <IconBadge icon={Trophy} color="#7C3AED" size={28} />
+          <div>
+            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', color: C.ivory }}>King of Swing</div>
+            <div style={{ fontSize: 11, color: C.bunker }}>{champion ? `Champion: ${champion.name}` : currentRound ? currentRound.label : 'Bracket not started'}</div>
+          </div>
+        </div>
+        <ChevronRight size={18} color={C.bunker} />
+      </div>
+      {currentRound && !champion && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {currentRound.matches.filter(m => !m.isBye).slice(0, 3).map((m) => {
+            const p1 = players.find(p => p.id === m.player1Id);
+            const p2 = players.find(p => p.id === m.player2Id);
+            if (!p1 && !p2) return null;
+            return (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.pineDark, borderRadius: 8, padding: '6px 10px' }}>
+                <Chip color={p1?.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p1?.name||'?')}</Chip>
+                <span style={{ fontSize: 12, fontWeight: m.winnerId === p1?.id ? 700 : 400, color: m.winnerId === p2?.id ? C.bunker : C.ivory, flex: 1 }}>{p1?.name||'TBD'}</span>
+                <span style={{ fontSize: 10, color: C.bunker }}>vs</span>
+                <span style={{ fontSize: 12, fontWeight: m.winnerId === p2?.id ? 700 : 400, color: m.winnerId === p1?.id ? C.bunker : C.ivory, flex: 1, textAlign: 'right' }}>{p2?.name||'TBD'}</span>
+                <Chip color={p2?.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p2?.name||'?')}</Chip>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function KoSModal({ tournament, updateTournament, onClose }) {
+  const ks = tournament?.kingsOfSwing || { enabled: false, seededPlayers: [], rounds: [], champion: null };
+  const players = tournament.players;
+  const setKs = (updates) => updateTournament(prev => ({ ...prev, kingsOfSwing: { ...(prev.kingsOfSwing||{}), ...updates } }));
+  const startBracket = () => {
+    const seeded = Array.isArray(ks.seededPlayers) && ks.seededPlayers.length > 0 ? ks.seededPlayers : players.map(p => p.id);
+    const seededObjs = seeded.map(id => players.find(p => p.id === id)).filter(Boolean);
+    setKs({ rounds: generateBracket(seededObjs), seededPlayers: seeded });
+  };
+  const recordWinner = (roundIndex, matchIndex, winnerId) => {
+    const newRounds = advanceBracket(Array.isArray(ks.rounds) ? ks.rounds : [], roundIndex, matchIndex, winnerId);
+    const finalMatch = newRounds[newRounds.length - 1]?.matches[0];
+    setKs({ rounds: newRounds, ...(finalMatch?.winnerId ? { champion: finalMatch.winnerId } : {}) });
+  };
+  const resetBracket = () => { if (window.confirm('Reset the entire bracket? All results will be lost.')) setKs({ rounds: [], champion: null, seededPlayers: [] }); };
+  const champion = ks.champion ? players.find(p => p.id === ks.champion) : null;
+  const rounds = Array.isArray(ks.rounds) ? ks.rounds : [];
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ background: C.pine, color: C.ivory, minHeight: '100vh', padding: 16, fontFamily: 'Inter, sans-serif', maxWidth: 600, margin: '0 auto', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24, textTransform: 'uppercase', letterSpacing: 0.5 }}>King of Swing</div>
+            <div style={{ fontSize: 12, color: C.bunker }}>{players.length} players → {bracketSize(players.length)}-player bracket · {bracketSize(players.length) - players.length} byes</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
+        </div>
+        {champion && (
+          <div style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', borderRadius: 16, padding: '20px 16px', textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 32 }}>👑</div>
+            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 28, color: '#FFF', marginBottom: 4 }}>{champion.name}</div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>King of Swing Champion</div>
+          </div>
+        )}
+        {!rounds.length ? (
+          <div>
+            <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 10 }}>Player seeding</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {players.map((p, i) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.pineDark, borderRadius: 8, padding: '8px 12px' }}>
+                    <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: C.bunker, width: 24 }}>#{i+1}</span>
+                    <Chip color={p.color}>{initials(p.name)}</Chip>
+                    <span style={{ fontSize: 14, color: C.ivory }}>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <GoldButton onClick={startBracket}>Generate Bracket</GoldButton>
+          </div>
+        ) : (
+          <div>
+            {rounds.map((round) => (
+              <div key={round.roundIndex} style={{ marginBottom: 20 }}>
+                <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, color: C.bunker, marginBottom: 8 }}>{round.label}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {round.matches.map((match, mi) => {
+                    const p1 = players.find(p => p.id === match.player1Id);
+                    const p2 = players.find(p => p.id === match.player2Id);
+                    if (match.isBye) return (
+                      <div key={match.id} style={{ background: C.pineDark, borderRadius: 10, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, opacity: 0.6 }}>
+                        <Chip color={(p1||p2)?.color} style={{ width: 24, height: 24, fontSize: 9 }}>{initials((p1||p2)?.name||'?')}</Chip>
+                        <span style={{ fontSize: 13, color: C.ivory }}>{(p1||p2)?.name||'TBD'}</span>
+                        <span style={{ fontSize: 11, color: C.bunker, marginLeft: 'auto' }}>bye — advances</span>
+                      </div>
+                    );
+                    return (
+                      <div key={match.id} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, overflow: 'hidden' }}>
+                        {[{ player: p1, pid: match.player1Id }, { player: p2, pid: match.player2Id }].map(({ player, pid }, si) => (
+                          <button key={si} onClick={() => !match.winnerId && pid && recordWinner(round.roundIndex, mi, pid)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: match.winnerId === pid ? C.emeraldLight : 'transparent', border: 'none', borderBottom: si === 0 ? `1px solid ${C.turfBorder}` : 'none', padding: '10px 12px', cursor: !match.winnerId && pid ? 'pointer' : 'default', textAlign: 'left' }}>
+                            <Chip color={player?.color} style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(player?.name||'?')}</Chip>
+                            <span style={{ flex: 1, fontSize: 14, fontWeight: match.winnerId === pid ? 700 : 400, color: match.winnerId && match.winnerId !== pid ? C.bunker : C.ivory }}>{player?.name||(pid ? '?' : 'TBD')}</span>
+                            {match.winnerId === pid && <Check size={16} color={C.emerald} />}
+                            {!match.winnerId && pid && player && <span style={{ fontSize: 11, color: C.bunker }}>tap to advance →</span>}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <button onClick={resetBracket} style={{ background: 'transparent', border: `1px solid ${C.flagRed}`, color: C.flagRed, borderRadius: 10, padding: '10px 0', fontSize: 13, cursor: 'pointer', width: '100%', marginTop: 8 }}>Reset Bracket</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS }) {
   if (!state.started && state.players.length === 0) return (
     <div style={{ textAlign: 'center', marginTop: 60, fontSize: 14, padding: '0 20px' }}>
