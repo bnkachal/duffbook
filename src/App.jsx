@@ -1768,9 +1768,9 @@ function GamesTab({ state }) {
   const g = state.games;
   const stats = computeStats(state);
   const scoreFn = holeScoreFn(state, false);
-  const skins = g?.skins?.enabled ? computeSkins(state, scoreFn) : null;
-  const nassau = g?.nassau?.enabled ? computeNassau(state, scoreFn) : null;
-  const stableford = g?.stableford?.enabled ? computeStableford(state, scoreFn) : null;
+  const skins = g?.skins?.enabled ? computeSkins(state, holeScoreFn(state, g?.skins?.net ?? false)) : null;
+  const nassau = g?.nassau?.enabled ? computeNassau(state, holeScoreFn(state, g?.nassau?.net ?? false)) : null;
+  const stableford = g?.stableford?.enabled ? computeStableford(state, holeScoreFn(state, g?.stableford?.net ?? true)) : null;
   const matchplay = g?.matchplay?.enabled ? computeMatchplay(state) : null;
   const bestBall = g?.bestBall?.enabled ? computeBestBall(state) : null;
 
@@ -1809,7 +1809,7 @@ function GamesTab({ state }) {
             {state.players.map(p => (
               <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={p.color}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{p.name}</span></div>
-                <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: C.gold }}>{stableford.totals[p.id]?.points ?? 0}</span>
+                <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: C.gold }}>{stableford?.totals?.[p.id]?.points ?? 0}</span>
               </div>
             ))}
           </div>
@@ -1832,7 +1832,7 @@ function GamesTab({ state }) {
           </div>
         </div>
       )}
-      {matchplay && matchplay.results.length > 0 && (
+      {matchplay && Array.isArray(matchplay.results) && matchplay.results.length > 0 && (
         <div>
           <SectionHeader title="Match Play" sub="hole by hole" icon={Swords} iconColor={C.blue} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
@@ -1956,7 +1956,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
   );
 }
 
-function BetsTab({ state, isAdmin, whoami, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
+function BetsTab({ state, isAdmin, whoami, viewAsAdmin, deviceName, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
   const customBets = Array.isArray(state.customBets) ? state.customBets : [];
@@ -5067,7 +5067,7 @@ export default function DuffBook() {
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'games' && (
           <div>
-            <BetsTab state={state} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />
+            <BetsTab state={state} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />
             <div style={{ borderTop: `2px solid ${C.turfBorder}`, marginTop: 24, paddingTop: 24 }}>
               <GamesTab state={state} />
             </div>
@@ -5076,7 +5076,7 @@ export default function DuffBook() {
             </div>
           </div>
         )}
-        {hasPlayers && activeTab === 'bets' && <BetsTab state={state} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
+        {hasPlayers && activeTab === 'bets' && <BetsTab state={state} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && <SettleTab tournament={tournament} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} />}
       </div>
 
