@@ -9,16 +9,16 @@ import {
 
 /* ============================== DESIGN TOKENS ============================== */
 const C = {
-  pine: '#F2F4EF', pineDark: '#E5EAE0', turf: '#FFFFFF', turfLight: '#F8FAF5',
-  turfBorder: '#D0D8C8', ivory: '#0F1117', ivoryDim: '#4B5563',
-  gold: '#C4900A', goldBright: '#D4A000', goldLight: '#FEF3C7',
-  flagRed: '#C41E3A', bunker: '#6B7280',
-  blue: '#1D4ED8', blueBright: '#2563EB', emerald: '#005C38', emeraldLight: '#D1FAE5',
-  shadow: '0 2px 16px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04)',
-  shadowHero: '0 8px 32px rgba(0,0,0,0.11), 0 0 0 1px rgba(0,0,0,0.06)',
+  pine: '#0A0C0F', pineDark: '#0E1013', turf: '#161A1F', turfLight: '#1D2128',
+  turfBorder: '#262B33', ivory: '#FFFFFF', ivoryDim: '#9BA1AC',
+  gold: '#FFC72C', goldBright: '#FFD75E', goldLight: '#FFC72C22',
+  flagRed: '#FF4747', bunker: '#7D8590',
+  blue: '#3B82F6', blueBright: '#60A5FA', emerald: '#1ED760', emeraldLight: '#1ED76022',
+  shadow: '0 2px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)',
+  shadowHero: '0 8px 32px rgba(30,215,96,0.08), 0 0 0 1px rgba(255,255,255,0.06)',
 };
-const CHIP_COLORS = ['#B8860B', '#C41E3A', '#1D4ED8', '#4B5563', '#7C3AED', '#00754A', '#B45309', '#0369A1'];
-const FLIGHT_COLORS = ['#C41E3A', '#1D4ED8', '#B8860B', '#00754A'];
+const CHIP_COLORS = ['#FFC72C', '#FF4747', '#3B82F6', '#8B93A1', '#A855F7', '#1ED760', '#F97316', '#06B6D4'];
+const FLIGHT_COLORS = ['#FF4747', '#3B82F6', '#FFC72C', '#1ED760'];
 const TABS = ['home', 'card', 'games', 'settle'];
 
 /* ============================== COURSE DATA MODEL ==============================
@@ -230,6 +230,51 @@ function courseHandicap(index, slope) {
   if (index == null || !slope) return null;
   return Math.round(index * (slope / 113));
 }
+
+/* ---- Stroke allocation for match display ---- */
+// Singles: higher-CH player gets strokes = CH diff, on their hardest holes by stroke index
+function singlesStrokeHoles(chA, chB, strokeIndexArr, numHoles) {
+  if (chA == null || chB == null) return { strokesToA: 0, strokesToB: 0, holesForA: [], holesForB: [] };
+  const diff = chA - chB;
+  const strokesToA = diff > 0 ? diff : 0;
+  const strokesToB = diff < 0 ? -diff : 0;
+  const strokeCount = Math.max(strokesToA, strokesToB);
+  const holes = [];
+  for (let i = 0; i < numHoles; i++) holes.push(i);
+  holes.sort((a, b) => (strokeIndexArr[a] || a + 1) - (strokeIndexArr[b] || b + 1));
+  const baseStrokes = Math.floor(strokeCount / numHoles);
+  const extraCount = strokeCount % numHoles;
+  const extraHoles = holes.slice(0, extraCount);
+  const holeStrokeMap = {};
+  holes.forEach(h => { holeStrokeMap[h] = baseStrokes + (extraHoles.includes(h) ? 1 : 0); });
+  const strokeHoleIndices = Object.keys(holeStrokeMap).filter(h => holeStrokeMap[h] > 0).map(Number);
+  return {
+    strokesToA, strokesToB,
+    holesForA: strokesToA > 0 ? strokeHoleIndices : [],
+    holesForB: strokesToB > 0 ? strokeHoleIndices : [],
+  };
+}
+// 2v2 Best Ball off low man: low man = lowest individual CH among all 4 in the match.
+// Each other player's strokes = their CH - low man CH. Team combined = sum of teammates' adjusted strokes.
+function lowManStrokes(match, state) {
+  const allIds = [...(match.sideA || []), ...(match.sideB || [])];
+  const chById = {};
+  allIds.forEach(id => {
+    const p = state.players.find(pl => pl.id === id);
+    chById[id] = p ? courseHandicap(p.handicap, state.courseSlope) : null;
+  });
+  const validChs = allIds.map(id => chById[id]).filter(ch => ch != null);
+  if (validChs.length === 0) return null;
+  const lowMan = Math.min(...validChs);
+  const adjById = {};
+  allIds.forEach(id => { adjById[id] = chById[id] != null ? Math.max(0, chById[id] - lowMan) : 0; });
+  const teamARaw = (match.sideA || []).reduce((s, id) => s + (chById[id] || 0), 0);
+  const teamBRaw = (match.sideB || []).reduce((s, id) => s + (chById[id] || 0), 0);
+  const teamAAdj = (match.sideA || []).reduce((s, id) => s + (adjById[id] || 0), 0);
+  const teamBAdj = (match.sideB || []).reduce((s, id) => s + (adjById[id] || 0), 0);
+  return { lowMan, chById, adjById, teamARaw, teamBRaw, teamAAdj, teamBAdj };
+}
+
 function fmtMoney(n) { const s = n < 0 ? '-' : ''; return `${s}$${Math.abs(n).toFixed(n % 1 ? 2 : 0)}`; }
 function fmtClockTime(ms) { if (ms == null) return ''; return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 function fmtTimeAgo(ms, now) { if (ms == null) return ''; const mins = Math.max(0, Math.round((now - ms) / 60000)); if (mins < 1) return 'just now'; if (mins === 1) return '1 min ago'; if (mins < 60) return `${mins} min ago`; const hrs = Math.round(mins / 60); return `${hrs} hr${hrs !== 1 ? 's' : ''} ago`; }
@@ -1520,7 +1565,7 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
       {/* 2-column player grid */}
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, alignContent: 'start' }}>
         {sorted.filter(p => !suggestion || p.id !== suggestion.id).map(p => (
-          <button key={p.id} data-testid={`player-pick-btn-${p.id}`} onClick={() => setSelected(p)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '11px 12px', cursor: 'pointer', textAlign: 'left', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
+          <button key={p.id} data-testid={`player-pick-btn-${p.id}`} onClick={() => setSelected(p)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '11px 12px', cursor: 'pointer', textAlign: 'left', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
             <Chip color={p.color} style={{ width: 32, height: 32, fontSize: 12, flexShrink: 0 }}>{initials(p.name)}</Chip>
             <span style={{ fontSize: 13, fontWeight: 600, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
           </button>
@@ -1566,6 +1611,19 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
   // Gross/net totals
   const netTotal = myCourseHcp != null ? runningGross - myCourseHcp : null;
 
+  // Front 9 / Back 9 breakdown (gross + net), for the 3-row summary
+  const frontScores = allScores.slice(0, 9);
+  const backScores = allScores.slice(9, 18);
+  const frontGross = frontScores.reduce((a, b) => a + (b || 0), 0);
+  const backGross = backScores.reduce((a, b) => a + (b || 0), 0);
+  const frontScored = frontScores.filter(s => s != null).length;
+  const backScored = backScores.filter(s => s != null).length;
+  // Split course handicap roughly in half across front/back (standard convention: extra stroke to front on odd CH)
+  const frontHcpShare = myCourseHcp != null ? Math.ceil(myCourseHcp / 2) : null;
+  const backHcpShare = myCourseHcp != null ? Math.floor(myCourseHcp / 2) : null;
+  const frontNet = frontHcpShare != null && frontScored > 0 ? frontGross - frontHcpShare : null;
+  const backNet = backHcpShare != null && backScored > 0 ? backGross - backHcpShare : null;
+
   // Hole strip — plain JSX element (not a nested component) to avoid remount-on-render issues
   const holeStripEl = (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(state.numHoles, 9)}, 1fr)`, gap: 4, marginBottom: 14 }}>
@@ -1591,7 +1649,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>Results appear when the admin wraps up — you're done! 🍺</div>
         </div>
         {holeStripEl}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', borderRadius: 18, boxShadow: C.shadow, padding: 28, marginBottom: 14, opacity: 0.8 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.turf, borderRadius: 18, boxShadow: C.shadow, padding: 28, marginBottom: 14, opacity: 0.8 }}>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.5, color: C.bunker, marginBottom: 6 }}>Hole {h + 1} · Par {par}</div>
           <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 80, lineHeight: 1, color: isDefault ? C.turfBorder : diffColor, marginBottom: 6 }}>{displayVal}</div>
           {!isDefault && <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, color: diffColor }}>{termForDiff(diff)}</div>}
@@ -1606,13 +1664,20 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
     const myTotals = state.nineHoleTotals?.[whoami.id] || {};
     return (
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 200px)' }} className="tab-content">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.ivory }}>{whoami.name}</div>
-            {scoredCount > 0 && <div style={{ fontSize: 11, color: C.bunker }}>Gross {runningGross} · Net {netTotal != null ? netTotal : '—'}</div>}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.ivory, marginBottom: 4 }}>{whoami.name}</div>
+            {scoredCount > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '38px 1fr 1fr', gap: '1px 8px', fontSize: 11 }}>
+                <span></span><span style={{ color: C.bunker, fontWeight: 600 }}>Gross</span><span style={{ color: C.bunker, fontWeight: 600 }}>Net</span>
+                <span style={{ color: C.bunker }}>F9</span><span style={{ color: C.ivory }}>{frontScored > 0 ? frontGross : '—'}</span><span style={{ color: C.ivory }}>{frontNet != null ? frontNet : '—'}</span>
+                <span style={{ color: C.bunker }}>B9</span><span style={{ color: C.ivory }}>{backScored > 0 ? backGross : '—'}</span><span style={{ color: C.ivory }}>{backNet != null ? backNet : '—'}</span>
+                <span style={{ color: C.bunker, fontWeight: 700 }}>Tot</span><span style={{ color: C.ivory, fontWeight: 700 }}>{runningGross}</span><span style={{ color: C.ivory, fontWeight: 700 }}>{netTotal != null ? netTotal : '—'}</span>
+              </div>
+            )}
           </div>
           {myHcp != null && (
-            <div style={{ background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '6px 12px', textAlign: 'center', boxShadow: C.shadow }}>
+            <div style={{ background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '6px 12px', textAlign: 'center', boxShadow: C.shadow }}>
               <div style={{ fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>HCP</div>
               <div style={{ fontSize: 18, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{myHcp}</div>
               {myCourseHcp != null && <div style={{ fontSize: 9, color: C.bunker }}>course <strong style={{ color: C.ivory }}>{myCourseHcp}</strong></div>}
@@ -1627,7 +1692,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           </div>
         )}
         {holeStripEl}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', borderRadius: 20, boxShadow: C.shadowHero, padding: 28, marginBottom: 14, transition: 'background 0.3s' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.turf, borderRadius: 20, boxShadow: C.shadowHero, padding: 28, marginBottom: 14, transition: 'background 0.3s' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
             <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.5, color: C.bunker }}>Hole {h + 1} · Par {par}</div>
             {scoredCount > 0 && <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: runningColor, fontWeight: 700 }}>{runningStr} thru {scoredCount}</div>}
@@ -1638,7 +1703,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           {isDefault && <div style={{ fontSize: 12, color: '#D1D5DB' }}>tap score · use +/− to adjust</div>}
         </div>
         <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-          <button onClick={() => tapMinus(whoami.id, h)} style={{ flex: 1, height: 80, borderRadius: 16, background: '#FFFFFF', border: `2px solid ${C.turfBorder}`, color: C.ivory, fontSize: 36, fontWeight: 700, cursor: 'pointer', boxShadow: C.shadow, transition: 'transform 0.1s' }}>−</button>
+          <button onClick={() => tapMinus(whoami.id, h)} style={{ flex: 1, height: 80, borderRadius: 16, background: C.turf, border: `2px solid ${C.turfBorder}`, color: C.ivory, fontSize: 36, fontWeight: 700, cursor: 'pointer', boxShadow: C.shadow, transition: 'transform 0.1s' }}>−</button>
           <button onClick={() => tapPlus(whoami.id, h)} style={{ flex: 1, height: 80, borderRadius: 16, background: C.ivory, border: 'none', color: '#FFF', fontSize: 36, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 0 rgba(0,0,0,0.2)', transition: 'transform 0.1s' }}>+</button>
         </div>
         {anyScored && !isLastHole && (
@@ -1700,7 +1765,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           const sdisplay = sv != null ? sv : par;
           const sIsDefault = sv == null;
           return (
-            <div key={p.id} style={{ background: '#FFFFFF', border: `1px solid ${isSubmit ? C.emerald : C.turfBorder}`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: C.shadow }}>
+            <div key={p.id} style={{ background: C.turf, border: `1px solid ${isSubmit ? C.emerald : C.turfBorder}`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: C.shadow }}>
               <Chip color={p.color}>{initials(p.name)}</Chip>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
@@ -1921,7 +1986,10 @@ function LeaderboardTab({ state, stats }) {
               <div style={{ fontSize: 14, fontWeight: 600, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
               <div style={{ fontSize: 11, color: C.bunker }}>Thru {p.thru}</div>
             </div>
-            <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, color: p.thru === 0 ? C.bunker : scoreColor }}>{scoreStr}</span>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, lineHeight: 1, color: p.thru === 0 ? C.bunker : scoreColor }}>{scoreStr}</div>
+              {useNet && p.thru > 0 && <div style={{ fontSize: 10, color: C.bunker, marginTop: 2 }}>gross {fmtToPar(p.toPar)}</div>}
+            </div>
           </div>
         );
       })}
@@ -1969,8 +2037,8 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
         {shouldScroll && <div style={{ display: 'flex', gap: 2 }}>{[0,1,2].map(i => <div key={i} style={{ width: 3, height: paused ? 6 : 10, borderRadius: 999, background: paused ? C.bunker : C.gold, animation: paused ? 'none' : `scrollDot 1s ease-in-out ${i*0.2}s infinite alternate` }} />)}</div>}
       </div>
       <div style={{ padding: '0 0 0 0' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 44px 50px', padding: '4px 14px', background: C.pineDark }}>
-          {['#','Player','Thru','Score'].map(h => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Oswald, sans-serif', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: h === 'Score' ? 'right' : 'left' }}>{h}</div>)}
+        <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '4px 14px', background: C.pineDark }}>
+          {['#','Player','Thru', useNet ? 'Net (Gr)' : 'Score'].map(h => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Oswald, sans-serif', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: h === 'Score' || h === 'Net (Gr)' ? 'right' : 'left' }}>{h}</div>)}
         </div>
         <div style={{ height: ITEM_HEIGHT * VISIBLE, overflow: 'hidden' }}>
           {rows.map((p, idx) => {
@@ -1979,14 +2047,17 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
             const scoreStr = p.thru === 0 ? '–' : fmtToPar(score);
             const scoreColor = score < 0 ? C.emerald : score > 0 ? C.flagRed : C.bunker;
             return (
-              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 44px 50px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent' }}>
+              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent' }}>
                 <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400 }}>{rank}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <Chip color={p.color} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
                   <span style={{ fontSize: 13, fontWeight: rank === 1 ? 700 : 500, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 12, color: C.bunker }}>{p.thru > 0 ? p.thru : '–'}</div>
-                <div style={{ textAlign: 'right', fontFamily: 'Anton, sans-serif', fontSize: 18, color: p.thru === 0 ? C.bunker : scoreColor }}>{scoreStr}</div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 18, lineHeight: 1, color: p.thru === 0 ? C.bunker : scoreColor }}>{scoreStr}</div>
+                  {useNet && p.thru > 0 && <div style={{ fontSize: 9, color: C.bunker, marginTop: 1 }}>gr {fmtToPar(p.toPar)}</div>}
+                </div>
               </div>
             );
           })}
@@ -2131,7 +2202,7 @@ function KoSBracketCard({ tournament, onOpen }) {
   const currentRound = Array.isArray(ks.rounds) ? ks.rounds.find(r => r.matches.some(m => !m.winnerId && !m.isBye)) || ks.rounds[ks.rounds.length - 1] : null;
   const champion = ks.champion ? players.find(p => p.id === ks.champion) : null;
   return (
-    <button onClick={onOpen} style={{ background: '#FFFFFF', border: 'none', borderRadius: 16, padding: '14px 14px 10px', boxShadow: C.shadow, width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <button onClick={onOpen} style={{ background: C.turf, border: 'none', borderRadius: 16, padding: '14px 14px 10px', boxShadow: C.shadow, width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <IconBadge icon={Trophy} color="#7C3AED" size={28} />
@@ -2277,16 +2348,21 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const homeCard = { background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 0 rgba(0,0,0,0.04)', cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box' };
   const cardBtn = { ...homeCard, flexDirection: 'column', alignItems: 'stretch' };
   const nextStep = guidanceEnabled ? getNextStepLocal(phase, state, whoami, isAdmin) : null;
-  const emphasizeSettle = phase === 'wrapping-up' || phase === 'complete';
   const multiRound = tournament && tournament.rounds.length > 1;
   const ryderCup = tournament ? computeRyderCupStandings(tournament) : null;
   const tournamentStandings = multiRound ? aggregateStatsAcrossRounds(tournament, tournament.players.map(p => p.id))
     .map(a => ({ ...tournament.players.find(p => p.id === a.id), ...a }))
     .sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar)) : [];
   const positionCard = whoami && ledger[whoami.id] ? (
-    <button onClick={onOpenMyPosition} style={{ ...homeCard, justifyContent: 'space-between' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Receipt} color={C.gold} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Your position {multiRound ? '(whole trip)' : ''}</span></div>
-      <span style={{ fontFamily: 'Anton, sans-serif', color: ledger[whoami.id].netPosition > 0 ? C.goldBright : ledger[whoami.id].netPosition < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(ledger[whoami.id].netPosition)}</span>
+    <button onClick={onOpenMyPosition} style={{ ...homeCard, justifyContent: 'space-between', background: C.turf, border: `1.5px solid ${C.turfBorder}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <IconBadge icon={Coins} color={C.gold} size={28} />
+        <div>
+          <div style={{ fontSize: 13, color: C.ivory, fontWeight: 600 }}>Your payout {multiRound ? '(whole trip)' : ''}</div>
+          <div style={{ fontSize: 10, color: C.bunker }}>live · updates as bets settle</div>
+        </div>
+      </div>
+      <span style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, color: ledger[whoami.id].netPosition > 0 ? C.goldBright : ledger[whoami.id].netPosition < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(ledger[whoami.id].netPosition)}</span>
     </button>
   ) : null;
   return (
@@ -2311,9 +2387,80 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               {courseHandicap(whoami.handicap, state.courseSlope) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {courseHandicap(whoami.handicap, state.courseSlope)}</div>}
             </div>
           )}
-          {me && <div style={{ textAlign: 'right' }}><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>You</div><div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24, color: (useNet ? me.netToPar : me.toPar) < 0 ? C.flagRed : C.ivory }}>{me.thru === 0 ? '–' : fmtToPar(useNet ? me.netToPar : me.toPar)}</div></div>}
+          {me && (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>You · {useNet ? 'net' : 'gross'}</div>
+                <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24, lineHeight: 1, color: me.thru === 0 ? C.ivoryDim : (useNet ? me.netToPar : me.toPar) < 0 ? C.emerald : (useNet ? me.netToPar : me.toPar) > 0 ? C.flagRed : C.ivoryDim }}>{me.thru === 0 ? '–' : fmtToPar(useNet ? me.netToPar : me.toPar)}</div>
+              </div>
+              {useNet && me.thru > 0 && (
+                <div style={{ textAlign: 'right', paddingBottom: 1 }}>
+                  <div style={{ fontSize: 9, color: C.ivoryDim, textTransform: 'uppercase' }}>gross</div>
+                  <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 14, color: C.ivoryDim, lineHeight: 1 }}>{fmtToPar(me.toPar)}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {ryderCup && (() => {
+        const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
+        if (matches.length === 0) return null;
+        const myMatch = whoami ? matches.find(m => (m.sideA || []).includes(whoami.id) || (m.sideB || []).includes(whoami.id)) : null;
+        const otherMatches = myMatch ? matches.filter(m => m.id !== myMatch.id) : matches;
+        const format = state.matchFormat;
+
+        const renderMatch = (m, isMine) => {
+          const r = computeMatch(m, state);
+          const aPlayers = (m.sideA || []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
+          const bPlayers = (m.sideB || []).map(id => state.players.find(p => p.id === id)).filter(Boolean);
+          const aNames = aPlayers.map(p => p.name.split(' ')[0]).join(' & ');
+          const bNames = bPlayers.map(p => p.name.split(' ')[0]).join(' & ');
+          const statusStr = !r.finished ? (r.holesPlayed === 0 ? 'not started' : `${Math.abs(r.upA)} ${r.upA === 0 ? 'AS' : r.upA > 0 ? 'up (A)' : 'up (B)'} thru ${r.holesPlayed}`) : describeMatch(m, state, r);
+
+          // Stroke display — only for relevant formats
+          let strokeInfo = null;
+          if (format === 'singles' && aPlayers.length === 1 && bPlayers.length === 1) {
+            const chA = courseHandicap(aPlayers[0].handicap, state.courseSlope);
+            const chB = courseHandicap(bPlayers[0].handicap, state.courseSlope);
+            if (chA != null && chB != null && chA !== chB) {
+              const { strokesToA, strokesToB } = singlesStrokeHoles(chA, chB, state.strokeIndex, state.numHoles);
+              strokeInfo = strokesToA > 0 ? `${aPlayers[0].name.split(' ')[0]} gets ${strokesToA} stroke${strokesToA !== 1 ? 's' : ''}` : strokesToB > 0 ? `${bPlayers[0].name.split(' ')[0]} gets ${strokesToB} stroke${strokesToB !== 1 ? 's' : ''}` : null;
+            }
+          } else if (format === 'best-ball' && aPlayers.length === 2 && bPlayers.length === 2) {
+            const lm = lowManStrokes(m, state);
+            if (lm) strokeInfo = `Combined: ${lm.teamARaw}→${lm.teamAAdj} vs ${lm.teamBRaw}→${lm.teamBAdj} strokes`;
+          }
+
+          return (
+            <div key={m.id} style={{ padding: '10px 0', borderTop: isMine ? 'none' : `1px solid ${C.turfBorder}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                <div style={{ display: 'flex', gap: 3 }}>{aPlayers.map(p => <Chip key={p.id} color={p.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>)}</div>
+                <span style={{ fontSize: 11, fontWeight: r.outcome === 'A' ? 700 : 400, color: r.outcome === 'B' ? C.bunker : C.ivory, flex: 1, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{aNames} <span style={{ color: C.bunker, fontWeight: 400 }}>vs</span> {bNames}</span>
+                <div style={{ display: 'flex', gap: 3 }}>{bPlayers.map(p => <Chip key={p.id} color={p.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>)}</div>
+              </div>
+              <div style={{ textAlign: 'center', fontSize: 11, color: r.finished ? C.gold : C.bunker }}>{statusStr}</div>
+              {strokeInfo && <div style={{ textAlign: 'center', fontSize: 10, color: C.blueBright, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: C.blueBright, display: 'inline-block' }} />{strokeInfo}</div>}
+            </div>
+          );
+        };
+
+        return (
+          <div style={{ ...cardBtn, cursor: 'default' }}>
+            <SectionHeader title={myMatch ? 'Your Match' : 'Matches'} sub={`${matches.length} match${matches.length !== 1 ? 'es' : ''} this round`} icon={Swords} iconColor={C.flagRed} />
+            {myMatch && renderMatch(myMatch, true)}
+            {otherMatches.length > 0 && (
+              <>
+                {myMatch && <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 8, marginBottom: 2 }}>Other groups</div>}
+                {otherMatches.map(m => renderMatch(m, false))}
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {positionCard}
 
       {multiRound && (
         <button onClick={onSwitchRound} style={{ ...homeCard, justifyContent: 'space-between' }}>
@@ -2328,7 +2475,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       </button>
 
       {ryderCup && (
-        <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, flexDirection: 'column', alignItems: 'stretch', background: '#FFFFFF', border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <button onClick={() => setActiveTab('games')} style={{ ...cardBtn, flexDirection: 'column', alignItems: 'stretch', background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
           <SectionHeader title="Ryder Cup" sub={ryderCup.target ? `first to ${ryderCup.target} wins the cup` : 'add match pairings to get started'} icon={Swords} iconColor={C.flagRed} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '4px 0 12px' }}>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
@@ -2353,8 +2500,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </div>
         </button>
       )}
-
-      {emphasizeSettle && positionCard}
 
       {state.games?.bestBall?.enabled && (() => {
         const bbResults = computeBestBall(state);
@@ -2416,8 +2561,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </div>
       )}
 
-
-      {!emphasizeSettle && positionCard}
 
       {lastSkin && (
         <div style={{ ...homeCard, cursor: 'default' }}>
@@ -2490,22 +2633,83 @@ const PAYMENT_APPS = [
   { name: 'PayPal', color: '#0070BA', href: 'https://www.paypal.com' },
   { name: 'Zelle', color: '#6D1ED4', href: 'https://www.zellepay.com' },
 ];
-function SettleTab({ tournament, ledger, onOpenMyPosition }) {
+function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
+  const [expanded, setExpanded] = useState(null);
   const combined = {};
   tournament.players.forEach(p => { combined[p.id] = ledger[p.id]?.netPosition || 0; });
   const txns = settleUp(tournament.players, combined);
   const sorted = [...tournament.players].sort((a, b) => (combined[b.id] || 0) - (combined[a.id] || 0));
+
+  // Build a per-player itemized breakdown from the real bets array — grouped by bet type
+  const itemsByPlayer = {};
+  tournament.players.forEach(p => { itemsByPlayer[p.id] = {}; });
+  (bets || []).forEach(bet => {
+    (bet.participants || []).forEach(pid => {
+      if (!itemsByPlayer[pid]) return;
+      const amt = bet.calculatedPayout?.[pid] || 0;
+      if (amt === 0) return;
+      const key = bet.betType || 'Other';
+      itemsByPlayer[pid][key] = (itemsByPlayer[pid][key] || 0) + amt;
+    });
+  });
+
+  const findPlayer = (name) => tournament.players.find(p => p.name === name);
+
   return (
     <div>
+      <SectionHeader title="Payments due" sub={txns.length > 0 ? `${txns.length} transaction${txns.length !== 1 ? 's' : ''} settles everyone · tap for breakdown` : 'nothing to settle yet'} icon={Receipt} iconColor={C.emerald} />
+      {txns.length === 0 ? (
+        <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 12, marginBottom: 20 }}>Nothing to settle yet.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22 }}>
+          {txns.map((t, i) => {
+            const isOpen = expanded === i;
+            const fromPlayer = findPlayer(t.from), toPlayer = findPlayer(t.to);
+            const fromItems = fromPlayer ? Object.entries(itemsByPlayer[fromPlayer.id] || {}) : [];
+            const toItems = toPlayer ? Object.entries(itemsByPlayer[toPlayer.id] || {}) : [];
+            return (
+              <div key={i} onClick={() => setExpanded(isOpen ? null : i)} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 0, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 14 }}><strong>{t.from}</strong> pays <strong>{t.to}</strong></span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontFamily: 'IBM Plex Mono, monospace', color: C.goldBright, fontWeight: 700 }}>{fmtMoney(t.amt)}</span>
+                    <ChevronRight size={15} color={C.ivoryDim} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                  </div>
+                </div>
+                {isOpen && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.turfBorder}` }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 }}>{t.from.split(' ')[0]}'s games</div>
+                      {fromItems.length === 0 ? <div style={{ fontSize: 11, color: C.bunker }}>No itemized bets</div> : fromItems.map(([game, amt]) => (
+                        <div key={game} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                          <span style={{ color: C.ivoryDim }}>{game}</span>
+                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : C.flagRed }}>{fmtMoney(amt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700, marginBottom: 6 }}>{t.to.split(' ')[0]}'s games</div>
+                      {toItems.length === 0 ? <div style={{ fontSize: 11, color: C.bunker }}>No itemized bets</div> : toItems.map(([game, amt]) => (
+                        <div key={game} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                          <span style={{ color: C.ivoryDim }}>{game}</span>
+                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : C.flagRed }}>{fmtMoney(amt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
         <SectionHeader title="Net standings" sub={tournament.rounds.length > 1 ? 'Every round, every bet, combined' : 'All enabled games combined'} />
         <button onClick={onOpenMyPosition} style={{ fontSize: 11, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.turfBorder}`, background: 'transparent', color: C.ivoryDim, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>My Position</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 22 }}>{sorted.map(p => { const net = combined[p.id] || 0; return <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Chip color={p.color}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{p.name}</span></div><span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, color: net > 0 ? C.goldBright : net < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(net)}</span></div>; })}</div>
-      <SectionHeader title="Settle the bill" sub="Fewest payments to even it out" />
-      {txns.length === 0 ? <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 12, marginBottom: 20 }}>Nothing to settle yet.</div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>{txns.map((t, i) => <div key={i} style={{ ...rowCard, justifyContent: 'space-between' }}><span style={{ fontSize: 14 }}><strong>{t.from}</strong> pays <strong>{t.to}</strong></span><span style={{ fontFamily: 'IBM Plex Mono, monospace', color: C.goldBright, fontWeight: 700 }}>{fmtMoney(t.amt)}</span></div>)}</div>
-      )}
+
       <div style={{ marginBottom: 18 }}>
         <SectionHeader title="Pay up" sub="opens the app on your phone, if it's installed" />
         <div style={{ display: 'flex', gap: 10 }}>
@@ -2565,7 +2769,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
   if (selectedCourse) {
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 46, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: C.turf, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
           <button onClick={() => setSelectedCourse(null)} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', fontSize: 12, marginBottom: 10 }}><ChevronLeft size={14} /> Back to results</button>
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>{selectedCourse.courseName}</div>
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 16 }}>{selectedCourse.address}, {selectedCourse.city}, {selectedCourse.state} · {selectedCourse.numberOfHoles} holes</div>
@@ -2585,7 +2789,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 46, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.turf, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ flexShrink: 0, padding: '18px 18px 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Select a course</div>
@@ -4233,13 +4437,13 @@ function QRShareModal({ roundCode, tournamentName, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
         <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory, marginBottom: 4 }}>Join {tournamentName}</div>
         <div style={{ fontSize: 12, color: C.bunker, marginBottom: 20 }}>Scan to join · or share the link below</div>
 
         {/* QR Code */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-          <div style={{ background: '#FFFFFF', padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
+          <div style={{ background: C.turf, padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
             <div ref={canvasRef} style={{ width: 240, height: 240 }} />
             {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13 }}>Loading QR…</div>}
           </div>
@@ -4912,10 +5116,23 @@ export default function DuffBook() {
     setTimeout(() => setBirdieEvents(prev => prev.filter(e => e.id !== ev.id)), 6000);
   };
   const setScoreVal = (playerId, holeIndex, val) => updateRound(prev => {
-    const arr = (prev.scores[playerId] || []).slice(); arr[holeIndex] = val;
+    // Captain's Choice: one team score, mirrored to both partners. No handicap math applied.
+    let mirrorIds = [playerId];
+    if (prev.matchFormat === 'captain-choice') {
+      const matches = Array.isArray(prev.games?.matchplay?.matches) ? prev.games.matchplay.matches : [];
+      const myMatch = matches.find(m => (m.sideA || []).includes(playerId) || (m.sideB || []).includes(playerId));
+      if (myMatch) {
+        mirrorIds = (myMatch.sideA || []).includes(playerId) ? myMatch.sideA : myMatch.sideB;
+      }
+    }
     const scoreUpdatedAt = { ...(prev.scoreUpdatedAt || {}) };
-    if (val != null) { scoreUpdatedAt[`${playerId}-${holeIndex}`] = Date.now(); } else delete scoreUpdatedAt[`${playerId}-${holeIndex}`];
-    return { ...prev, scores: { ...prev.scores, [playerId]: arr }, scoreUpdatedAt };
+    const newScores = { ...prev.scores };
+    mirrorIds.forEach(id => {
+      const arr = (prev.scores[id] || []).slice(); arr[holeIndex] = val;
+      newScores[id] = arr;
+      if (val != null) { scoreUpdatedAt[`${id}-${holeIndex}`] = Date.now(); } else delete scoreUpdatedAt[`${id}-${holeIndex}`];
+    });
+    return { ...prev, scores: newScores, scoreUpdatedAt };
   });
   const stateNow = getRoundView(tournament, tournament.activeRoundId);
   const isPlayerSubmitted = (playerId) => Array.isArray(stateNow.submittedPlayers) && stateNow.submittedPlayers.includes(playerId);
@@ -5051,7 +5268,7 @@ export default function DuffBook() {
       {chatFlash && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,117,74,0.25)', zIndex: 198, pointerEvents: 'none', animation: 'birdieFlash 0.6s ease-out forwards' }} />}
       {showTips === 'show' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowTips('done')}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#FFFFFF', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
             <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to DuffBook</div>
             {[
               [Flag, 'Card tab is your scorecard', 'Tap + or − to enter your score on each hole'],
@@ -5072,7 +5289,7 @@ export default function DuffBook() {
           </div>
         </div>
       )}
-      <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: `1px solid ${C.turfBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} data-testid="app-header">
+      <div style={{ flexShrink: 0, background: C.turf, borderBottom: `1px solid ${C.turfBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} data-testid="app-header">
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: 'Anton, sans-serif', fontWeight: 700, fontSize: 20, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.ivory }}>{tournament.name}</div>
           <div style={{ fontSize: 11, color: C.ivoryDim, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -5124,11 +5341,11 @@ export default function DuffBook() {
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'games' && <GamesTab state={state} />}
         {hasPlayers && activeTab === 'bets' && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
-        {hasPlayers && activeTab === 'settle' && <SettleTab tournament={tournament} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} />}
+        {hasPlayers && activeTab === 'settle' && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
       </div>
 
       {hasPlayers && (
-        <div style={{ flexShrink: 0, background: '#FFFFFF', borderTop: `1px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '8px 8px 14px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
+        <div style={{ flexShrink: 0, background: C.turf, borderTop: `1px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '8px 8px 14px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
           <NavBtn icon={Home} label="Home" active={activeTab === 'home'} onClick={() => setActiveTab('home')} badge={whoami ? (() => { const me = stats.find(s => s.id === whoami.id); if (!me || me.thru === 0) return null; const d = me.toPar; return d === 0 ? 'E' : d > 0 ? `+${d}` : `${d}`; })() : null} />
           <NavBtn icon={Flag} label="Card" active={activeTab === 'card'} onClick={() => setActiveTab('card')} hero />
           <NavBtn icon={Trophy} label="Round" active={activeTab === 'games'} onClick={() => setActiveTab('games')} />
