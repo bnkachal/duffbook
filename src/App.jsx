@@ -5076,7 +5076,6 @@ export default function DuffBook() {
   const [pendingAdminPin, setPendingAdminPin] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSeenLen, setChatSeenLen] = useState(0);
-  const [bubblePos, setBubblePos] = useState(null);
   const [deviceName, setDeviceName] = useState('');
   const [profileOpen, setProfileOpen] = useState(false);
   const [myTournaments, setMyTournaments] = useState([]);
@@ -5084,8 +5083,6 @@ export default function DuffBook() {
   const justCreatedRef = useRef(null);
   const preloadedRef = useRef(null);
   const autoJumpRef = useRef(false);
-  const bubbleDragRef = useRef(null);
-  const bubbleJustDraggedRef = useRef(false);
   const watchRef = useRef({ leaderId: null, skinsWonHoles: new Set(), matchDecided: new Set(), allSquareNotified: new Set(), finished: new Set(), chatLen: 0, bettingClosingNotified: false, roundCompleteNotified: false });
 
   useEffect(() => {
@@ -5094,7 +5091,6 @@ export default function DuffBook() {
       // A new device always starts at the landing page with roundCode = null.
       // Only handleCreate(), handleJoin(), and handleQuickJoin() may set roundCode.
       try { const r2v = localStorage.getItem('db:notif-prefs'); if (r2v) setNotifPrefs(JSON.parse(r2v)); } catch (e) {}
-      try { const r3v = localStorage.getItem('db:chat-bubble-pos'); if (r3v) setBubblePos(JSON.parse(r3v)); } catch (e) {}
       try { const r4v = localStorage.getItem('db:bet-templates'); setBetTemplates(r4v ? JSON.parse(r4v) : DEFAULT_BET_TEMPLATES); } catch (e) { setBetTemplates(DEFAULT_BET_TEMPLATES); }
       try { const r5v = localStorage.getItem('db:guidance-enabled'); if (r5v) setGuidanceEnabled(JSON.parse(r5v)); } catch (e) {}
       try { const r6v = localStorage.getItem('db:device-profile'); if (r6v) { try { setDeviceName(JSON.parse(r6v).name || ''); } catch(e){} } } catch (e) {}
@@ -5545,17 +5541,21 @@ export default function DuffBook() {
   };
   const switchRound = (roundId) => { updateTournament(prev => ({ ...prev, activeRoundId: roundId })); autoJumpRef.current = false; };
 
-  const onBubblePointerDown = (e) => { bubbleDragRef.current = { startX: e.clientX, startY: e.clientY, origin: bubblePos || { x: window.innerWidth - 70, y: window.innerHeight - 142 } }; bubbleJustDraggedRef.current = false; e.target.setPointerCapture?.(e.pointerId); };
-  const onBubblePointerMove = (e) => {
-    if (!bubbleDragRef.current) return;
-    const dx = e.clientX - bubbleDragRef.current.startX, dy = e.clientY - bubbleDragRef.current.startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) bubbleJustDraggedRef.current = true;
-    const nx = Math.max(6, Math.min(window.innerWidth - 60, bubbleDragRef.current.origin.x + dx));
-    const ny = Math.max(80, Math.min(window.innerHeight - 60, bubbleDragRef.current.origin.y + dy));
-    setBubblePos({ x: nx, y: ny });
+  // Chat drawer tabs — tap opens instantly; drag from the tab past a threshold also opens.
+  // Gesture is scoped to touches starting on the tab itself, so it never competes with
+  // the card-screen hole-swipe gesture (which listens on the content area, not the edges).
+  const chatDragRef = useRef(null);
+  const chatDraggedRef = useRef(false);
+  const openChat = () => { setChatOpen(true); setChatSeenLen(chat.length); };
+  const onChatTabTouchStart = (side) => (e) => { const t = e.touches[0]; chatDragRef.current = { x: t.clientX, side }; chatDraggedRef.current = false; };
+  const onChatTabTouchMove = (e) => {
+    if (!chatDragRef.current) return;
+    const t = e.touches[0]; const dx = t.clientX - chatDragRef.current.x;
+    const opening = chatDragRef.current.side === 'left' ? dx > 36 : dx < -36;
+    if (opening) { chatDraggedRef.current = true; chatDragRef.current = null; openChat(); }
   };
-  const onBubblePointerUp = () => { bubbleDragRef.current = null; if (bubblePos) try { localStorage.setItem('db:chat-bubble-pos', JSON.stringify(bubblePos)); } catch(e) {} };
-  const onBubbleClick = () => { if (bubbleJustDraggedRef.current) { bubbleJustDraggedRef.current = false; return; } setChatOpen(true); setChatSeenLen(chat.length); };
+  const onChatTabTouchEnd = () => { chatDragRef.current = null; };
+  const onChatTabClick = () => { if (chatDraggedRef.current) { chatDraggedRef.current = false; return; } openChat(); };
 
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
@@ -5682,21 +5682,26 @@ export default function DuffBook() {
       )}
 
       {hasPlayers && (
-        <button
-          onPointerDown={onBubblePointerDown} onPointerMove={onBubblePointerMove} onPointerUp={onBubblePointerUp}
-          onClick={onBubbleClick} aria-label="Group chat" style={{
-            position: 'fixed', ...(bubblePos ? { left: bubblePos.x, top: bubblePos.y } : { right: 16, bottom: 82 }),
-            width: 54, height: 54, borderRadius: 999,
-            background: C.gold, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 0 rgba(0,0,0,0.35)', cursor: 'grab', zIndex: 25, touchAction: 'none', userSelect: 'none',
-          }}>
-          <MessageCircle size={24} color="#FFFFFF" strokeWidth={2} />
-          {chat.length > chatSeenLen && (
-            <span style={{ position: 'absolute', top: -4, right: -4, background: C.flagRed, color: C.ivory, borderRadius: 999, fontSize: 10, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', fontFamily: 'Oswald, sans-serif', fontWeight: 700 }}>
-              {Math.min(chat.length - chatSeenLen, 9)}{chat.length - chatSeenLen > 9 ? '+' : ''}
-            </span>
-          )}
-        </button>
+        <>
+          {[{ side: 'left', edge: { left: -2, borderRadius: '0 14px 14px 0' } }, { side: 'right', edge: { right: -2, borderRadius: '14px 0 0 14px' } }].map(({ side, edge }) => (
+            <button
+              key={side}
+              onTouchStart={onChatTabTouchStart(side)} onTouchMove={onChatTabTouchMove} onTouchEnd={onChatTabTouchEnd}
+              onClick={onChatTabClick} aria-label="Group chat" style={{
+                position: 'fixed', top: '58%', transform: 'translateY(-50%)', ...edge,
+                width: 22, height: 84, background: C.gold, border: 'none', ...edge,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.35)', cursor: 'pointer', zIndex: 25, touchAction: 'pan-y',
+              }}>
+              <MessageCircle size={18} color="#FFFFFF" strokeWidth={2} />
+              {chat.length > chatSeenLen && (
+                <span style={{ position: 'absolute', top: -6, [side === 'left' ? 'right' : 'left']: -6, background: C.flagRed, color: C.ivory, borderRadius: 999, fontSize: 9, minWidth: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', fontFamily: 'Oswald, sans-serif', fontWeight: 700 }}>
+                  {Math.min(chat.length - chatSeenLen, 9)}{chat.length - chatSeenLen > 9 ? '+' : ''}
+                </span>
+              )}
+            </button>
+          ))}
+        </>
       )}
 
       {setupOpen && isAdmin && (
