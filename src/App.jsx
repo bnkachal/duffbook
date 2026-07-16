@@ -261,7 +261,7 @@ function lowManStrokes(match, state) {
   const chById = {};
   allIds.forEach(id => {
     const p = state.players.find(pl => pl.id === id);
-    chById[id] = p ? courseHandicap(p.handicap, state.courseSlope) : null;
+    chById[id] = p ? courseHandicap(p.handicapIndex, state.courseSlope) : null;
   });
   const validChs = allIds.map(id => chById[id]).filter(ch => ch != null);
   if (validChs.length === 0) return null;
@@ -1705,7 +1705,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
   const anyScored = val != null;
 
   // Handicap display
-  const myHcp = whoami?.handicap ?? null;
+  const myHcp = whoami?.handicapIndex ?? null;
   const myCourseHcp = courseHandicap(myHcp, state.courseSlope);
 
   // Gross/net totals
@@ -1735,8 +1735,8 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
       const oppId = onSideA ? (myMatch.sideB || [])[0] : (myMatch.sideA || [])[0];
       const oppPlayer = state.players.find(p => p.id === oppId);
       if (!oppPlayer) return new Set();
-      const myCh = courseHandicap(whoami.handicap, state.courseSlope);
-      const oppCh = courseHandicap(oppPlayer.handicap, state.courseSlope);
+      const myCh = courseHandicap(whoami.handicapIndex, state.courseSlope);
+      const oppCh = courseHandicap(oppPlayer.handicapIndex, state.courseSlope);
       if (myCh == null || oppCh == null) return new Set();
       const myStrokes = Math.max(0, myCh - oppCh);
       return distributeStrokes(myStrokes, state.strokeIndex, state.numHoles);
@@ -2598,11 +2598,11 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{state.roundName}</div><div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24 }}>Hole {groupHole + 1}</div></div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {whoami?.handicap != null && (
+            {whoami?.handicapIndex != null && (
               <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
                 <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicap}</div>
-                {courseHandicap(whoami.handicap, state.courseSlope) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {courseHandicap(whoami.handicap, state.courseSlope)}</div>}
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
+                {courseHandicap(whoami.handicapIndex, state.courseSlope) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {courseHandicap(whoami.handicapIndex, state.courseSlope)}</div>}
               </div>
             )}
             {me && (
@@ -2643,8 +2643,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           // Stroke display — plain-language explanation, only for relevant formats
           let strokeInfo = null;
           if (format === 'singles' && aPlayers.length === 1 && bPlayers.length === 1) {
-            const chA = courseHandicap(aPlayers[0].handicap, state.courseSlope);
-            const chB = courseHandicap(bPlayers[0].handicap, state.courseSlope);
+            const chA = courseHandicap(aPlayers[0].handicapIndex, state.courseSlope);
+            const chB = courseHandicap(bPlayers[0].handicapIndex, state.courseSlope);
             if (chA != null && chB != null && chA !== chB) {
               const { strokesToA, strokesToB } = singlesStrokeHoles(chA, chB, state.strokeIndex, state.numHoles);
               const giver = strokesToA > 0 ? bPlayers[0] : aPlayers[0];
@@ -2655,7 +2655,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           } else if (format === 'best-ball' && aPlayers.length === 2 && bPlayers.length === 2) {
             const lm = lowManStrokes(m, state);
             if (lm) {
-              const lowManPlayer = [...aPlayers, ...bPlayers].find(p => courseHandicap(p.handicap, state.courseSlope) === lm.lowMan);
+              const lowManPlayer = [...aPlayers, ...bPlayers].find(p => courseHandicap(p.handicapIndex, state.courseSlope) === lm.lowMan);
               strokeInfo = `${lowManPlayer?.name.split(' ')[0] || 'Low man'} (CH ${lm.lowMan}) sets the baseline — teams play off ${lm.teamAAdj} vs ${lm.teamBAdj} combined strokes`;
             }
           }
@@ -2670,14 +2670,14 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                   {aPlayers.map(p => {
-                    const pch = courseHandicap(p.handicap, state.courseSlope);
+                    const pch = courseHandicap(p.handicapIndex, state.courseSlope);
                     return <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Chip color={p.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>{pch != null && <span style={{ fontSize: 8, color: C.bunker }}>{pch}</span>}</div>;
                   })}
                 </div>
                 <span style={{ fontSize: 11, fontWeight: r.outcome === 'A' ? 700 : 400, color: r.outcome === 'B' ? C.bunker : C.ivory, flex: 1, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{aNames} <span style={{ color: C.bunker, fontWeight: 400 }}>vs</span> {bNames}</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                   {bPlayers.map(p => {
-                    const pch = courseHandicap(p.handicap, state.courseSlope);
+                    const pch = courseHandicap(p.handicapIndex, state.courseSlope);
                     return <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{pch != null && <span style={{ fontSize: 8, color: C.bunker }}>{pch}</span>}<Chip color={p.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip></div>;
                   })}
                 </div>
@@ -3264,7 +3264,7 @@ function parseRosterFile(file, flights) {
       rows.forEach((row, i) => {
         const name = (row.name || row.Name || row.NAME || '').toString().trim();
         if (!name) { if (Object.values(row).some(v => v)) errors.push(`Row ${i + 2}: missing name`); return; }
-        const hcpRaw = (row.handicapIndex || row['Handicap Index'] || row.handicap || row.hcp || row.HCP || '').toString().trim();
+        const hcpRaw = (row.handicapIndex || row['Handicap Index'] || row.handicapIndex || row.hcp || row.HCP || '').toString().trim();
         const hcp = hcpRaw && !isNaN(parseFloat(hcpRaw)) ? String(parseFloat(hcpRaw)) : '';
         const teamRaw = (row.team || row.Team || row.TEAM || row.flight || row.Flight || '').toString().trim();
         const flightId = teamRaw ? (flightsByName[teamRaw.toLowerCase()] || null) : null;
