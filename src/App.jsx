@@ -1677,7 +1677,7 @@ function distributeStrokes(count, strokeIndexArr, numHoles) {
   return result;
 }
 
-function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore, setNineHoleTotal, goHole, setHole, onOpenScan, isAdmin, whoami, onPick, onAddSelf, onSubmit, onUnlock }) {
+function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore, goHole, setHole, onOpenScan, isAdmin, whoami, onPick, onAddSelf, onSubmit, onUnlock }) {
   const submitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
   const val = whoami ? state.scores[whoami.id]?.[h] : null;
   const diff = val != null ? val - par : null;
@@ -1778,6 +1778,9 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 20, color: '#FFFFFF', marginBottom: 4 }}>Scorecard Submitted ✓</div>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', marginBottom: 6 }}>Your final score: <strong>{totalDiffStr}</strong> ({totalScore})</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>Results appear when the admin wraps up — you're done! 🍺</div>
+          {isAdmin && onUnlock && (
+            <button onClick={() => onUnlock(whoami.id)} style={{ marginTop: 10, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.4)', color: '#FFFFFF', borderRadius: 10, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Unlock my scorecard</button>
+          )}
         </div>
         {holeStripEl}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.turf, borderRadius: 18, boxShadow: C.shadow, padding: 28, marginBottom: 14, opacity: 0.8 }}>
@@ -1785,14 +1788,13 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 80, lineHeight: 1, color: isDefault ? C.turfBorder : diffColor, marginBottom: 6 }}>{displayVal}</div>
           {!isDefault && <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, color: diffColor }}>{termForDiff(diff)}</div>}
         </div>
-        <div style={{ textAlign: 'center', fontSize: 11, color: C.bunker }}>Scores locked · contact admin to edit</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: C.bunker }}>{isAdmin ? 'Scores locked · tap above to unlock' : 'Scores locked · contact admin to edit'}</div>
       </div>
     );
   }
 
   // Player active view
   if (whoami && !isAdmin) {
-    const myTotals = state.nineHoleTotals?.[whoami.id] || {};
     return (
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100dvh - 200px)' }} className="tab-content">
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -1815,13 +1817,6 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
             </div>
           )}
         </div>
-        {setNineHoleTotal && (
-          <div style={{ background: C.pine, border: `1px dashed ${C.turfBorder}`, borderRadius: 12, padding: '10px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 11, color: C.bunker, flexShrink: 0 }}>Quick total (optional)</span>
-            <input type="number" placeholder="Front 9" value={myTotals.front ?? ''} onChange={e => setNineHoleTotal(whoami.id, 'front', e.target.value)} style={{ ...inputStyle, flex: 1, padding: '6px 8px', fontSize: 12, textAlign: 'center' }} />
-            <input type="number" placeholder="Back 9" value={myTotals.back ?? ''} onChange={e => setNineHoleTotal(whoami.id, 'back', e.target.value)} style={{ ...inputStyle, flex: 1, padding: '6px 8px', fontSize: 12, textAlign: 'center' }} />
-          </div>
-        )}
         {holeStripEl}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: C.turf, borderRadius: 20, boxShadow: C.shadowHero, padding: 28, marginBottom: 14, transition: 'background 0.3s' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
@@ -1873,24 +1868,6 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
         {state.pars.map((_, i) => <button key={i} onClick={() => setHole(i)} style={{ height: 32, borderRadius: 8, background: i === h ? C.gold : 'transparent', color: i === h ? C.pineDark : C.ivoryDim, border: `1px solid ${i === h ? C.gold : C.turfBorder}`, fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, cursor: 'pointer', fontWeight: i === h ? 700 : 400 }}>{i + 1}</button>)}
       </div>
       {!isAdmin && !whoami && <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />}
-      {isAdmin && setNineHoleTotal && (
-        <div style={{ background: C.pine, border: `1px dashed ${C.turfBorder}`, borderRadius: 12, padding: '10px 12px', marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: C.bunker, marginBottom: 8 }}>Quick totals entry (front 9 / back 9 — for players who don't want hole-by-hole)</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
-            {visiblePlayers.map(p => {
-              const t = state.nineHoleTotals?.[p.id] || {};
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Chip color={p.color} style={{ width: 24, height: 24, fontSize: 9, flexShrink: 0 }}>{initials(p.name)}</Chip>
-                  <span style={{ fontSize: 12, color: C.ivory, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  <input type="number" placeholder="F9" value={t.front ?? ''} onChange={e => setNineHoleTotal(p.id, 'front', e.target.value)} style={{ ...inputStyle, width: 52, padding: '4px 6px', fontSize: 12, textAlign: 'center' }} />
-                  <input type="number" placeholder="B9" value={t.back ?? ''} onChange={e => setNineHoleTotal(p.id, 'back', e.target.value)} style={{ ...inputStyle, width: 52, padding: '4px 6px', fontSize: 12, textAlign: 'center' }} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {visiblePlayers.map(p => {
           const isSubmit = Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(p.id);
@@ -2756,13 +2733,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </div>
         );
       })()}
-
-      {multiRound && (
-        <button onClick={onSwitchRound} style={{ ...homeCard, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Calendar} color={C.blueBright} size={28} /><span style={{ fontSize: 12, color: C.ivoryDim }}>Round {tournament.rounds.findIndex(r => r.id === tournament.activeRoundId) + 1} of {tournament.rounds.length}</span></div>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.goldBright, fontSize: 12 }}>Switch round <ChevronsUpDown size={13} /></span>
-        </button>
-      )}
 
       <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between', color: C.ivory }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>Round Flow</span></div>
@@ -5472,10 +5442,6 @@ export default function DuffBook() {
   const tapMinus = (playerId, holeIndex) => { if (!isAdmin && isPlayerSubmitted(playerId)) return; const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, Math.max(1, cur == null ? par - 1 : cur - 1)); };
   const tapCenter = (playerId, holeIndex) => { if (!isAdmin && isPlayerSubmitted(playerId)) return; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, par); };
   const clearScore = (playerId, holeIndex) => setScoreVal(playerId, holeIndex, null);
-  const setNineHoleTotal = (playerId, half, val) => updateRound(prev => ({
-    ...prev,
-    nineHoleTotals: { ...(prev.nineHoleTotals || {}), [playerId]: { ...(prev.nineHoleTotals?.[playerId] || {}), [half]: val === '' ? null : parseInt(val, 10) || null } },
-  }));
   const submitScorecard = (playerId) => updateRound(prev => ({
     ...prev,
     submittedPlayers: [...(Array.isArray(prev.submittedPlayers) ? prev.submittedPlayers : []).filter(id => id !== playerId), playerId],
@@ -5667,7 +5633,7 @@ export default function DuffBook() {
           </div>
         )}
         {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} />}
-        {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} setNineHoleTotal={setNineHoleTotal} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={submitScorecard} onUnlock={unlockScorecard} />}
+        {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={submitScorecard} onUnlock={unlockScorecard} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
