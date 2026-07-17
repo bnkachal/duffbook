@@ -1788,7 +1788,8 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 80, lineHeight: 1, color: isDefault ? C.turfBorder : diffColor, marginBottom: 6 }}>{displayVal}</div>
           {!isDefault && <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, color: diffColor }}>{termForDiff(diff)}</div>}
         </div>
-        <div style={{ textAlign: 'center', fontSize: 11, color: C.bunker }}>{isAdmin ? 'Scores locked · tap above to unlock' : 'Scores locked · contact admin to edit'}</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: C.bunker, marginBottom: 14 }}>{isAdmin ? 'Scores locked · tap above to unlock' : 'Scores locked · contact admin to edit'}</div>
+        {state.players.length > 0 && <MiniCard players={state.players} state={state} />}
       </div>
     );
   }
@@ -1847,7 +1848,8 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
             <div style={{ fontSize: 12, color: '#92400E' }}>Holes {missingHoles.join(', ')} need a score before submitting.</div>
           </div>
         )}
-        {!isDefault && <button onClick={() => clearScore(whoami.id, h)} style={{ background: 'transparent', border: 'none', color: C.turfBorder, fontSize: 12, cursor: 'pointer', padding: '6px 0', textAlign: 'center', width: '100%' }}>Clear score</button>}
+        {!isDefault && <button onClick={() => clearScore(whoami.id, h)} style={{ background: 'transparent', border: 'none', color: C.turfBorder, fontSize: 12, cursor: 'pointer', padding: '6px 0', textAlign: 'center', width: '100%', marginBottom: 14 }}>Clear score</button>}
+        {state.players.length > 0 && <MiniCard players={state.players} state={state} />}
       </div>
     );
   }
