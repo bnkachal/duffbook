@@ -5459,7 +5459,8 @@ export default function DuffBook() {
     const scoreUpdatedAt = { ...(prev.scoreUpdatedAt || {}) };
     const newScores = { ...prev.scores };
     mirrorIds.forEach(id => {
-      const arr = (prev.scores[id] || []).slice(); arr[holeIndex] = val;
+      const arr = Array.isArray(prev.scores[id]) ? prev.scores[id].slice() : [];
+      arr[holeIndex] = val;
       newScores[id] = arr;
       if (val != null) { scoreUpdatedAt[`${id}-${holeIndex}`] = Date.now(); } else delete scoreUpdatedAt[`${id}-${holeIndex}`];
     });
