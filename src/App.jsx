@@ -5215,6 +5215,11 @@ export default function DuffBook() {
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [roundSwitcherOpen, setRoundSwitcherOpen] = useState(false);
   const [roundFlowOpen, setRoundFlowOpen] = useState(false);
+  const [proxyOpen, setProxyOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [homeLayoutPrefs, setHomeLayoutPrefs] = useState({});
+  const [proxyPlayerId, setProxyPlayerId] = useState(null); // admin-only, session-only, never persisted — does not touch the admin's own saved identity
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [showTips, setShowTips] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState({ leadChange: true, skinsWon: true, matchDecided: true, allSquare: true, playerFinished: true, bettingClosingSoon: true, roundComplete: true, chat: true });
@@ -5726,11 +5731,6 @@ export default function DuffBook() {
   const state = getRoundView(tournament, tournament.activeRoundId);
   const stats = computeStats(state);
   const hasPlayers = tournament.players.length > 0;
-  const [proxyOpen, setProxyOpen] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [layoutOpen, setLayoutOpen] = useState(false);
-  const [homeLayoutPrefs, setHomeLayoutPrefs] = useState({});
-  const [proxyPlayerId, setProxyPlayerId] = useState(null); // admin-only, session-only, never persisted — does not touch the admin's own saved identity
   const whoami = tournament.players.find(p => p.id === (isAdmin && proxyPlayerId ? proxyPlayerId : whoamiId)) || null;
 
   // Show name picker if player hasn't identified themselves yet (non-admin only)
