@@ -1342,7 +1342,7 @@ function getRoundPhase(state, stats, bets) {
 function getNextStep(phase, state, whoami, isAdmin) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (phase === 'pre-round' || phase === 'in-progress') {
-    if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so DuffBook knows whose score is whose.', action: 'card' };
+    if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so RoGreen knows whose score is whose.', action: 'card' };
     if (pm.enabled && !pm.resolved) {
       const stats = computeStats(state);
       const bettingOpen = !stats.some(s => s.thru > pm.lockAfterHole);
@@ -1532,7 +1532,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
 
       {/* Hero — top portion */}
       <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 'max(40px, 10vh)', paddingBottom: 20 }}>
-        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 10 }}>DuffBook</div>
+        <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 10 }}>RoGreen</div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(196,144,10,0.15)', border: '1px solid rgba(196,144,10,0.4)', borderRadius: 999, padding: '5px 16px', backdropFilter: 'blur(8px)' }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#C4900A' }} />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 2, fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase', fontWeight: 600 }}>Live Golf Scoring & Side Bets</span>
@@ -3286,14 +3286,14 @@ function downloadRosterTemplate(format, flights) {
     const Papa = window.Papa;
     const csv = Papa ? Papa.unparse([header, ...examples]) : [header, ...examples].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'duffbook-roster.csv'; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rogreen-roster.csv'; a.click();
   } else {
     const XLSX = window.XLSX;
     if (!XLSX) { alert('XLSX library not available. Try CSV instead.'); return; }
     const ws = XLSX.utils.aoa_to_sheet([header, ...examples]);
     ws['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 18 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Roster');
-    XLSX.writeFile(wb, 'duffbook-roster.xlsx');
+    XLSX.writeFile(wb, 'rogreen-roster.xlsx');
   }
 }
 function parseRosterFile(file, flights) {
@@ -4238,7 +4238,7 @@ function NotificationsModal({ prefs, setPrefs, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Notifications</div><button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button></div>
-        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while DuffBook is open on this device — not true background push.</div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while RoGreen is open on this device — not true background push.</div>
         {perm !== 'granted' && supported && <GoldButton onClick={request} style={{ marginBottom: 16 }}>{perm === 'denied' ? 'Blocked — check browser settings' : 'Enable browser alerts'}</GoldButton>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{NOTIF_TYPES.map(n => <ToggleRow key={n.key} label={n.label} sub={n.sub} enabled={!!prefs[n.key]} onToggle={() => setPrefs({ ...prefs, [n.key]: !prefs[n.key] })} />)}</div>
       </div>
@@ -4773,7 +4773,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>My Position</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
-        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — DuffBook doesn't move real money. Covers every round of the trip.</div>
+        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — RoGreen doesn't move real money. Covers every round of the trip.</div>
 
         <div style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 14 }}>
           <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>Current net position</div></div>
@@ -4950,7 +4950,7 @@ function FontLoader() {
 }
 
 function QRShareModal({ roundCode, tournamentName, onClose }) {
-  const url = `https://duffbook.vercel.app?code=${roundCode}`;
+  const url = `https://rogreen.vercel.app?code=${roundCode}`;
   const canvasRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [qrReady, setQrReady] = useState(false);
@@ -4987,7 +4987,7 @@ function QRShareModal({ roundCode, tournamentName, onClose }) {
 
   const shareLink = () => {
     if (navigator.share) {
-      navigator.share({ title: `Join ${tournamentName} on DuffBook`, text: `Scan or tap to join: ${url}`, url });
+      navigator.share({ title: `Join ${tournamentName} on RoGreen`, text: `Scan or tap to join: ${url}`, url });
     } else {
       copyLink();
     }
@@ -5192,7 +5192,7 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
 }
 
 /* ============================== MAIN APP ============================== */
-export default function DuffBook() {
+export default function RoGreen() {
   const [roundCode, setRoundCode] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -5807,7 +5807,7 @@ export default function DuffBook() {
       {showTips === 'show' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowTips('done')}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
-            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to DuffBook</div>
+            <div style={{ fontFamily: 'Anton, sans-serif', fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to RoGreen</div>
             {[
               [Flag, 'Card tab is your scorecard', 'Tap + or − to enter your score on each hole'],
               [ChevronRight, 'Swipe to change holes', 'Swipe left or right anywhere on the card screen'],
