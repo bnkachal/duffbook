@@ -1526,7 +1526,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
     <div style={{ height: '100dvh', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
       <FontLoader />
       {/* Layered background */}
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/bg.png)', backgroundSize: 'cover', backgroundPosition: 'center 30%', backgroundRepeat: 'no-repeat' }} />
+      <BackdropArt opacity={1} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,8,3,0.60) 0%, rgba(5,8,3,0.25) 35%, rgba(5,8,3,0.95) 80%)' }} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, #C4900A 30%, #D4A000 70%, transparent)', zIndex: 1 }} />
 
@@ -4856,6 +4856,47 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose }) {
 }
 
 /* ============================== FONTS / GLOBAL CSS ============================== */
+// Pure presentational backdrop art — no hooks, no state, just SVG markup.
+// Rendered fixed behind content; opacity/visibility is controlled entirely by the caller
+// via a prop, so this component itself can never cause a hooks-order issue.
+function BackdropArt({ opacity = 1 }) {
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 380 480" preserveAspectRatio="xMidYMid slice" style={{ position: 'absolute', inset: 0, opacity, transition: 'opacity 0.3s ease' }}>
+      <defs>
+        <linearGradient id="dbSky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#0F1A14" />
+          <stop offset="45%" stopColor="#1B3024" />
+          <stop offset="72%" stopColor="#B8862F" />
+          <stop offset="100%" stopColor="#E8C468" />
+        </linearGradient>
+        <radialGradient id="dbSun" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#F6D98A" />
+          <stop offset="100%" stopColor="#E8C468" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="0" y="0" width="380" height="480" fill="url(#dbSky)" />
+      <circle cx="270" cy="230" r="90" fill="url(#dbSun)" />
+      <circle cx="270" cy="230" r="34" fill="#F3D488" />
+      <ellipse cx="90" cy="300" rx="140" ry="60" fill="#12241A" opacity="0.85" />
+      <ellipse cx="310" cy="330" rx="160" ry="70" fill="#0D1C13" opacity="0.9" />
+      <path d="M0 300 Q 60 260 130 290 T 280 275 T 380 300 L 380 480 L 0 480 Z" fill="#16301F" />
+      <path d="M0 340 Q 90 300 190 330 T 380 320 L 380 480 L 0 480 Z" fill="#0E2015" />
+      <path d="M0 400 Q 100 370 200 395 T 380 385 L 380 480 L 0 480 Z" fill="#081A10" />
+      <g opacity="0.75">
+        <path d="M40 300 L44 270 L48 300 Z" fill="#081A10" />
+        <path d="M50 302 L55 265 L60 302 Z" fill="#081A10" />
+        <path d="M320 320 L325 285 L330 320 Z" fill="#0A1C12" />
+        <path d="M332 322 L338 280 L344 322 Z" fill="#0A1C12" />
+      </g>
+      <g>
+        <line x1="200" y1="330" x2="200" y2="260" stroke="#F3D488" strokeWidth="2" strokeLinecap="round" />
+        <path d="M200 260 L232 270 L200 280 Z" fill="#E8C468" />
+      </g>
+      <ellipse cx="200" cy="332" rx="26" ry="6" fill="#1E3B26" opacity="0.6" />
+    </svg>
+  );
+}
+
 function FontLoader() {
   return (
     <style>{`
@@ -5754,6 +5795,12 @@ export default function DuffBook() {
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', position: 'fixed', inset: 0 }}>
+      {activeTab === 'home' && (
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+          <BackdropArt opacity={0.22} />
+          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, transparent 0%, transparent 15%, ${C.pine} 55%)` }} />
+        </div>
+      )}
       <FontLoader />
       <LibraryLoader />
       {chatFlash && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,117,74,0.25)', zIndex: 198, pointerEvents: 'none', animation: 'birdieFlash 0.6s ease-out forwards' }} />}
