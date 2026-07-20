@@ -5967,12 +5967,6 @@ export default function RoGreen() {
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', position: 'fixed', inset: 0 }}>
-      {activeTab === 'home' && (
-        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-          <BackdropArt opacity={0.14} />
-          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, transparent 0%, ${C.pine}CC 18%, ${C.pine} 24%)` }} />
-        </div>
-      )}
       <FontLoader />
       <LibraryLoader />
       {chatFlash && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,117,74,0.25)', zIndex: 198, pointerEvents: 'none', animation: 'birdieFlash 0.6s ease-out forwards' }} />}
