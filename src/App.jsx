@@ -144,6 +144,26 @@ const MOCK_COURSES = [
       Gold:   [306,353,147,499,342,345,488,171,335, 352,128,356,473,308,324,473,136,276],
     },
   }),
+  buildMockCourse({
+    courseId: 'mock-pine-needles', courseName: 'The Pine Needles Golf Course',
+    address: '1005 Midland Rd', city: 'Southern Pines', state: 'NC', latitude: 35.183, longitude: -79.410,
+    pars:      [5,4,3,4,3,4,4,4,4, 5,4,4,3,4,5,3,4,4],
+    handicaps: [11,5,17,9,7,1,3,15,13, 4,12,14,16,2,6,18,8,10],
+    teeBoxes: [
+      { teeName: 'Medal',     totalYards: 7025, rating: 74.7, slope: 141 },
+      { teeName: 'Ross',      totalYards: 6450, rating: 71.9, slope: 138 },
+      { teeName: 'White',     totalYards: 6050, rating: 70.0, slope: 133 },
+      { teeName: 'Executive', totalYards: 5495, rating: 66.4, slope: 124 },
+      { teeName: 'Forward',   totalYards: 4940, rating: 69.2, slope: 125 },
+    ],
+    _holeYardagesByTee: {
+      Medal:     [505,475,145,400,220,455,450,365,380, 525,415,435,210,450,535,180,460,420],
+      Ross:      [485,450,135,375,185,410,405,350,370, 480,375,350,185,400,485,170,440,400],
+      White:     [470,435,125,335,170,375,365,320,350, 460,345,325,160,395,465,165,415,375],
+      Executive: [455,410,115,315,120,315,345,300,260, 440,315,310,135,375,455,130,370,330],
+      Forward:   [420,375,110,265,115,305,315,290,250, 350,290,250,125,335,395,120,330,300],
+    },
+  }),
 
 ];
 
