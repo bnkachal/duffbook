@@ -4228,7 +4228,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               { key: 'singles', label: 'Singles Match Play', sub: '1v1 all day, hole by hole, off the lower handicap' },
               { key: 'split9', label: 'Split 9 Singles', sub: '2v2 group, but partners swap opponents at the turn \u2014 two 9-hole 1v1 matches each' },
             ].map(opt => (
-              <button key={opt.key} onClick={() => updateRound(p => ({ ...p, matchFormat: opt.key }))} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, background: state.matchFormat === opt.key ? C.turfLight : C.turf, border: `1.5px solid ${state.matchFormat === opt.key ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>
+              <button key={opt.key} onClick={() => { updateRound(p => ({ ...p, matchFormat: opt.key })); goNext(); }} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, background: state.matchFormat === opt.key ? C.turfLight : C.turf, border: `1.5px solid ${state.matchFormat === opt.key ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: C.ivory }}>{opt.label}</span>
                   {state.matchFormat === opt.key && <Check size={16} color={C.gold} />}
