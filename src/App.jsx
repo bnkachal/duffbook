@@ -2914,6 +2914,35 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               </div>
             ))}
           </div>
+          {multiRound && tournamentStandings.length > 0 && (() => {
+            const teamAPlayers = tournamentStandings.filter(p => p.flightId === ryderCup.teamA.id);
+            const teamBPlayers = tournamentStandings.filter(p => p.flightId === ryderCup.teamB.id);
+            const col = (list) => (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {list.map(p => {
+                  const pts = computePlayerPoints(tournament, p.id);
+                  const score = useNet ? p.netToPar : p.toPar;
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <Chip color={p.color} style={{ width: 20, height: 20, fontSize: 8, flexShrink: 0 }}>{initials(p.name)}</Chip>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name.split(' ')[0]}</div>
+                        <div style={{ fontSize: 9, color: C.gold }}>{pts} pt{pts !== 1 ? 's' : ''}</div>
+                      </div>
+                      <span style={{ fontFamily: 'Oswald, sans-serif', fontSize: 12, color: p.roundsStarted === 0 ? C.bunker : score < 0 ? C.flagRed : C.ivory, flexShrink: 0 }}>{p.roundsStarted === 0 ? '–' : fmtToPar(score)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+            return (
+              <div style={{ display: 'flex', gap: 14, marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.turfBorder}` }}>
+                {col(teamAPlayers)}
+                <div style={{ width: 1, background: C.turfBorder, flexShrink: 0 }} />
+                {col(teamBPlayers)}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -3004,7 +3033,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         />
       )}
 
-      {layoutPrefs.standings !== false && multiRound && tournamentStandings.length > 0 && (
+      {layoutPrefs.standings !== false && !ryderCup && multiRound && tournamentStandings.length > 0 && (
         <div style={{ ...cardBtn, cursor: 'default' }}>
           <SectionHeader title="Tournament standings" sub="cumulative across every started round" icon={Calendar} iconColor={C.blueBright} />
           {tournamentStandings.slice(0, 6).map((p, i) => {
@@ -3696,6 +3725,30 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
     setGroups(newGroups);
   };
 
+  // Low handicaps tee off first (faster expected pace) — sort ascending, then fill groups in
+  // blocks rather than round-robin, so Group 1 is genuinely the lowest tier, not a mix of everyone.
+  // Players with no handicap entered sort to the end, since we can't assume their pace.
+  const autoSplitByHandicap = () => {
+    const numGroups = Math.max(1, Math.ceil(players.length / 4));
+    const sorted = [...players].sort((a, b) => {
+      const ai = parseFloat(a.handicapIndex), bi = parseFloat(b.handicapIndex);
+      const aValid = !isNaN(ai), bValid = !isNaN(bi);
+      if (aValid && bValid) return ai - bi;
+      if (aValid) return -1;
+      if (bValid) return 1;
+      return 0;
+    });
+    const newGroups = Array.from({ length: numGroups }, (_, i) => ({
+      id: groups[i]?.id || ('flow_g' + (i + 1) + '_' + Date.now()),
+      groupNumber: i + 1, teeTime: groups[i]?.teeTime || null,
+      startingHole: groups[i]?.startingHole || 1, playerIds: [],
+      adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+    }));
+    const perGroup = Math.ceil(sorted.length / numGroups);
+    sorted.forEach((p, idx) => { newGroups[Math.min(numGroups - 1, Math.floor(idx / perGroup))].playerIds.push(p.id); });
+    setGroups(newGroups);
+  };
+
   const movePlayer = (playerId, toGroupId) => {
     setGroups(prev => prev.map(g => ({
       ...g,
@@ -3750,6 +3803,7 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.5, flex: 1 }}>Tap any player to assign them to a group.</div>
         <button onClick={autoSplit} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer', flexShrink: 0, marginLeft: 10 }}>Auto-split</button>
+        <button onClick={autoSplitByHandicap} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer', flexShrink: 0, marginLeft: 8 }}>Auto-split by handicap</button>
       </div>
 
       {groups.map((g, gi) => (
