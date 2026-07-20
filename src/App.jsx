@@ -701,19 +701,30 @@ function buildMatchScoreFn(match, state) {
   const minCh = allIds.length ? Math.min(...allIds.map(id => chMap[id])) : 0;
   return (playerId, holeIdx) => { const g = state.scores[playerId]?.[holeIdx]; if (g == null) return null; return g - strokesOnHole((chMap[playerId] || 0) - minCh, state.strokeIndex, holeIdx); };
 }
+// A match normally covers all holes. Split 9 Singles matches are scoped to just the
+// front or back 9 — this returns the [startHole, endHole) range (0-indexed, exclusive end)
+// for any match, defaulting to the full round for every existing format.
+function matchHoleRange(match, state) {
+  const half = Math.ceil(state.numHoles / 2);
+  if (match.holeRange === 'front') return [0, half];
+  if (match.holeRange === 'back') return [half, state.numHoles];
+  return [0, state.numHoles];
+}
 function computeMatch(match, state) {
   const scoreFn = buildMatchScoreFn(match, state);
+  const [rangeStart, rangeEnd] = matchHoleRange(match, state);
+  const rangeLen = rangeEnd - rangeStart;
   let upA = 0; const log = []; let decidedAt = null;
-  for (let h = 0; h < state.numHoles; h++) {
+  for (let h = rangeStart; h < rangeEnd; h++) {
     const a = matchSideScore(match.sideA, scoreFn, h), b = matchSideScore(match.sideB, scoreFn, h);
     if (a == null || b == null) { log.push({ hole: h, status: 'pending' }); continue; }
     if (a < b) { upA++; log.push({ hole: h, status: 'A' }); } else if (b < a) { upA--; log.push({ hole: h, status: 'B' }); } else log.push({ hole: h, status: 'halved' });
-    const remaining = state.numHoles - (h + 1);
+    const remaining = rangeEnd - (h + 1);
     if (decidedAt == null && Math.abs(upA) > remaining) decidedAt = { hole: h, upA, remaining };
   }
   const holesPlayed = log.filter(l => l.status !== 'pending').length;
-  const finished = !!decidedAt || holesPlayed === state.numHoles;
-  return { upA, log, decidedAt, holesPlayed, finished, outcome: finished ? (upA > 0 ? 'A' : upA < 0 ? 'B' : 'halved') : null };
+  const finished = !!decidedAt || holesPlayed === rangeLen;
+  return { upA, log, decidedAt, holesPlayed, finished, outcome: finished ? (upA > 0 ? 'A' : upA < 0 ? 'B' : 'halved') : null, rangeStart, rangeEnd };
 }
 function describeMatch(m, state, r) {
   const aN = sideNames(m.sideA, state), bN = sideNames(m.sideB, state);
@@ -744,16 +755,19 @@ function computeMatchplay(state) {
 function computeTeamRace(state, matchResults) {
   if (!state.flights || state.flights.length !== 2) return null;
   const [f1, f2] = state.flights; const points = { [f1.id]: 0, [f2.id]: 0 };
+  const isSplit9 = state.matchFormat === 'split9';
+  const winPts = isSplit9 ? 0.5 : 1;
+  const halvePts = isSplit9 ? 0.25 : 0.5;
   const sideFlight = (side) => { const counts = {}; side.forEach(id => { const p = state.players.find(pp => pp.id === id); if (p?.flightId) counts[p.flightId] = (counts[p.flightId] || 0) + 1; }); return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]; };
   matchResults.forEach(m => {
     if (!m.finished) return;
     const fa = sideFlight(m.sideA), fb = sideFlight(m.sideB);
-    if (m.outcome === 'A' && fa) points[fa] = (points[fa] || 0) + 1;
-    else if (m.outcome === 'B' && fb) points[fb] = (points[fb] || 0) + 1;
-    else if (m.outcome === 'halved') { if (fa) points[fa] = (points[fa] || 0) + 0.5; if (fb) points[fb] = (points[fb] || 0) + 0.5; }
+    if (m.outcome === 'A' && fa) points[fa] = (points[fa] || 0) + winPts;
+    else if (m.outcome === 'B' && fb) points[fb] = (points[fb] || 0) + winPts;
+    else if (m.outcome === 'halved') { if (fa) points[fa] = (points[fa] || 0) + halvePts; if (fb) points[fb] = (points[fb] || 0) + halvePts; }
   });
-  const total = (state.games.matchplay.matches || []).length;
-  return { f1, f2, points, total, target: total / 2 + 0.5 };
+  const total = (state.games.matchplay.matches || []).length * winPts;
+  return { f1, f2, points, total, target: total / 2 + (isSplit9 ? 0.25 : 0.5) };
 }
 
 /* ---- Ryder Cup: reuses flights + match play, just aggregates team points round-by-round ---- */
@@ -1241,14 +1255,17 @@ function computePlayerPoints(tournament, playerId) {
     if (!round.games?.matchplay?.enabled) return;
     const rv = getRoundView(tournament, round.id);
     const matches = Array.isArray(rv.games?.matchplay?.matches) ? rv.games.matchplay.matches : [];
+    const isSplit9 = rv.matchFormat === 'split9';
+    const winPts = isSplit9 ? 0.5 : 1;
+    const halvePts = isSplit9 ? 0.25 : 0.5;
     matches.forEach(m => {
       const onA = (m.sideA || []).includes(playerId);
       const onB = (m.sideB || []).includes(playerId);
       if (!onA && !onB) return;
       const r = computeMatch(m, rv);
       if (!r.finished) return;
-      if (r.outcome === 'halved') points += 0.5;
-      else if ((r.outcome === 'A' && onA) || (r.outcome === 'B' && onB)) points += 1;
+      if (r.outcome === 'halved') points += halvePts;
+      else if ((r.outcome === 'A' && onA) || (r.outcome === 'B' && onB)) points += winPts;
     });
   });
   return points;
@@ -1449,7 +1466,7 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
   const [name, setName] = useState('');
   return (
     <div style={{ ...rowCard, flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-      <span style={{ fontSize: 13, width: '100%' }}>Which player are you?</span>
+      <span style={{ fontSize: 13, width: '100%' }}>👋 Tap your name to get started</span>
       {state.players.map(p => <button key={p.id} onClick={() => onPick(p.id)} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, borderRadius: 999, padding: 2, cursor: 'pointer' }}><Chip color={p.color}>{initials(p.name)}</Chip></button>)}
       <div style={{ display: 'flex', gap: 6, width: '100%', marginTop: 6 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Not listed? Add your name" style={{ ...inputStyle, flex: 1, fontSize: 12, padding: '7px 10px' }} />
@@ -1786,10 +1803,28 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
   const frontNet = frontHcpShare != null && frontScored > 0 ? frontGross - frontHcpShare : null;
   const backNet = backHcpShare != null && backScored > 0 ? backGross - backHcpShare : null;
 
-  // Which holes does whoami get a stroke on, based on their match (singles/best-ball off low man)?
+  // Which holes does whoami get a stroke on, based on their match (singles/best-ball off low man/split9)?
   const myStrokeHoles = (() => {
     if (!whoami) return new Set();
     const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
+    if (state.matchFormat === 'split9') {
+      const half = Math.ceil(state.numHoles / 2);
+      const inFrontHalf = h < half;
+      const myMatch = matches.find(m => (inFrontHalf ? m.holeRange === 'front' : m.holeRange === 'back') && ((m.sideA || []).includes(whoami.id) || (m.sideB || []).includes(whoami.id)));
+      if (!myMatch) return new Set();
+      const onSideA = (myMatch.sideA || []).includes(whoami.id);
+      const oppId = onSideA ? (myMatch.sideB || [])[0] : (myMatch.sideA || [])[0];
+      const oppPlayer = state.players.find(p => p.id === oppId);
+      if (!oppPlayer) return new Set();
+      const myCh = courseHandicap(whoami.handicapIndex, state.courseSlope);
+      const oppCh = courseHandicap(oppPlayer.handicapIndex, state.courseSlope);
+      if (myCh == null || oppCh == null) return new Set();
+      const myStrokes = Math.max(0, myCh - oppCh);
+      const rangeStart = inFrontHalf ? 0 : half, rangeEnd = inFrontHalf ? half : state.numHoles;
+      const segIndex = state.strokeIndex.slice(rangeStart, rangeEnd);
+      const localHoles = distributeStrokes(myStrokes, segIndex, rangeEnd - rangeStart);
+      return new Set([...localHoles].map(i => i + rangeStart));
+    }
     const myMatch = matches.find(m => (m.sideA || []).includes(whoami.id) || (m.sideB || []).includes(whoami.id));
     if (!myMatch) return new Set();
     if (state.matchFormat === 'singles') {
@@ -1882,11 +1917,17 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
               </div>
             )}
           </div>
-          {myHcp != null && (
+          {myHcp != null ? (
             <div style={{ background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '6px 12px', textAlign: 'center', boxShadow: C.shadow, flexShrink: 0 }}>
               <div style={{ fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>HCP</div>
               <div style={{ fontSize: 18, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{myHcp}</div>
               {myCourseHcp != null && <div style={{ fontSize: 9, color: C.bunker }}>course <strong style={{ color: C.ivory }}>{myCourseHcp}</strong></div>}
+            </div>
+          ) : (
+            <div style={{ background: C.turf, border: `1.5px dashed ${C.turfBorder}`, borderRadius: 12, padding: '6px 12px', textAlign: 'center', flexShrink: 0 }}>
+              <div style={{ fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>HCP</div>
+              <div style={{ fontSize: 11, color: C.bunker }}>not set</div>
+              <div style={{ fontSize: 8, color: C.bunker }}>ask admin</div>
             </div>
           )}
         </div>
@@ -2668,13 +2709,18 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{state.roundName}</div><div style={{ fontFamily: 'Anton, sans-serif', fontSize: 24 }}>Hole {groupHole + 1}</div></div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {whoami?.handicapIndex != null && (
+            {whoami && (whoami.handicapIndex != null ? (
               <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
                 <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
                 {courseHandicap(whoami.handicapIndex, state.courseSlope) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {courseHandicap(whoami.handicapIndex, state.courseSlope)}</div>}
               </div>
-            )}
+            ) : (
+              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px', border: `1px dashed ${C.turfBorder}` }}>
+                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
+                <div style={{ fontSize: 10, color: C.bunker }}>not set</div>
+              </div>
+            ))}
             {me && (
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>You · {useNet ? 'net' : 'gross'}</div>
@@ -2695,9 +2741,11 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       {layoutPrefs.yourMatch !== false && ryderCup && (() => {
         const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
         if (matches.length === 0) return null;
-        const myMatch = whoami ? matches.find(m => (m.sideA || []).includes(whoami.id) || (m.sideB || []).includes(whoami.id)) : null;
-        const otherMatches = myMatch ? matches.filter(m => m.id !== myMatch.id) : matches;
         const format = state.matchFormat;
+        const isSplit9 = format === 'split9';
+        const myMatches = whoami ? matches.filter(m => (m.sideA || []).includes(whoami.id) || (m.sideB || []).includes(whoami.id)) : [];
+        const myMatch = myMatches[0] || null; // kept for non-split9 formats, which only ever have one
+        const otherMatches = isSplit9 ? matches.filter(m => !myMatches.some(mm => mm.id === m.id)) : (myMatch ? matches.filter(m => m.id !== myMatch.id) : matches);
 
         const renderMatch = (m, isMine) => {
           const r = computeMatch(m, state);
@@ -2712,7 +2760,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 
           // Stroke display — plain-language explanation, only for relevant formats
           let strokeInfo = null;
-          if (format === 'singles' && aPlayers.length === 1 && bPlayers.length === 1) {
+          if ((format === 'singles' || format === 'split9') && aPlayers.length === 1 && bPlayers.length === 1) {
             const chA = courseHandicap(aPlayers[0].handicapIndex, state.courseSlope);
             const chB = courseHandicap(bPlayers[0].handicapIndex, state.courseSlope);
             if (chA != null && chB != null && chA !== chB) {
@@ -2770,11 +2818,16 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 
         return (
           <div style={{ ...cardBtn, cursor: 'default' }}>
-            <SectionHeader title={myMatch ? 'Your Match' : 'Matches'} sub={`${matches.length} match${matches.length !== 1 ? 'es' : ''} this round`} icon={Swords} iconColor={C.flagRed} />
-            {myMatch && renderMatch(myMatch, true)}
+            <SectionHeader title={myMatches.length ? 'Your Match' : 'Matches'} sub={`${matches.length} match${matches.length !== 1 ? 'es' : ''} this round`} icon={Swords} iconColor={C.flagRed} />
+            {isSplit9 ? myMatches.map(m => (
+              <div key={m.id}>
+                <div style={{ fontSize: 9, color: C.gold, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>{m.holeRange === 'front' ? 'Front 9' : 'Back 9'}</div>
+                {renderMatch(m, true)}
+              </div>
+            )) : (myMatch && renderMatch(myMatch, true))}
             {otherMatches.length > 0 && (
               <>
-                {myMatch && <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 8, marginBottom: 6 }}>Other groups</div>}
+                {(isSplit9 ? myMatches.length > 0 : !!myMatch) && <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 8, marginBottom: 6 }}>Other groups</div>}
                 {otherMatches.map(m => renderMatch(m, false))}
               </>
             )}
@@ -3734,6 +3787,80 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
   );
 }
 
+function Split9Builder({ state, updateRound }) {
+  const [pending, setPending] = useState({}); // playerId -> 'A' | 'B'
+  const togglePending = (id) => setPending(prev => {
+    const cur = prev[id]; const next = { ...prev };
+    if (!cur) next[id] = 'A'; else if (cur === 'A') next[id] = 'B'; else delete next[id];
+    return next;
+  });
+  const sideA = Object.keys(pending).filter(id => pending[id] === 'A');
+  const sideB = Object.keys(pending).filter(id => pending[id] === 'B');
+  const canCreate = sideA.length === 2 && sideB.length === 2;
+
+  const createGroup = () => {
+    if (!canCreate) return;
+    const [a1, a2] = sideA, [b1, b2] = sideB;
+    const groupId = 'split9_' + Date.now();
+    const newMatches = [
+      { id: groupId + '_f1', sideA: [a1], sideB: [b1], holeRange: 'front', splitGroupId: groupId },
+      { id: groupId + '_f2', sideA: [a2], sideB: [b2], holeRange: 'front', splitGroupId: groupId },
+      { id: groupId + '_b1', sideA: [a1], sideB: [b2], holeRange: 'back', splitGroupId: groupId },
+      { id: groupId + '_b2', sideA: [a2], sideB: [b1], holeRange: 'back', splitGroupId: groupId },
+    ];
+    updateRound(p => ({ ...p, games: { ...p.games, matchplay: { ...p.games.matchplay, matches: [...(p.games.matchplay.matches || []), ...newMatches] } } }));
+    setPending({});
+  };
+
+  const removeGroup = (groupId) => updateRound(p => {
+    const groupMatchIds = (p.games.matchplay.matches || []).filter(m => m.splitGroupId === groupId).map(m => m.id);
+    const cleanTickets = Array.isArray(p.games?.parimutuel?.tickets) ? p.games.parimutuel.tickets.filter(t => !groupMatchIds.some(mid => t.entrantId === `${mid}-A` || t.entrantId === `${mid}-B`)) : [];
+    return {
+      ...p,
+      games: {
+        ...p.games,
+        matchplay: { ...p.games.matchplay, matches: (p.games.matchplay.matches || []).filter(m => m.splitGroupId !== groupId) },
+        parimutuel: { ...p.games.parimutuel, tickets: cleanTickets },
+      },
+    };
+  });
+
+  const allMatches = Array.isArray(state.games.matchplay?.matches) ? state.games.matchplay.matches : [];
+  const groupIds = [...new Set(allMatches.filter(m => m.splitGroupId).map(m => m.splitGroupId))];
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 6 }}>Pick 2 players for Team A, 2 for Team B — this foursome plays split 9s: partners swap opponents at the turn.</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {state.players.map(p => {
+          const selected = pending[p.id];
+          return (
+            <button key={p.id} onClick={() => togglePending(p.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${selected === 'A' ? C.gold : selected === 'B' ? C.flagRed : C.turfBorder}`, background: selected === 'A' ? C.gold : selected === 'B' ? C.flagRed : 'transparent', color: selected ? C.pineDark : C.ivory, cursor: 'pointer' }}>
+              {p.name}{selected ? ` (${selected})` : ''}
+            </button>
+          );
+        })}
+      </div>
+      <GoldButton onClick={createGroup} disabled={!canCreate} style={{ marginBottom: 12 }}>Create split 9 group (needs 2 + 2)</GoldButton>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {groupIds.map(gid => {
+          const gm = allMatches.filter(m => m.splitGroupId === gid);
+          const front = gm.filter(m => m.holeRange === 'front'), back = gm.filter(m => m.holeRange === 'back');
+          return (
+            <div key={gid} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: C.gold, textTransform: 'uppercase', fontWeight: 700 }}>Split 9 group</span>
+                <button onClick={() => removeGroup(gid)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={14} /></button>
+              </div>
+              {front.map(m => <div key={m.id} style={{ fontSize: 12, color: C.ivoryDim }}>F9: {sideNames(m.sideA, state)} vs {sideNames(m.sideB, state)}</div>)}
+              {back.map(m => <div key={m.id} style={{ fontSize: 12, color: C.ivoryDim }}>B9: {sideNames(m.sideA, state)} vs {sideNames(m.sideB, state)}</div>)}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function MatchBuilder({ state, updateRound }) {
   const [pending, setPending] = useState({});
   const togglePending = (id) => setPending(prev => { const cur = prev[id]; const next = { ...prev }; if (!cur) next[id] = 'A'; else if (cur === 'A') next[id] = 'B'; else delete next[id]; return next; });
@@ -3849,7 +3976,8 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
       <ToggleRow label="Stableford" sub="Points per hole vs par, $ per point above the field average" enabled={g.stableford.enabled} onToggle={() => setGame('stableford', 'enabled', !g.stableford.enabled)} right={g.stableford.enabled && <DollarInput value={g.stableford.value} onChange={v => setGame('stableford', 'value', v)} />} />
       {g.stableford.enabled && state.handicapsEnabled && <NetToggle value={g.stableford.net} onChange={v => setGame('stableford', 'net', v)} />}
       <ToggleRow label="Match play" sub="Head-to-head or best-ball pairs, net off the low handicap" enabled={g.matchplay.enabled} onToggle={() => setGame('matchplay', 'enabled', !g.matchplay.enabled)} right={g.matchplay.enabled && <DollarInput value={g.matchplay.value} onChange={v => setGame('matchplay', 'value', v)} />} />
-      {g.matchplay.enabled && <MatchBuilder state={state} updateRound={updateRound} />}
+      {g.matchplay.enabled && state.matchFormat === 'split9' && <Split9Builder state={state} updateRound={updateRound} />}
+      {g.matchplay.enabled && state.matchFormat !== 'split9' && <MatchBuilder state={state} updateRound={updateRound} />}
       <ToggleRow label="Wolf" sub="Rotating wolf each group, partner up or go it alone for 2x" enabled={g.wolf.enabled} onToggle={() => setGame('wolf', 'enabled', !g.wolf.enabled)} right={g.wolf.enabled && <DollarInput value={g.wolf.value} onChange={v => setGame('wolf', 'value', v)} />} />
       {g.wolf.enabled && <div style={{ fontSize: 11, color: C.ivoryDim, marginLeft: 4, marginBottom: 8 }}>Wolf picks live on the Home screen — each group runs its own rotation.</div>}
       <ToggleRow label="Pari-mutuel" sub="$5 tickets on a player or team, winner takes the pool" enabled={g.parimutuel.enabled} onToggle={() => setGame('parimutuel', 'enabled', !g.parimutuel.enabled)} />
@@ -3931,6 +4059,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
             <option value="best-ball">Best Ball</option>
             <option value="captain-choice">Captain's Choice (Scramble)</option>
             <option value="singles">Singles Match Play</option>
+            <option value="split9">Split 9 Singles (partners swap at the turn)</option>
           </select>
         </Field>
         <PlayersSection state={state} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} flights={tournament.flights} onOpenImport={() => setImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} />
@@ -4003,7 +4132,7 @@ function WizardNextButton({ onClick, disabled, label }) {
 }
 
 function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, setCourseField, startRound, isNewRound, onFinish }) {
-  const baseSteps = isNewRound ? ['course', 'holes', 'games', 'review'] : ['basics', 'course', 'holes', 'players', 'groups', 'games', 'review'];
+  const baseSteps = isNewRound ? ['course', 'holes', 'format', 'games', 'review'] : ['basics', 'course', 'holes', 'format', 'players', 'groups', 'games', 'review'];
   const [step, setStep] = useState(0);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
@@ -4047,7 +4176,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   return (
     <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', players: 'Who\u2019s playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: 'Who\u2019s playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
       {stepKey === 'basics' && (
         <div>
@@ -4083,6 +4212,29 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
           <div style={{ display: 'flex', gap: 10 }}>
             {[9, 18].map(n => (
               <button key={n} onClick={() => { setNumHoles(n); goNext(); }} style={{ flex: 1, padding: '28px 0', borderRadius: 14, fontFamily: 'Anton, sans-serif', fontSize: 26, background: state.numHoles === n ? C.gold : C.turf, color: state.numHoles === n ? C.pineDark : C.ivory, border: `1px solid ${state.numHoles === n ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>{n}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stepKey === 'format' && (
+        <div>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>This decides how the round is scored and how pairings get set up next \u2014 pick it before building groups so everything downstream matches.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[
+              { key: 'stroke-play', label: 'Stroke Play', sub: 'Everyone plays their own ball, lowest total wins' },
+              { key: 'best-ball', label: 'Best Ball', sub: '2v2 teams, the lower of each pair\u2019s scores counts per hole' },
+              { key: 'captain-choice', label: 'Captain\u2019s Choice (Scramble)', sub: 'Team plays one ball, best shot each time, no handicaps' },
+              { key: 'singles', label: 'Singles Match Play', sub: '1v1 all day, hole by hole, off the lower handicap' },
+              { key: 'split9', label: 'Split 9 Singles', sub: '2v2 group, but partners swap opponents at the turn \u2014 two 9-hole 1v1 matches each' },
+            ].map(opt => (
+              <button key={opt.key} onClick={() => updateRound(p => ({ ...p, matchFormat: opt.key }))} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, background: state.matchFormat === opt.key ? C.turfLight : C.turf, border: `1.5px solid ${state.matchFormat === opt.key ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.ivory }}>{opt.label}</span>
+                  {state.matchFormat === opt.key && <Check size={16} color={C.gold} />}
+                </div>
+                <div style={{ fontSize: 11, color: C.ivoryDim, marginTop: 2 }}>{opt.sub}</div>
+              </button>
             ))}
           </div>
         </div>
@@ -5817,8 +5969,8 @@ export default function RoGreen() {
     <div style={{ height: '100dvh', overflow: 'hidden', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', display: 'flex', flexDirection: 'column', position: 'fixed', inset: 0 }}>
       {activeTab === 'home' && (
         <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-          <BackdropArt opacity={0.22} />
-          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, transparent 0%, transparent 15%, ${C.pine} 55%)` }} />
+          <BackdropArt opacity={0.14} />
+          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, transparent 0%, ${C.pine}CC 18%, ${C.pine} 24%)` }} />
         </div>
       )}
       <FontLoader />
