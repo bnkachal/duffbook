@@ -28,7 +28,7 @@ const TABS = ['home', 'card', 'games', 'settle'];
      holes: [{holeNumber, par, handicap, yardagesByTee: {teeName: yards}}] } */
 
 /* Procedurally fills in per-tee yardages for each hole from a course's par sequence and each
-   tee's overall declared length \u2014 keeps the mock dataset internally consistent without
+   tee's overall declared length — keeps the mock dataset internally consistent without
    hand-typing hundreds of yardage numbers. Swap this whole module out once a real provider
    (GolfAPI.io, GolfCourseAPI, iGolf, etc.) is wired up; the UI never needs to know the source. */
 function buildMockHoles(pars, handicaps, teeBoxes, verifiedYardages) {
@@ -55,7 +55,7 @@ function buildMockCourse({ courseId, courseName, address, city, state, latitude,
   };
 }
 /* Two reusable 18-hole par/handicap patterns for the courses below where we don't have a
-   verified real routing on file \u2014 illustrative, not surveyed. The four Sandhills-area
+   verified real routing on file — illustrative, not surveyed. The four Sandhills-area
    courses keep their previously verified par + stroke-index data. */
 const PATTERN_A_PARS = [4,4,3,5,4,3,4,5,4, 4,3,5,4,4,3,4,5,4];
 const PATTERN_A_SI =   [7,11,15,1,9,17,3,13,5, 6,10,14,2,8,16,4,12,18];
@@ -169,7 +169,7 @@ const MOCK_COURSES = [
 
 /* ============================== COURSE PROVIDER SERVICE ==============================
    The UI only ever talks to courseProviderService. Every method returns a Promise, even
-   though the mock provider resolves from an in-memory array \u2014 that's deliberate, so
+   though the mock provider resolves from an in-memory array — that's deliberate, so
    dropping in a real fetch()-based provider (GolfAPI.io, GolfCourseAPI, iGolf, or another)
    later is a one-file swap with no UI changes. Worth a fresh look at each provider's current
    free-tier terms before wiring one up for real. */
@@ -357,7 +357,7 @@ function holeScoreFn(state, useNet) {
 
 /* ============================== TOURNAMENT / ROUND DATA MODEL ==============================
    A "tournament" is the container created/joined via a code. It holds the shared roster
-   (players, flights, handicaps, admin PIN) plus an ordered list of "rounds" \u2014 one per day.
+   (players, flights, handicaps, admin PIN) plus an ordered list of "rounds" — one per day.
    Each round has its own course, scores, games, and custom bets. A "round view" flattens the
    active round + the tournament's shared fields into one object shaped exactly like the old
    single-round state, so every existing compute function and tab component below is unchanged. */
@@ -453,7 +453,7 @@ function generateDemoTournament() {
   const [mike, steve, brij, josh, dave] = players;
 
   const round1 = defaultRound(0);
-  round1.name = 'Round 1 \u2014 Tobacco Road';
+  round1.name = 'Round 1 — Tobacco Road';
   Object.assign(round1, roundFieldsFromCourse(course1, course1.teeBoxes[0].teeName));
   const thruMap = { [mike.id]: 18, [steve.id]: 18, [brij.id]: 16, [josh.id]: 15, [dave.id]: 13 };
   players.forEach(p => {
@@ -489,7 +489,7 @@ function generateDemoTournament() {
   round1.started = true;
 
   const round2 = defaultRound(1);
-  round2.name = 'Round 2 \u2014 Mid South';
+  round2.name = 'Round 2 — Mid South';
   Object.assign(round2, roundFieldsFromCourse(course2, course2.teeBoxes[0].teeName));
   players.forEach(p => { round2.scores[p.id] = Array(18).fill(null); });
   round2.started = false;
@@ -806,7 +806,7 @@ function makeSetRyderCup(updateTournament) {
 }
 
 /* ============================== ROUND FLOW (pace-of-play command center) ==============================
-   Everything here is derived \u2014 current hole, hole-by-hole progress, and pace all come from score
+   Everything here is derived — current hole, hole-by-hole progress, and pace all come from score
    entries and tee time, never GPS, so they can't drift out of sync with what's actually been scored.
    Functions take plain data (not React state), so the same logic works for a real round's scores or
    the self-contained mock dataset built later in this file. */
@@ -894,8 +894,8 @@ function computeRoundFlowSummary(groupsFlow) {
     holeSpread, projectedTournamentFinish, slowestGroupId: slowest ? slowest.id : null, fastestGroupId: fastest ? fastest.id : null,
   };
 }
-/* Pulls "who won a bet on hole N" out of the existing betting engine \u2014 skins (always hole-indexed) plus
-   any custom bet that's tied to a specific hole \u2014 so the timeline's money markers reflect real bets,
+/* Pulls "who won a bet on hole N" out of the existing betting engine — skins (always hole-indexed) plus
+   any custom bet that's tied to a specific hole — so the timeline's money markers reflect real bets,
    not a separate parallel system. */
 function computeBetWinnersByHole(state) {
   const byHole = {};
@@ -911,7 +911,7 @@ function computeBetWinnersByHole(state) {
   return byHole;
 }
 
-/* Self-contained illustrative dataset \u2014 its own 16 players, not tied to the real roster, shown only
+/* Self-contained illustrative dataset — its own 16 players, not tied to the real roster, shown only
    when no real groups have been set up for the active round yet. Covers every required demo scenario:
    one finished group, one on-pace, one slow, one not-started; a few birdies; a few bet wins. */
 function generateMockFlowGroups() {
@@ -1095,7 +1095,7 @@ function buildSkinsBets(state, tournamentId, roundId) {
   const skins = computeSkins(state, holeScoreFn(state, g.net));
   const pending = skins.results.some(r => r.status === 'pending');
   return [{
-    id: `bet-skins-${roundId}`, tournamentId, roundId, betName: `Skins \u00b7 ${state.roundName}`, betType: BET_TYPES.SKINS,
+    id: `bet-skins-${roundId}`, tournamentId, roundId, betName: `Skins · ${state.roundName}`, betType: BET_TYPES.SKINS,
     participants: state.players.map(p => p.id), fakeMoneyStake: g.value * state.players.length,
     scoringMethod: g.net ? 'net' : 'gross', settlementMethod: 'automatic',
     currentStatus: pending ? 'pending' : 'settled',
@@ -1111,11 +1111,11 @@ function buildNassauBets(state, tournamentId, roundId) {
     const payout = {}; ids.forEach(id => { payout[id] = 0; });
     if (seg.status === 'won') ids.forEach(id => { payout[id] = id === seg.winnerId ? g.value * (ids.length - 1) : -g.value; });
     return {
-      id: `bet-nassau-${roundId}-${i}`, tournamentId, roundId, betName: `Nassau \u2013 ${seg.label} \u00b7 ${state.roundName}`, betType: BET_TYPES.NASSAU,
+      id: `bet-nassau-${roundId}-${i}`, tournamentId, roundId, betName: `Nassau – ${seg.label} · ${state.roundName}`, betType: BET_TYPES.NASSAU,
       participants: ids, fakeMoneyStake: g.value * (ids.length - 1), scoringMethod: g.net ? 'net' : 'gross', settlementMethod: 'automatic',
       currentStatus: seg.status === 'pending' ? 'pending' : 'settled',
       winningPlayer: seg.status === 'won' ? seg.winnerId : (seg.status === 'push' ? ids : null),
-      calculatedPayout: payout, notes: seg.status === 'push' ? 'Tied \u2014 push' : '',
+      calculatedPayout: payout, notes: seg.status === 'push' ? 'Tied — push' : '',
     };
   });
 }
@@ -1124,7 +1124,7 @@ function buildStablefordBets(state, tournamentId, roundId) {
   const stableford = computeStableford(state, holeScoreFn(state, g.net));
   const allFinished = state.players.length > 0 && computeStats(state).every(s => s.thru === state.numHoles);
   return [{
-    id: `bet-stableford-${roundId}`, tournamentId, roundId, betName: `Stableford \u00b7 ${state.roundName}`, betType: BET_TYPES.STABLEFORD,
+    id: `bet-stableford-${roundId}`, tournamentId, roundId, betName: `Stableford · ${state.roundName}`, betType: BET_TYPES.STABLEFORD,
     participants: state.players.map(p => p.id), fakeMoneyStake: g.value, scoringMethod: 'points', settlementMethod: 'automatic',
     currentStatus: allFinished ? 'settled' : 'pending',
     winningPlayer: Object.entries(stableford.net).filter(([, v]) => v > 0).map(([id]) => id),
@@ -1138,7 +1138,7 @@ function buildMatchplayBets(state, tournamentId, roundId) {
     const isH2H = m.sideA.length === 1 && m.sideB.length === 1;
     return {
       id: `bet-match-${roundId}-${m.id}`, tournamentId, roundId,
-      betName: `${sideNames(m.sideA, state)} vs ${sideNames(m.sideB, state)} \u00b7 ${state.roundName}`,
+      betName: `${sideNames(m.sideA, state)} vs ${sideNames(m.sideB, state)} · ${state.roundName}`,
       betType: isH2H ? BET_TYPES.HEAD_TO_HEAD : BET_TYPES.GROUP_LOW_SCORE,
       participants: [...m.sideA, ...m.sideB], fakeMoneyStake: g.value, scoringMethod: 'net', settlementMethod: 'automatic',
       currentStatus: m.finished ? 'settled' : 'pending',
@@ -1154,7 +1154,7 @@ function buildWolfBets(state, tournamentId, roundId) {
   const allResults = Object.values(wolf.resultsByGroup || {}).flat();
   const pending = allResults.some(r => r.status === 'pending');
   return [{
-    id: `bet-wolf-${roundId}`, tournamentId, roundId, betName: `Wolf \u00b7 ${state.roundName}`, betType: BET_TYPES.WOLF,
+    id: `bet-wolf-${roundId}`, tournamentId, roundId, betName: `Wolf · ${state.roundName}`, betType: BET_TYPES.WOLF,
     participants: state.players.map(p => p.id), fakeMoneyStake: g.value, scoringMethod: g.net ? 'net' : 'gross', settlementMethod: 'automatic',
     currentStatus: pending ? 'pending' : 'settled',
     winningPlayer: Object.entries(wolf.net).filter(([, v]) => v > 0).map(([id]) => id),
@@ -1166,11 +1166,11 @@ function buildParimutuelBets(state, tournamentId, roundId) {
   const pmData = computeParimutuel(state);
   const bettorIds = Array.from(new Set((g.tickets || []).map(t => t.bettorId)));
   return [{
-    id: `bet-parimutuel-${roundId}`, tournamentId, roundId, betName: `Pari-Mutuel \u00b7 ${state.roundName}`, betType: BET_TYPES.PARIMUTUEL,
+    id: `bet-parimutuel-${roundId}`, tournamentId, roundId, betName: `Pari-Mutuel · ${state.roundName}`, betType: BET_TYPES.PARIMUTUEL,
     participants: bettorIds, fakeMoneyStake: (pmData?.pot ?? 0), scoringMethod: 'pool', settlementMethod: 'manual',
     currentStatus: g.resolved ? 'settled' : 'pending',
     winningPlayer: g.resolved ? g.winnerId : null,
-    calculatedPayout: pmData.payoutNet, notes: `$5/ticket \u00b7 ${pmData.totalTickets} ticket${pmData.totalTickets !== 1 ? 's' : ''} sold`,
+    calculatedPayout: pmData.payoutNet, notes: `$5/ticket · ${pmData.totalTickets} ticket${pmData.totalTickets !== 1 ? 's' : ''} sold`,
   }];
 }
 
@@ -1229,7 +1229,7 @@ function buildCustomBets(state, tournamentId, roundId) {
   return (state.customBets || []).map(bet => {
     const result = computeCustomBet(bet, state);
     return {
-      id: `bet-custom-${roundId}-${bet.id}`, tournamentId, roundId, betName: `${bet.betName} \u00b7 ${state.roundName}`,
+      id: `bet-custom-${roundId}-${bet.id}`, tournamentId, roundId, betName: `${bet.betName} · ${state.roundName}`,
       betType: CUSTOM_BET_CONFIG[bet.betType]?.label || BET_TYPES.CUSTOM,
       participants: bet.participants, fakeMoneyStake: bet.entryAmount * bet.participants.length,
       scoringMethod: bet.scoringMethod || 'manual', settlementMethod: bet.settlementMethod,
@@ -1322,7 +1322,7 @@ function buildTournamentCustomBets(tournament, tournamentId) {
   return (tournament.tournamentCustomBets || []).map(bet => {
     const result = computeTournamentCustomBet(bet, tournament);
     return {
-      id: `bet-tcustom-${bet.id}`, tournamentId, roundId: null, betName: `${bet.betName} \u00b7 whole trip`,
+      id: `bet-tcustom-${bet.id}`, tournamentId, roundId: null, betName: `${bet.betName} · whole trip`,
       betType: CUSTOM_BET_CONFIG[bet.betType]?.label || BET_TYPES.CUSTOM,
       participants: bet.participants, fakeMoneyStake: bet.entryAmount * bet.participants.length,
       scoringMethod: bet.scoringMethod || 'manual', settlementMethod: bet.settlementMethod,
@@ -1339,7 +1339,7 @@ function buildTournamentBets(tournament, tournamentId) {
 
 /* ============================== SETTLEMENT ENGINE ==============================
    Folds every Bet's payout (from every round, plus tournament-wide bets) into one ledger
-   per player \u2014 netPosition is a running total exactly like each game already kept, just
+   per player — netPosition is a running total exactly like each game already kept, just
    centralized across the whole trip instead of one round at a time. */
 function buildPlayerLedger(players, bets) {
   const ledger = {};
@@ -1384,16 +1384,16 @@ function getNextStep(phase, state, whoami, isAdmin) {
       const stats = computeStats(state);
       const bettingOpen = !stats.some(s => s.thru > pm.lockAfterHole);
       const myTickets = whoami ? (pm.tickets || []).some(t => t.bettorId === whoami.id) : false;
-      if (bettingOpen && whoami && !myTickets) return { text: `Betting closes after hole ${pm.lockAfterHole} \u2014 get your tickets in.`, action: 'bets' };
+      if (bettingOpen && whoami && !myTickets) return { text: `Betting closes after hole ${pm.lockAfterHole} — get your tickets in.`, action: 'bets' };
     }
     return null;
   }
   if (phase === 'wrapping-up') {
     return isAdmin
-      ? { text: "Round's done \u2014 a few bets still need a winner declared.", action: 'bets' }
-      : { text: "Round's done \u2014 waiting on the admin to settle a couple of bets.", action: 'bets' };
+      ? { text: "Round's done — a few bets still need a winner declared.", action: 'bets' }
+      : { text: "Round's done — waiting on the admin to settle a couple of bets.", action: 'bets' };
   }
-  if (phase === 'complete') return { text: "Round's complete \u2014 see the final wrap-up.", action: 'wrapup' };
+  if (phase === 'complete') return { text: "Round's complete — see the final wrap-up.", action: 'wrapup' };
   return null;
 }
 
@@ -2360,12 +2360,12 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
       )}
       {pm.enabled && pmData && !pmData.isMatchType && (
         <div style={{ marginBottom: 22 }}>
-          <SectionHeader title="Pari-mutuel" sub={pm.resolved ? 'Resolved' : bettingOpen ? `Open \u00b7 $5/ticket \u00b7 closes after hole ${pm.lockAfterHole}` : 'Betting closed'} icon={Ticket} iconColor={C.gold} />
+          <SectionHeader title="Pari-mutuel" sub={pm.resolved ? 'Resolved' : bettingOpen ? `Open · $5/ticket · closes after hole ${pm.lockAfterHole}` : 'Betting closed'} icon={Ticket} iconColor={C.gold} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             {pmData?.entrants?.map(e => (
               <div key={e.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', flex: '1 1 120px', minWidth: 120 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color}>{initials(e.name)}</Chip><span style={{ fontSize: 13, fontWeight: 600 }}>{e.name}</span></div>
-                <div style={{ fontSize: 11, color: C.ivoryDim }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''} \u00b7 ${(e.tickets ?? 0) * 5}</div>
+                <div style={{ fontSize: 11, color: C.ivoryDim }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''} · ${(e.tickets ?? 0) * 5}</div>
                 {e.odds > 0 && <div style={{ fontSize: 11, color: C.gold }}>{e.odds}:1 odds</div>}
               </div>
             ))}
@@ -2376,7 +2376,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
           </div>
           {bettingOpen && (
             <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-              <div style={{ fontSize: 12, color: C.ivoryDim }}>Your tickets \u00b7 tap + to buy ($5 each)</div>
+              <div style={{ fontSize: 12, color: C.ivoryDim }}>Your tickets · tap + to buy ($5 each)</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {pmData?.entrants?.map(e => {
                   const activeBettorId = whoami?.id || (viewAsAdmin ? tournament?.players?.find(p => p.name === deviceName)?.id : null);
@@ -2397,7 +2397,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
           {pm.resolved && pmData?.winnerId && (
             <div style={{ ...rowCard, background: C.turfLight, gap: 8 }}>
               <Trophy size={16} color={C.goldBright} />
-              <span style={{ fontSize: 13 }}>Winner: <strong>{state.players.find(p => p.id === pmData.winnerId)?.name}</strong> \u00b7 payouts calculated in Settle</span>
+              <span style={{ fontSize: 13 }}>Winner: <strong>{state.players.find(p => p.id === pmData.winnerId)?.name}</strong> · payouts calculated in Settle</span>
             </div>
           )}
           {isAdmin && pm.enabled && !pm.resolved && (
@@ -2423,7 +2423,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
         const activeBettorId = whoami?.id || (viewAsAdmin ? tournament?.players?.find(p => p.name === deviceName)?.id : null);
         return (
           <div style={{ marginBottom: 22 }}>
-            <SectionHeader title="Pari-mutuel" sub={`${matches.length} match${matches.length !== 1 ? 'es' : ''} \u00b7 $5/ticket \u00b7 each locks after hole ${pm.lockAfterHole}`} icon={Ticket} iconColor={C.gold} />
+            <SectionHeader title="Pari-mutuel" sub={`${matches.length} match${matches.length !== 1 ? 'es' : ''} · $5/ticket · each locks after hole ${pm.lockAfterHole}`} icon={Ticket} iconColor={C.gold} />
             {matches.map((m, mi) => {
               const info = pmData.matchInfo[m.id] || {};
               const matchEntrants = pmData.entrants.filter(e => e.matchId === m.id);
@@ -2433,7 +2433,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
                 <div key={m.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 12, color: C.gold, fontWeight: 700, textTransform: 'uppercase' }}>Match {mi + 1}</span>
-                    <span style={{ fontSize: 11, color: info.resolved ? C.goldBright : info.locked ? C.flagRed : C.emerald }}>{info.resolved ? 'Resolved' : info.locked ? 'Locked' : `Open \u00b7 thru ${info.maxThru}`}</span>
+                    <span style={{ fontSize: 11, color: info.resolved ? C.goldBright : info.locked ? C.flagRed : C.emerald }}>{info.resolved ? 'Resolved' : info.locked ? 'Locked' : `Open · thru ${info.maxThru}`}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {matchEntrants.map(e => {
@@ -2441,7 +2441,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
                       return (
                         <div key={e.id} style={{ flex: 1, background: e.isWinner ? C.turfLight : 'transparent', border: `1px solid ${e.isWinner ? C.goldBright : C.turfBorder}`, borderRadius: 10, padding: '8px 10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(e.name)}</Chip><span style={{ fontSize: 12, fontWeight: 600 }}>{e.name}</span>{e.isWinner && <Trophy size={12} color={C.goldBright} />}</div>
-                          <div style={{ fontSize: 10, color: C.ivoryDim, marginBottom: canBet ? 6 : 0 }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''}{e.odds > 0 ? ` \u00b7 ${e.odds}:1` : ''}</div>
+                          <div style={{ fontSize: 10, color: C.ivoryDim, marginBottom: canBet ? 6 : 0 }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''}{e.odds > 0 ? ` · ${e.odds}:1` : ''}</div>
                           {canBet && activeBettorId && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <button onClick={() => adjustTicket(e.id, -1)} style={stepBtnStyle}><Minus size={12} /></button>
@@ -2860,7 +2860,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const wolfPlayer = groupPlayers[liveHole % groupPlayers.length];
         return (
           <div style={{ ...cardBtn, cursor: 'default' }}>
-            <SectionHeader title="Wolf" sub={`Group ${myGroup.groupNumber || ''} \u00b7 rotates each hole`} icon={Swords} iconColor={C.gold} />
+            <SectionHeader title="Wolf" sub={`Group ${myGroup.groupNumber || ''} · rotates each hole`} icon={Swords} iconColor={C.gold} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <Chip color={wolfPlayer.color}>{initials(wolfPlayer.name)}</Chip>
               <div>
@@ -3220,7 +3220,7 @@ function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
 
 /* ============================== SETUP — SCROLL-MODE SECTIONS ============================== */
 /* ============================== COURSE PICKER ==============================
-   Talks only to courseProviderService \u2014 swapping the mock provider for a real one later
+   Talks only to courseProviderService — swapping the mock provider for a real one later
    means this component doesn't change at all. */
 function CoursePickerModal({ onSelect, onCustom, onClose }) {
   const [mode, setMode] = useState('name');
@@ -3236,7 +3236,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
 
   const runSearch = (fn) => {
     setStatus('loading'); setErrorMsg('');
-    fn().then(r => { setResults(r); setStatus('done'); }).catch(() => { setStatus('error'); setErrorMsg('Search failed \u2014 try again.'); });
+    fn().then(r => { setResults(r); setStatus('done'); }).catch(() => { setStatus('error'); setErrorMsg('Search failed — try again.'); });
   };
   useEffect(() => {
     if (mode === 'location') return;
@@ -3250,10 +3250,10 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
 
   const useMyLocation = () => {
     setStatus('loading'); setErrorMsg('');
-    if (!navigator.geolocation) { setStatus('error'); setErrorMsg("This browser doesn't support location search \u2014 try Name or City/State instead."); return; }
+    if (!navigator.geolocation) { setStatus('error'); setErrorMsg("This browser doesn't support location search — try Name or City/State instead."); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => runSearch(() => courseProviderService.searchByLocation(pos.coords.latitude, pos.coords.longitude, radiusMiles)),
-      (err) => { setStatus('error'); setErrorMsg(err.code === 1 ? 'Location access was denied \u2014 try Name or City/State instead.' : "Couldn't get your location \u2014 try Name or City/State instead."); },
+      (err) => { setStatus('error'); setErrorMsg(err.code === 1 ? 'Location access was denied — try Name or City/State instead.' : "Couldn't get your location — try Name or City/State instead."); },
       { timeout: 8000 }
     );
   };
@@ -3321,7 +3321,7 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
                 <button key={c.courseId} onClick={() => setSelectedCourse(c)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: C.ivory, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.courseName}</div>
-                    <div style={{ fontSize: 11, color: C.ivoryDim }}>{c.city}, {c.state} · {c.numberOfHoles} holes · {c.teeBoxes.length} tees{c.distanceMiles != null ? ` \u00b7 ${c.distanceMiles} mi` : ''}</div>
+                    <div style={{ fontSize: 11, color: C.ivoryDim }}>{c.city}, {c.state} · {c.numberOfHoles} holes · {c.teeBoxes.length} tees{c.distanceMiles != null ? ` · ${c.distanceMiles} mi` : ''}</div>
                   </div>
                   <ChevronRight size={16} color={C.ivoryDim} style={{ flexShrink: 0 }} />
                 </button>
@@ -4230,7 +4230,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   return (
     <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: 'Who\u2019s playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: 'Who's playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
       {stepKey === 'basics' && (
         <div>
@@ -4273,14 +4273,14 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
       {stepKey === 'format' && (
         <div>
-          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>This decides how the round is scored and how pairings get set up next \u2014 pick it before building groups so everything downstream matches.</div>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>This decides how the round is scored and how pairings get set up next — pick it before building groups so everything downstream matches.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               { key: 'stroke-play', label: 'Stroke Play', sub: 'Everyone plays their own ball, lowest total wins' },
-              { key: 'best-ball', label: 'Best Ball', sub: '2v2 teams, the lower of each pair\u2019s scores counts per hole' },
-              { key: 'captain-choice', label: 'Captain\u2019s Choice (Scramble)', sub: 'Team plays one ball, best shot each time, no handicaps' },
+              { key: 'best-ball', label: 'Best Ball', sub: '2v2 teams, the lower of each pair's scores counts per hole' },
+              { key: 'captain-choice', label: 'Captain's Choice (Scramble)', sub: 'Team plays one ball, best shot each time, no handicaps' },
               { key: 'singles', label: 'Singles Match Play', sub: '1v1 all day, hole by hole, off the lower handicap' },
-              { key: 'split9', label: 'Split 9 Singles', sub: '2v2 group, but partners swap opponents at the turn \u2014 two 9-hole 1v1 matches each' },
+              { key: 'split9', label: 'Split 9 Singles', sub: '2v2 group, but partners swap opponents at the turn — two 9-hole 1v1 matches each' },
             ].map(opt => (
               <button key={opt.key} onClick={() => { updateRound(p => ({ ...p, matchFormat: opt.key })); goNext(); }} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, background: state.matchFormat === opt.key ? C.turfLight : C.turf, border: `1.5px solid ${state.matchFormat === opt.key ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -4405,7 +4405,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         <div>
           <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{tournament.name}</div>
-            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 16 }}>{state.roundName}{state.courseName ? ` \u2014 ${state.courseName}` : ''}</div>
+            <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 16 }}>{state.roundName}{state.courseName ? ` — ${state.courseName}` : ''}</div>
             <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 4 }}>{state.numHoles} holes · {tournament.players.length} player{tournament.players.length !== 1 ? 's' : ''} · {tournament.rounds.length} round{tournament.rounds.length !== 1 ? 's' : ''} total</div>
             <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 4 }}>Games: {Object.keys(state.games).filter(k => state.games[k].enabled).join(', ') || 'none yet'}</div>
           </div>
@@ -4453,7 +4453,7 @@ const NOTIF_TYPES = [
   { key: 'allSquare', label: 'Tight matches', sub: 'A match is all square with 5 holes to play' },
   { key: 'playerFinished', label: 'Players finishing', sub: 'Someone posts their final score' },
   { key: 'bettingClosingSoon', label: 'Betting closing', sub: 'Pari-mutuel betting is about to lock' },
-  { key: 'roundComplete', label: 'Round complete', sub: 'Everyone\u2019s finished and everything\u2019s settled' },
+  { key: 'roundComplete', label: 'Round complete', sub: 'Everyone's finished and everything's settled' },
   { key: 'chat', label: 'Group chat', sub: 'New messages from the group' },
 ];
 function NotificationsModal({ prefs, setPrefs, onClose }) {
@@ -4711,10 +4711,10 @@ function GroupFlowCard({ group, playersById, isMyGroup, isAdmin, isMock, now, on
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: group.finished || group.notStarted ? C.ivory : C.pineDark, background: group.finished || group.notStarted ? C.turfBorder : paceColor, borderRadius: 999, padding: '4px 10px', flexShrink: 0, whiteSpace: 'nowrap' }}>{(group.finished ? 'FINISHED' : group.paceStatus).toUpperCase()}</span>
       </div>
 
-      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names.join(', ') || 'No players assigned'}{group.playerIds.length > 0 && group.playerIds.length < 4 && ` \u00b7 ${group.playerIds.length}-some`}</div>
+      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names.join(', ') || 'No players assigned'}{group.playerIds.length > 0 && group.playerIds.length < 4 && ` · ${group.playerIds.length}-some`}</div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.ivoryDim, marginBottom: 4 }}>
-        <span>{group.notStarted ? 'Not started yet' : group.finished ? `Finished \u00b7 ${group.numHoles} holes` : `Hole ${group.currentHole} of ${group.numHoles}`}</span>
+        <span>{group.notStarted ? 'Not started yet' : group.finished ? `Finished · ${group.numHoles} holes` : `Hole ${group.currentHole} of ${group.numHoles}`}</span>
         <span>{group.completedHolesCount} completed</span>
       </div>
       <HoleTimeline holeProgress={group.holeProgress} currentHole={group.currentHole} />
@@ -4749,7 +4749,7 @@ function GroupActionModal({ type, group, onSubmit, onClose }) {
         <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 12 }}>Group {group.groupNumber}</div>
         {type === 'delay' && <Field label="Minutes delayed"><input type="number" min={0} value={value} onChange={e => setValue(e.target.value)} style={inputStyle} autoFocus /></Field>}
         {type === 'teeTime' && <Field label="Tee time"><input type="datetime-local" value={value} onChange={e => setValue(e.target.value)} style={inputStyle} autoFocus /></Field>}
-        {type === 'overrideHole' && <Field label={`Hole (1\u2013${group.numHoles || 18}), blank to clear`}><input type="number" min={1} max={group.numHoles || 18} value={value} onChange={e => setValue(e.target.value)} style={inputStyle} autoFocus /></Field>}
+        {type === 'overrideHole' && <Field label={`Hole (1–${group.numHoles || 18}), blank to clear`}><input type="number" min={1} max={group.numHoles || 18} value={value} onChange={e => setValue(e.target.value)} style={inputStyle} autoFocus /></Field>}
         {type === 'note' && <Field label="Note shown on the card"><input value={value} onChange={e => setValue(e.target.value)} style={inputStyle} placeholder="e.g. Waiting on the group ahead" autoFocus /></Field>}
         {type === 'message' && <Field label="Message"><input value={value} onChange={e => setValue(e.target.value)} style={inputStyle} placeholder="e.g. Please pick up the pace" autoFocus /></Field>}
         <GoldButton onClick={() => { onSubmit(value); onClose(); }} style={{ width: '100%' }}>Save</GoldButton>
@@ -4778,7 +4778,7 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
           <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Set up groups</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
-        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>Pace and current hole are read straight from each player's scorecard \u2014 nothing to update by hand once a group's set up.</div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>Pace and current hole are read straight from each player's scorecard — nothing to update by hand once a group's set up.</div>
         {tournament.players.length === 0 ? <div style={{ color: C.ivoryDim, fontSize: 13, marginBottom: 14 }}>Add players to the round first.</div> : (
           <GhostButton onClick={autoCreate} style={{ width: '100%', textAlign: 'center', marginBottom: 16 }}>Auto-create groups of 4 from the roster</GhostButton>
         )}
@@ -4849,7 +4849,7 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
     return 0;
   });
   const summaryStat = (label, value) => <div style={{ flex: '1 1 110px', minWidth: 100 }}><div style={{ fontSize: 9, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div><div style={{ fontFamily: 'Anton, sans-serif', fontSize: 18 }}>{value}</div></div>;
-  const groupLabel = (id) => { const g = groupsFlow.find(x => x.id === id); return g ? `Group ${g.groupNumber}` : '\u2013'; };
+  const groupLabel = (id) => { const g = groupsFlow.find(x => x.id === id); return g ? `Group ${g.groupNumber}` : '–'; };
 
   const runAction = (value) => {
     if (!action) return;
@@ -4876,12 +4876,12 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '10px 12px' }}>
-          {summaryStat('First grp hole', summary.firstGroupCurrentHole ?? '\u2013')}
-          {summaryStat('Last grp hole', summary.lastGroupCurrentHole ?? '\u2013')}
-          {summaryStat('Hole spread', summary.holeSpread ?? '\u2013')}
+          {summaryStat('First grp hole', summary.firstGroupCurrentHole ?? '–')}
+          {summaryStat('Last grp hole', summary.lastGroupCurrentHole ?? '–')}
+          {summaryStat('Hole spread', summary.holeSpread ?? '–')}
           {summaryStat('Groups', summary.totalGroups)}
           {summaryStat('Finished', summary.groupsFinished)}
-          {summaryStat('Proj. finish', summary.projectedTournamentFinish ? fmtClockTime(summary.projectedTournamentFinish) : '\u2013')}
+          {summaryStat('Proj. finish', summary.projectedTournamentFinish ? fmtClockTime(summary.projectedTournamentFinish) : '–')}
           {summaryStat('Slowest', groupLabel(summary.slowestGroupId))}
           {summaryStat('Fastest', groupLabel(summary.fastestGroupId))}
         </div>
@@ -5334,7 +5334,7 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>New bet{scopeLabel ? ` \u00b7 ${scopeLabel}` : ''}</div>
+          <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>New bet{scopeLabel ? ` · ${scopeLabel}` : ''}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
 
