@@ -9,16 +9,17 @@ import {
 
 /* ============================== DESIGN TOKENS ============================== */
 const C = {
-  pine: '#0A0C0F', pineDark: '#0E1013', turf: '#161A1F', turfLight: '#1D2128',
-  turfBorder: '#262B33', ivory: '#FFFFFF', ivoryDim: '#9BA1AC',
-  gold: '#FFC72C', goldBright: '#FFD75E', goldLight: '#FFC72C22',
-  flagRed: '#FF4747', bunker: '#7D8590',
-  blue: '#3B82F6', blueBright: '#60A5FA', emerald: '#1ED760', emeraldLight: '#1ED76022',
-  shadow: '0 2px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)',
-  shadowHero: '0 8px 32px rgba(30,215,96,0.08), 0 0 0 1px rgba(255,255,255,0.06)',
+  pine: '#0E1013', pineDark: '#0B0D10', turf: '#171A1F', turfLight: '#20242B',
+  turfBorder: 'rgba(255,255,255,0.08)', hairline: 'rgba(255,255,255,0.06)', ivory: '#F5F5F5', ivoryDim: '#AEB4BC',
+  gold: '#C9A227', goldBright: '#E1BC4A', goldDark: '#8D6B16', goldLight: '#C9A22722',
+  flagRed: '#F04452', bunker: '#727B86',
+  blue: '#4C7BAA', blueBright: '#6B9BC9', emerald: '#19C37D', emeraldLight: '#19C37D22',
+  teamA: '#123C73', teamB: '#7A1F32',
+  shadow: '0 10px 30px rgba(0,0,0,0.25)',
+  shadowHero: '0 10px 30px rgba(0,0,0,0.3), 0 0 24px rgba(201,162,39,0.08)',
 };
-const CHIP_COLORS = ['#FFC72C', '#FF4747', '#3B82F6', '#8B93A1', '#A855F7', '#1ED760', '#F97316', '#06B6D4'];
-const FLIGHT_COLORS = ['#FF4747', '#3B82F6', '#FFC72C', '#1ED760'];
+const CHIP_COLORS = ['#C9A227', '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
+const FLIGHT_COLORS = ['#123C73', '#7A1F32', '#C9A227', '#19C37D'];
 const TABS = ['home', 'card', 'games', 'settle'];
 
 /* ============================== COURSE DATA MODEL ==============================
@@ -1399,33 +1400,44 @@ function getNextStep(phase, state, whoami, isAdmin) {
 
 /* ============================== SMALL UI ATOMS ============================== */
 function Chip({ color, children }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 999, background: color || C.gold, color: C.pineDark, fontFamily: 'Oswald, sans-serif', fontWeight: 600, fontSize: 12, flexShrink: 0 }}>{children}</span>;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 999, background: color || C.gold, color: '#F5F5F5', fontFamily: 'Oswald, sans-serif', fontWeight: 600, fontSize: 12, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>{children}</span>;
 }
 function IconBadge({ icon: Icon, color, size }) {
   const s = size || 30;
+  const c = color || C.gold;
   return (
-    <span style={{ width: s, height: s, borderRadius: 9, background: color || C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 0 rgba(0,0,0,0.35)' }}>
-      <Icon size={Math.round(s * 0.5)} color={C.pineDark} strokeWidth={2.4} />
+    <span style={{ width: s, height: s, borderRadius: 10, background: `${c}22`, border: `1px solid ${c}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 0 12px ${c}22` }}>
+      <Icon size={Math.round(s * 0.5)} color={c} strokeWidth={2.2} />
     </span>
   );
 }
+function StatusBadge({ status, label }) {
+  const styles = {
+    neutral: { bg: 'rgba(255,255,255,0.06)', color: C.ivoryDim },
+    live: { bg: `${C.emerald}22`, color: C.emerald },
+    final: { bg: `${C.gold}28`, color: C.goldBright },
+    danger: { bg: `${C.flagRed}22`, color: C.flagRed },
+  };
+  const s = styles[status] || styles.neutral;
+  return <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', padding: '3px 10px', borderRadius: 999, background: s.bg, color: s.color, flexShrink: 0 }}>{label}</span>;
+}
 function GoldButton({ children, onClick, disabled, style }) {
-  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.turfBorder : C.gold, color: C.pineDark, fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', borderRadius: 12, padding: '11px 16px', fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, boxShadow: disabled ? 'none' : `0 3px 0 rgba(0,0,0,0.4)`, ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.turfBorder : `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Oswald, sans-serif', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', borderRadius: 12, padding: '11px 16px', fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, boxShadow: disabled ? 'none' : '0 4px 14px rgba(201,162,39,0.28)', transition: 'box-shadow 0.15s ease', ...style }}>{children}</button>;
 }
 function GhostButton({ children, onClick, style }) {
-  return <button onClick={onClick} style={{ background: 'transparent', color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '9px 14px', fontSize: 13, fontFamily: 'Inter, sans-serif', cursor: 'pointer', ...style }}>{children}</button>;
+  return <button onClick={onClick} style={{ background: 'rgba(255,255,255,0.03)', color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '9px 14px', fontSize: 13, fontFamily: 'Inter, sans-serif', cursor: 'pointer', ...style }}>{children}</button>;
 }
-const rowCard = { background: C.turf, border: 'none', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, color: C.ivory, boxShadow: C.shadow };
-const inputStyle = { background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, color: C.ivory, padding: '9px 12px', fontSize: 16, fontFamily: 'Inter, sans-serif', width: '100%', boxSizing: 'border-box' };
-const stepBtnStyle = { width: 32, height: 32, borderRadius: 8, background: C.pineDark, border: `1px solid ${C.turfBorder}`, color: C.ivory, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
+const rowCard = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, color: C.ivory, boxShadow: C.shadow };
+const inputStyle = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 10, color: C.ivory, padding: '10px 12px', fontSize: 16, fontFamily: 'Inter, sans-serif', width: '100%', boxSizing: 'border-box' };
+const stepBtnStyle = { width: 32, height: 32, borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, color: C.ivory, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
 function Field({ label, children }) { return <div style={{ marginBottom: 18 }}><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>{children}</div>; }
 function SectionHeader({ title, sub, icon, iconColor }) {
   return (
     <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
       {icon && <IconBadge icon={icon} color={iconColor} />}
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4, color: C.goldBright }}>{title}</div>
-        {sub && <div style={{ fontSize: 12, color: C.ivoryDim }}>{sub}</div>}
+        <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4, color: C.ivory }}>{title}</div>
+        {sub && <div style={{ fontSize: 12, color: C.bunker }}>{sub}</div>}
       </div>
     </div>
   );
@@ -1479,9 +1491,8 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
 /* ============================== NAV ============================== */
 function NavBtn({ icon: Icon, label, active, onClick, hero, badge }) {
   return (
-    <button onClick={onClick} style={{ background: hero && active ? C.emerald : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? (hero ? '#FFFFFF' : C.emerald) : C.bunker, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: hero ? 14 : 0, position: 'relative' }}>
-      {active && !hero && <span style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 3, borderRadius: 999, background: C.emerald }} />}
-      <Icon size={hero ? 22 : 18} strokeWidth={active ? 2.5 : 1.8} />
+    <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? C.goldBright : C.bunker, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 14, position: 'relative', boxShadow: active ? '0 0 14px rgba(201,162,39,0.14)' : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
+      <Icon size={hero ? 22 : 18} strokeWidth={active ? 2.4 : 1.8} />
       <span style={{ fontSize: 9, fontFamily: 'Oswald, sans-serif', letterSpacing: 0.2, textTransform: 'uppercase', fontWeight: active ? 700 : 500 }}>{label}</span>
       {badge && <span style={{ position: 'absolute', top: 2, right: 6, background: badge.startsWith('-') ? C.emerald : badge === 'E' ? C.bunker : C.flagRed, color: '#FFF', borderRadius: 999, fontSize: 8, padding: '1px 4px', fontFamily: 'Oswald, sans-serif', fontWeight: 700, minWidth: 14, textAlign: 'center' }}>{badge}</span>}
     </button>
@@ -2115,7 +2126,7 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
               <div key={bet.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ fontWeight: 600, fontSize: 14, color: C.ivory }}>{bet.name || bet.betName}</div>
-                  {bet.resolved ? <span style={{ fontSize: 11, color: C.emerald, fontFamily: 'Oswald, sans-serif', textTransform: 'uppercase' }}>Resolved</span> : <span style={{ fontSize: 11, color: C.gold }}>Open</span>}
+                  <StatusBadge status={bet.resolved ? 'final' : 'live'} label={bet.resolved ? 'Resolved' : 'Open'} />
                 </div>
                 {participants.length > 0 && (
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -2470,7 +2481,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
                 <div key={m.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 12, color: C.gold, fontWeight: 700, textTransform: 'uppercase' }}>Match {mi + 1}</span>
-                    <span style={{ fontSize: 11, color: info.resolved ? C.goldBright : info.locked ? C.flagRed : C.emerald }}>{info.resolved ? 'Resolved' : info.locked ? 'Locked' : `Open · thru ${info.maxThru}`}</span>
+                    <StatusBadge status={info.resolved ? 'final' : info.locked ? 'danger' : 'live'} label={info.resolved ? 'Resolved' : info.locked ? 'Locked' : `Open · thru ${info.maxThru}`} />
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {matchEntrants.map(e => {
@@ -2713,7 +2724,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const skinsResults = g.skins?.enabled ? computeSkins(state, holeScoreFn(state, g.skins?.net)).results : [];
   const lastSkin = [...skinsResults].reverse().find(r => r.status === 'won');
   const lastChat = chat[chat.length - 1];
-  const homeCard = { background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 0 rgba(0,0,0,0.04)', cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box' };
+  const homeCard = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxShadow: C.shadow, cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box' };
   const cardBtn = { ...homeCard, flexDirection: 'column', alignItems: 'stretch' };
   const nextStep = guidanceEnabled ? getNextStepLocal(phase, state, whoami, isAdmin) : null;
   const multiRound = tournament && tournament.rounds.length > 1;
