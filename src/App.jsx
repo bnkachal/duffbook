@@ -2070,7 +2070,34 @@ function MiniCard({ players, state }) {
   );
 }
 
+function ResolveBetModal({ bet, players, onResolve, onClose }) {
+  const participants = (bet.participantIds || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+  const [winnerId, setWinnerId] = useState(participants[0]?.id || '');
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 16, width: '100%', maxWidth: 380, padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 17, textTransform: 'uppercase' }}>Resolve bet</div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13, color: C.ivoryDim, marginBottom: 16 }}>{bet.name || bet.betName}</div>
+        {participants.length === 0 ? (
+          <div style={{ fontSize: 13, color: C.bunker, marginBottom: 16 }}>This bet has no participants to pick a winner from.</div>
+        ) : (
+          <Field label="Participants">
+            <select value={winnerId} onChange={e => setWinnerId(e.target.value)} style={inputStyle}>
+              {participants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+        )}
+        <GoldButton onClick={() => { if (winnerId) onResolve(bet.id, [winnerId]); }} disabled={!winnerId} style={{ width: '100%', padding: '12px 0', marginTop: 6 }}>Confirm winner</GoldButton>
+      </div>
+    </div>
+  );
+}
+
 function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOpenBuilder, onResolve, onReopen, onRemove, emptyAdmin, emptyPlayer }) {
+  const [resolvingBet, setResolvingBet] = useState(null);
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -2102,7 +2129,7 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
                 {isAdmin && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
                     {!bet.resolved && onResolve && (
-                      <button onClick={() => { const wids = window.prompt('Enter winner name(s), comma separated'); if (!wids) return; const ids = wids.split(',').map(n => players.find(p => p.name.toLowerCase().trim() === n.toLowerCase().trim())?.id).filter(Boolean); if (ids.length) onResolve(bet.id, ids); }} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: C.emerald, border: 'none', color: '#FFF', cursor: 'pointer' }}>Resolve</button>
+                      <button onClick={() => setResolvingBet(bet)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: C.emerald, border: 'none', color: '#FFF', cursor: 'pointer' }}>Resolve</button>
                     )}
                     {bet.resolved && onReopen && <button onClick={() => onReopen(bet.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.bunker, cursor: 'pointer' }}>Reopen</button>}
                     {onRemove && <button onClick={() => onRemove(bet.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={14} /></button>}
@@ -2112,6 +2139,14 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
             );
           })}
         </div>
+      )}
+      {resolvingBet && (
+        <ResolveBetModal
+          bet={resolvingBet}
+          players={players}
+          onResolve={(id, ids) => { onResolve(id, ids); setResolvingBet(null); }}
+          onClose={() => setResolvingBet(null)}
+        />
       )}
     </div>
   );
