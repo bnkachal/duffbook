@@ -1,5 +1,8 @@
 import { storage } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import matchbookLanding from './assets/images/matchbook-landing.jpg';
+import matchbookBunker from './assets/images/matchbook-bunker.jpg';
+import matchbookCourse from './assets/images/matchbook-course.jpg';
 import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
@@ -1380,7 +1383,7 @@ function getRoundPhase(state, stats, bets) {
 function getNextStep(phase, state, whoami, isAdmin) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (phase === 'pre-round' || phase === 'in-progress') {
-    if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so RoGreen knows whose score is whose.', action: 'card' };
+    if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so MatchBook knows whose score is whose.', action: 'card' };
     if (pm.enabled && !pm.resolved) {
       const stats = computeStats(state);
       const bettingOpen = !stats.some(s => s.thru > pm.lockAfterHole);
@@ -1430,6 +1433,20 @@ function GhostButton({ children, onClick, style }) {
 const rowCard = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, color: C.ivory, boxShadow: C.shadow };
 const inputStyle = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 10, color: C.ivory, padding: '10px 12px', fontSize: 16, fontFamily: 'Inter, sans-serif', width: '100%', boxSizing: 'border-box' };
 const stepBtnStyle = { width: 32, height: 32, borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, color: C.ivory, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
+function HeaderBanner({ src, title, sub, height }) {
+  return (
+    <div style={{ position: 'relative', height: height || 240, borderRadius: 18, overflow: 'hidden', flexShrink: 0 }}>
+      <img src={src} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(11,13,16,0) 40%, rgba(11,13,16,0.85) 100%)' }} />
+      {(title || sub) && (
+        <div style={{ position: 'absolute', left: 16, right: 16, bottom: 14 }}>
+          {title && <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: '#FFFFFF', textShadow: '0 2px 12px rgba(0,0,0,0.4)' }}>{title}</div>}
+          {sub && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{sub}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
 function Field({ label, children }) { return <div style={{ marginBottom: 18 }}><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>{label}</div>{children}</div>; }
 function SectionHeader({ title, sub, icon, iconColor }) {
   return (
@@ -1573,16 +1590,17 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
   return (
     <div style={{ height: '100dvh', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
       <FontLoader />
-      {/* Layered background */}
-      <BackdropArt opacity={1} />
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(5,8,3,0.60) 0%, rgba(5,8,3,0.25) 35%, rgba(5,8,3,0.95) 80%)' }} />
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, transparent, #C4900A 30%, #D4A000 70%, transparent)', zIndex: 1 }} />
+      {/* Hero photo background */}
+      <img src={matchbookLanding} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 30%' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(11,13,16,0.55) 0%, rgba(11,13,16,0.25) 35%, rgba(11,13,16,0.97) 82%)' }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, transparent, ${C.gold} 30%, ${C.goldBright} 70%, transparent)`, zIndex: 1 }} />
 
       {/* Hero — top portion */}
       <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 'max(40px, 10vh)', paddingBottom: 20 }}>
-        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 10 }}>RoGreen</div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(196,144,10,0.15)', border: '1px solid rgba(196,144,10,0.4)', borderRadius: 999, padding: '5px 16px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#C4900A' }} />
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 8 }}>MatchBook</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 1.5, marginBottom: 12, fontFamily: 'Inter, sans-serif' }}>Your Tournament. Every Match. One Book.</div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: `${C.gold}26`, border: `1px solid ${C.gold}66`, borderRadius: 999, padding: '5px 16px', backdropFilter: 'blur(8px)' }}>
+          <div style={{ width: 5, height: 5, borderRadius: '50%', background: C.gold }} />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 2, fontFamily: 'Inter, sans-serif', textTransform: 'uppercase', fontWeight: 600 }}>Live Golf Scoring & Side Bets</span>
         </div>
       </div>
@@ -1610,8 +1628,8 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
         )}
 
         {/* Start button */}
-        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: 'linear-gradient(135deg, #1a6b3c 0%, #C4900A 100%)', color: '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 5px 0 rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <span>⛳</span> Start a Tournament
+        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 4px 14px rgba(201,162,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <Flag size={16} /> Create Tournament
         </button>
 
         {/* Divider */}
@@ -1633,9 +1651,9 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
             data-testid="join-code-input"
             placeholder="ROUND CODE"
             autoCapitalize="characters"
-            style={{ flex: 1, background: codeFocused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: `1.5px solid ${joinError ? 'rgba(220,38,38,0.7)' : codeFocused ? 'rgba(196,144,10,0.7)' : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, padding: '14px 12px', color: '#FFF', fontSize: 20, textAlign: 'center', letterSpacing: 5, outline: 'none', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, boxSizing: 'border-box' }}
+            style={{ flex: 1, background: codeFocused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: `1.5px solid ${joinError ? `${C.flagRed}B3` : codeFocused ? `${C.gold}B3` : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, padding: '14px 12px', color: '#FFF', fontSize: 20, textAlign: 'center', letterSpacing: 5, outline: 'none', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, boxSizing: 'border-box' }}
           />
-          <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking || !code.trim()} style={{ padding: '0 20px', background: code.trim() ? 'linear-gradient(135deg, #C4900A, #D4A000)' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? '0 4px 0 rgba(0,0,0,0.25)' : 'none', opacity: joinChecking ? 0.7 : 1, whiteSpace: 'nowrap' }}>
+          <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking || !code.trim()} style={{ padding: '0 20px', background: code.trim() ? `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: code.trim() ? C.pineDark : '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? '0 4px 14px rgba(201,162,39,0.3)' : 'none', opacity: joinChecking ? 0.7 : 1, whiteSpace: 'nowrap' }}>
             {joinChecking ? '...' : 'Join'}
           </button>
         </div>
@@ -1652,8 +1670,8 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Inter, sans-serif', fontWeight: 600, textAlign: 'center', marginBottom: 6 }}>Recent rounds</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {myTournaments.slice(0, 3).map((t, i) => (
-                <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? 'linear-gradient(135deg, rgba(26,107,60,0.45), rgba(196,144,10,0.35))' : 'rgba(255,255,255,0.06)', border: i === 0 ? '1px solid rgba(196,144,10,0.3)' : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? '#C4900A' : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? `${C.gold}22` : 'rgba(255,255,255,0.06)', border: i === 0 ? `1px solid ${C.gold}4D` : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? C.gold : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 13, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                   <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
                 </button>
@@ -2266,6 +2284,7 @@ function LeaderboardTab({ state, stats }) {
   const leaderboard = stats.slice().sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <HeaderBanner src={matchbookCourse} title="Leaderboard" sub={state.courseName || undefined} height={200} />
       <SectionHeader title="Full Leaderboard" sub={`${stats.length} players · sorted by ${useNet ? 'net' : 'gross'}`} icon={Trophy} iconColor={C.gold} />
       <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 50px 50px 46px', gap: 4, padding: '0 12px 4px', fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.4 }}>
         <span></span><span></span><span style={{ textAlign: 'center' }}>Gross</span><span style={{ textAlign: 'center' }}>Net</span><span style={{ textAlign: 'center' }}>Strokes</span>
@@ -2763,6 +2782,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   ) : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <HeaderBanner src={matchbookBunker} title={state.roundName} sub={tournament ? tournament.name : 'Live round'} height={220} />
       {nextStep && (
         <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: C.turfLight, border: `1.5px solid ${C.gold}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={C.goldBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>{nextStep.text}</span></div>
@@ -4532,7 +4552,7 @@ function NotificationsModal({ prefs, setPrefs, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Notifications</div><button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button></div>
-        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while RoGreen is open on this device — not true background push.</div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while MatchBook is open on this device — not true background push.</div>
         {perm !== 'granted' && supported && <GoldButton onClick={request} style={{ marginBottom: 16 }}>{perm === 'denied' ? 'Blocked — check browser settings' : 'Enable browser alerts'}</GoldButton>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{NOTIF_TYPES.map(n => <ToggleRow key={n.key} label={n.label} sub={n.sub} enabled={!!prefs[n.key]} onToggle={() => setPrefs({ ...prefs, [n.key]: !prefs[n.key] })} />)}</div>
       </div>
@@ -5067,7 +5087,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>My Position</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
-        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — RoGreen doesn't move real money. Covers every round of the trip.</div>
+        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — MatchBook doesn't move real money. Covers every round of the trip.</div>
 
         <div style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 14 }}>
           <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>Current net position</div></div>
@@ -5281,7 +5301,7 @@ function QRShareModal({ roundCode, tournamentName, onClose }) {
 
   const shareLink = () => {
     if (navigator.share) {
-      navigator.share({ title: `Join ${tournamentName} on RoGreen`, text: `Scan or tap to join: ${url}`, url });
+      navigator.share({ title: `Join ${tournamentName} on MatchBook`, text: `Scan or tap to join: ${url}`, url });
     } else {
       copyLink();
     }
@@ -6101,7 +6121,7 @@ export default function RoGreen() {
       {showTips === 'show' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowTips('done')}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to RoGreen</div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to MatchBook</div>
             {[
               [Flag, 'Card tab is your scorecard', 'Tap + or − to enter your score on each hole'],
               [ChevronRight, 'Swipe to change holes', 'Swipe left or right anywhere on the card screen'],
