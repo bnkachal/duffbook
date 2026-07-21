@@ -2071,7 +2071,7 @@ function MiniCard({ players, state }) {
 }
 
 function ResolveBetModal({ bet, players, onResolve, onClose }) {
-  const participants = (bet.participantIds || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+  const participants = (bet.participants || []).map(id => players.find(p => p.id === id)).filter(Boolean);
   const [winnerId, setWinnerId] = useState(participants[0]?.id || '');
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
@@ -2096,7 +2096,7 @@ function ResolveBetModal({ bet, players, onResolve, onClose }) {
   );
 }
 
-function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOpenBuilder, onResolve, onReopen, onRemove, emptyAdmin, emptyPlayer }) {
+function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOpenBuilder, onEdit, onResolve, onReopen, onRemove, emptyAdmin, emptyPlayer }) {
   const [resolvingBet, setResolvingBet] = useState(null);
   return (
     <div style={{ marginBottom: 20 }}>
@@ -2110,7 +2110,7 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {list.map(bet => {
             const result = computeFn ? computeFn(bet) : null;
-            const participants = (bet.participantIds || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+            const participants = (bet.participants || []).map(id => players.find(p => p.id === id)).filter(Boolean);
             return (
               <div key={bet.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2132,6 +2132,7 @@ function CustomBetsSection({ title, sub, list, computeFn, players, isAdmin, onOp
                       <button onClick={() => setResolvingBet(bet)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: C.emerald, border: 'none', color: '#FFF', cursor: 'pointer' }}>Resolve</button>
                     )}
                     {bet.resolved && onReopen && <button onClick={() => onReopen(bet.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.bunker, cursor: 'pointer' }}>Reopen</button>}
+                    {onEdit && <button onClick={() => onEdit(bet)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.ivory, cursor: 'pointer' }}>Edit</button>}
                     {onRemove && <button onClick={() => onRemove(bet.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={14} /></button>}
                   </div>
                 )}
@@ -2354,7 +2355,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
   );
 }
 
-function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, resolveMatchMarket, reopenMatchMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onOpenTournamentBetBuilder, tournament }) {
+function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPick, onAddSelf, adjustTicket, resolveMarket, reopenMarket, resolveMatchMarket, reopenMatchMarket, onOpenBetBuilder, onResolveCustomBet, onReopenCustomBet, onRemoveCustomBet, onEditCustomBet, tournamentCustomBets, onResolveTournamentBet, onReopenTournamentBet, onRemoveTournamentBet, onEditTournamentBet, onOpenTournamentBetBuilder, tournament }) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
   const customBets = Array.isArray(state.customBets) ? state.customBets : [];
@@ -2531,7 +2532,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
         title="Round bets" sub="side bets for this round only"
         list={customBets} computeFn={(cb) => computeCustomBet(cb, state)} onOpenBuilder={onOpenBetBuilder}
         players={tournament?.players || state.players} isAdmin={isAdmin}
-        onResolve={onResolveCustomBet} onReopen={onReopenCustomBet} onRemove={onRemoveCustomBet}
+        onResolve={onResolveCustomBet} onReopen={onReopenCustomBet} onRemove={onRemoveCustomBet} onEdit={onEditCustomBet}
         emptyAdmin='No custom bets yet — tap "+ New bet" to build one.' emptyPlayer="No custom bets yet."
       />
       {tournament && (
@@ -2539,7 +2540,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
           title="Tournament bets" sub="span every round of the trip" list={tBets}
           computeFn={(cb) => computeTournamentCustomBet(cb, tournament)} onOpenBuilder={onOpenTournamentBetBuilder}
           players={tournament.players} isAdmin={isAdmin}
-          onResolve={onResolveTournamentBet} onReopen={onReopenTournamentBet} onRemove={onRemoveTournamentBet}
+          onResolve={onResolveTournamentBet} onReopen={onReopenTournamentBet} onRemove={onRemoveTournamentBet} onEdit={onEditTournamentBet}
           emptyAdmin='No trip-wide bets yet — tap "+ New bet" to build one.' emptyPlayer="No trip-wide bets yet."
         />
       )}
@@ -5334,20 +5335,24 @@ function useSwipeNav(activeTab, setActiveTab, goHoleRef) {
 }
 
 /* ============================== BET BUILDER MODAL ============================== */
-function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteTemplate, onClose, scopeLabel }) {
-  const [name, setName] = useState('');
-  const [betType, setBetType] = useState('custom');
-  const [entryAmount, setEntryAmount] = useState(5);
-  const [participants, setParticipants] = useState([]);
-  const [holeIndex, setHoleIndex] = useState('');
-  const [scoringMethod, setScoringMethod] = useState('gross');
-  const [settlementMethod, setSettlementMethod] = useState('manual');
-  const [notes, setNotes] = useState('');
+function BetBuilderModal({ state, templates, editingBet, onCreate, onSave, onSaveTemplate, onDeleteTemplate, onClose, scopeLabel }) {
+  const [name, setName] = useState(editingBet?.betName || editingBet?.name || '');
+  const [betType, setBetType] = useState(editingBet?.betType || 'custom');
+  const [entryAmount, setEntryAmount] = useState(editingBet?.entryAmount ?? 5);
+  const [participants, setParticipants] = useState(editingBet?.participants || []);
+  const [holeIndex, setHoleIndex] = useState(editingBet?.holeIndex != null ? String(editingBet.holeIndex + 1) : '');
+  const [scoringMethod, setScoringMethod] = useState(editingBet?.scoringMethod || 'gross');
+  const [settlementMethod, setSettlementMethod] = useState(editingBet?.settlementMethod || 'manual');
+  const [notes, setNotes] = useState(editingBet?.notes || '');
   const [saveTpl, setSaveTpl] = useState(false);
   const [tplName, setTplName] = useState('');
   const cfg = CUSTOM_BET_CONFIG[betType];
+  const isFirstRender = useRef(true);
 
-  useEffect(() => { setSettlementMethod(cfg.auto ? 'automatic' : 'manual'); }, [betType]);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    setSettlementMethod(cfg.auto ? 'automatic' : 'manual');
+  }, [betType]);
 
   const toggleParticipant = (id) => setParticipants(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const applyTemplate = (t) => { setName(t.name); setBetType(t.betType); setEntryAmount(t.entryAmount); setScoringMethod(t.scoringMethod || 'gross'); setSettlementMethod(t.settlementMethod || 'manual'); setNotes(t.notes || ''); };
@@ -5364,7 +5369,7 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
       scoringMethod: cfg.needsScoring ? scoringMethod : null,
       settlementMethod, notes: notes.trim(),
     };
-    onCreate(bet);
+    if (editingBet) { onSave(editingBet.id, bet); } else { onCreate(bet); }
     if (saveTpl) onSaveTemplate({ name: tplName.trim() || name.trim(), betType, entryAmount: amt, scoringMethod: bet.scoringMethod, settlementMethod, notes: bet.notes });
     onClose();
   };
@@ -5373,7 +5378,7 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>New bet{scopeLabel ? ` · ${scopeLabel}` : ''}</div>
+          <div style={{ fontFamily: 'Oswald, sans-serif', fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>{editingBet ? 'Edit bet' : 'New bet'}{scopeLabel ? ` · ${scopeLabel}` : ''}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
 
@@ -5450,7 +5455,7 @@ function BetBuilderModal({ state, templates, onCreate, onSaveTemplate, onDeleteT
         </div>
         {saveTpl && <Field label="Template name"><input value={tplName} onChange={e => setTplName(e.target.value)} style={inputStyle} placeholder={name || 'Template name'} /></Field>}
 
-        <GoldButton onClick={create} disabled={!canCreate} style={{ width: '100%', padding: '13px 0' }}>Create bet</GoldButton>
+        <GoldButton onClick={create} disabled={!canCreate} style={{ width: '100%', padding: '13px 0' }}>{editingBet ? 'Save changes' : 'Create bet'}</GoldButton>
       </div>
     </div>
   );
@@ -5980,11 +5985,13 @@ export default function RoGreen() {
   const removeCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).filter(b => b.id !== id) }));
   const resolveCustomBet = (id, winnerIds) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
   const reopenCustomBet = (id) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
+  const editCustomBet = (id, updates) => updateRound(prev => ({ ...prev, customBets: (Array.isArray(prev.customBets) ? prev.customBets : []).map(b => b.id === id ? { ...b, ...updates } : b) }));
 
   const addTournamentCustomBet = (bet) => updateTournament(prev => ({ ...prev, tournamentCustomBets: [...prev.tournamentCustomBets, { id: 'tcb_' + Date.now(), resolved: false, winnerIds: null, ...bet }] }));
   const removeTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.filter(b => b.id !== id) }));
   const resolveTournamentCustomBet = (id, winnerIds) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: true, winnerIds } : b) }));
   const reopenTournamentCustomBet = (id) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, resolved: false, winnerIds: null } : b) }));
+  const editTournamentCustomBet = (id, updates) => updateTournament(prev => ({ ...prev, tournamentCustomBets: prev.tournamentCustomBets.map(b => b.id === id ? { ...b, ...updates } : b) }));
 
   const saveBetTemplate = (tpl) => setBetTemplates(prev => { const next = [...prev, { id: 'tpl_' + Date.now(), ...tpl }]; try { localStorage.setItem('db:bet-templates', JSON.stringify(next)); } catch(e) {} return next; });
   const deleteBetTemplate = (id) => setBetTemplates(prev => { const next = prev.filter(t => t.id !== id); try { localStorage.setItem('db:bet-templates', JSON.stringify(next)); } catch(e) {} return next; });
@@ -6142,7 +6149,7 @@ export default function RoGreen() {
         {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} />}
         {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={submitScorecard} onUnlock={unlockScorecard} onWolfChoice={setWolfChoice} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
-        {hasPlayers && activeTab === 'bets' && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
+        {hasPlayers && activeTab === 'bets' && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
       </div>
 
@@ -6190,8 +6197,8 @@ export default function RoGreen() {
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
       {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
-      {betBuilderOpen && <BetBuilderModal state={{ ...state, players: tournament.players.length > state.players.length ? tournament.players : state.players }} templates={betTemplates} onCreate={(bet) => { addCustomBet(bet); setBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
-      {tournamentBetBuilderOpen && isAdmin && <BetBuilderModal state={{ players: tournament.players, numHoles: 18, handicapsEnabled: tournament.handicapsEnabled }} templates={betTemplates} onCreate={(bet) => { addTournamentCustomBet(bet); setTournamentBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setTournamentBetBuilderOpen(false)} scopeLabel="whole trip" />}
+      {betBuilderOpen && <BetBuilderModal state={{ ...state, players: tournament.players.length > state.players.length ? tournament.players : state.players }} templates={betTemplates} editingBet={typeof betBuilderOpen === 'object' ? betBuilderOpen : null} onCreate={(bet) => { addCustomBet(bet); setBetBuilderOpen(false); }} onSave={(id, updates) => { editCustomBet(id, updates); setBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
+      {tournamentBetBuilderOpen && isAdmin && <BetBuilderModal state={{ players: tournament.players, numHoles: 18, handicapsEnabled: tournament.handicapsEnabled }} templates={betTemplates} editingBet={typeof tournamentBetBuilderOpen === 'object' ? tournamentBetBuilderOpen : null} onCreate={(bet) => { addTournamentCustomBet(bet); setTournamentBetBuilderOpen(false); }} onSave={(id, updates) => { editTournamentCustomBet(id, updates); setTournamentBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setTournamentBetBuilderOpen(false)} scopeLabel="whole trip" />}
       {myPositionOpen && <MyPositionModal state={state} bets={bets} ledger={ledger} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onClose={() => setMyPositionOpen(false)} />}
       {standingsOpen && (() => {
         const standingsIsHandicapFree = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
