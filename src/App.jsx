@@ -2332,6 +2332,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
   const nassau = g?.nassau?.enabled ? computeNassau(state, holeScoreFn(state, g?.nassau?.net ?? false)) : null;
   return (
     <div>
+      {!isAdmin && !whoami && <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />}
       {skins && (
         <div style={{ marginBottom: 22 }}>
           <SectionHeader title="Skins" sub={`$${g.skins?.value ?? 5} per hole · ${g.skins?.net ? 'net' : 'gross'}`} icon={Coins} iconColor={C.gold} />
@@ -2448,6 +2449,9 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
                               <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, minWidth: 16, textAlign: 'center' }}>{myTickets}</span>
                               <button onClick={() => adjustTicket(e.id, 1)} style={stepBtnStyle}><Plus size={12} /></button>
                             </div>
+                          )}
+                          {canBet && !activeBettorId && (
+                            <div style={{ fontSize: 10, color: C.bunker }}>Pick your name above to buy tickets</div>
                           )}
                         </div>
                       );
