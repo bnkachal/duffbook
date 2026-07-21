@@ -4230,7 +4230,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   return (
     <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: 'Who's playing?', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
       {stepKey === 'basics' && (
         <div>
@@ -4277,8 +4277,8 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               { key: 'stroke-play', label: 'Stroke Play', sub: 'Everyone plays their own ball, lowest total wins' },
-              { key: 'best-ball', label: 'Best Ball', sub: '2v2 teams, the lower of each pair's scores counts per hole' },
-              { key: 'captain-choice', label: 'Captain's Choice (Scramble)', sub: 'Team plays one ball, best shot each time, no handicaps' },
+              { key: 'best-ball', label: 'Best Ball', sub: "2v2 teams, the lower of each pair's scores counts per hole" },
+              { key: 'captain-choice', label: "Captain's Choice (Scramble)", sub: 'Team plays one ball, best shot each time, no handicaps' },
               { key: 'singles', label: 'Singles Match Play', sub: '1v1 all day, hole by hole, off the lower handicap' },
               { key: 'split9', label: 'Split 9 Singles', sub: '2v2 group, but partners swap opponents at the turn — two 9-hole 1v1 matches each' },
             ].map(opt => (
@@ -4453,7 +4453,7 @@ const NOTIF_TYPES = [
   { key: 'allSquare', label: 'Tight matches', sub: 'A match is all square with 5 holes to play' },
   { key: 'playerFinished', label: 'Players finishing', sub: 'Someone posts their final score' },
   { key: 'bettingClosingSoon', label: 'Betting closing', sub: 'Pari-mutuel betting is about to lock' },
-  { key: 'roundComplete', label: 'Round complete', sub: 'Everyone's finished and everything's settled' },
+  { key: 'roundComplete', label: 'Round complete', sub: "Everyone's finished and everything's settled" },
   { key: 'chat', label: 'Group chat', sub: 'New messages from the group' },
 ];
 function NotificationsModal({ prefs, setPrefs, onClose }) {
