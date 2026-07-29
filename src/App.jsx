@@ -5262,9 +5262,8 @@ function FontLoader() {
     `}</style>
   );
 }
-
 function QRShareModal({ roundCode, tournamentName, onClose }) {
-  const url = `https://rogreen.vercel.app?code=${roundCode}`;
+  const url = `${window.location.origin}?code=${roundCode}`;
   const canvasRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [qrReady, setQrReady] = useState(false);
