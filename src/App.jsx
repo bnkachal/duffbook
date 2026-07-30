@@ -6084,10 +6084,13 @@ export default function RoGreen() {
   // within the normal Firebase sync window (same as any other round change).
   // Any viewer can dismiss their own screen without ending it for everyone;
   // only the admin's close actually ends the broadcast (see AwardsCreditsModal
-  // render below).
+  // render below). Derived from `tournament` directly (not the flattened
+  // `state` view) because this hook has to sit above this component's early
+  // returns, and `state` isn't computed until after them.
+  const activeRoundAwardsFlag = tournament.rounds.find(r => r.id === tournament.activeRoundId)?.awardsPresentationActive;
   useEffect(() => {
-    setAwardsOpen(!!state.awardsPresentationActive);
-  }, [state.awardsPresentationActive]);
+    setAwardsOpen(!!activeRoundAwardsFlag);
+  }, [activeRoundAwardsFlag]);
   const [myPositionOpen, setMyPositionOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [roundSwitcherOpen, setRoundSwitcherOpen] = useState(false);
