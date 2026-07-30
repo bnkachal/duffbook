@@ -4898,6 +4898,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
             { section: 'Team', games: [
               { key: 'bestBall', label: 'Best Ball', sub: 'Lowest score among partners counts per hole' },
               { key: 'scramble', label: 'Scramble', sub: "All hit, team picks the best ball and everyone plays from there" },
+              { key: 'shamble', label: 'Shamble', sub: 'Best drive selected, then everyone plays their own ball — lowest 2 of the team count' },
             ]},
             { section: 'Side Bets', games: [
               { key: 'skins', label: 'Skins', sub: 'Win the hole outright to take the skin' },
@@ -6189,6 +6190,19 @@ export default function RoGreen() {
     return () => { mounted = false; };
   }, [roundCode]);
 
+  // If a signed-in admin opens a tournament they actually created (verified
+  // against the real Firebase UID stored on the tournament, not just a
+  // locally-remembered flag), skip the PIN entirely — their account login
+  // already proves who they are. This is what makes "My Tournaments" useful
+  // from a brand-new device: no PIN to remember or re-enter.
+  useEffect(() => {
+    if (!loadedRef.current || !roundCode || isAdmin) return;
+    if (adminAccount && tournament.creatorUid && tournament.creatorUid === adminAccount.uid) {
+      setIsAdmin(true);
+      try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch (e) {}
+    }
+  }, [adminAccount, tournament.creatorUid, roundCode, isAdmin]);
+
   useEffect(() => {
     if (!roundCode || !loadedRef.current) return;
     const t = setTimeout(async () => { try { await storage.set(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
@@ -6351,6 +6365,7 @@ export default function RoGreen() {
     const code = genCode(), pin = genPin();
     justCreatedRef.current = code;
     (async () => { try { localStorage.setItem('db:last-code', JSON.stringify(code)); localStorage.setItem('db:isadmin-' + code, JSON.stringify(true)); } catch (e) {} })();
+    setTournament({ ...defaultTournament(), creatorUid: adminAccount?.uid || null });
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
