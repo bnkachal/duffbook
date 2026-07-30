@@ -3417,15 +3417,32 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             {bbResults.map((pair, i) => {
               const diffStr = pair.thru === 0 ? '–' : fmtToPar(pair.toPar);
               const diffColor = pair.toPar < 0 ? C.emerald : pair.toPar > 0 ? C.flagRed : C.bunker;
-              return (
-                <div key={pair.pairId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-                  <span style={{ fontSize: 12, color: C.bunker, width: 18 }}>{i + 1}</span>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {pair.players.map(p => <Chip key={p.id} color={pc(p)} style={{ width: 24, height: 24, fontSize: 9 }}>{initials(p.name)}</Chip>)}
+              const half = Math.ceil(pair.playerStats.length / 2);
+              const leftStats = pair.playerStats.slice(0, half);
+              const rightStats = pair.playerStats.slice(half);
+              const nameRow = (ps, align) => {
+                const player = pair.players.find(p => p.id === ps.id);
+                const shortName = ps.name.split(' ').length > 1 ? `${ps.name.split(' ')[0]} ${ps.name.split(' ').slice(-1)[0][0]}` : ps.name;
+                return (
+                  <div key={ps.id} style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 0 }}>
+                    {align === 'left' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(ps.name)}</Chip>}
+                    <span style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortName}</span>
+                    <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: ps.thru === 0 ? C.bunker : ps.toPar < 0 ? C.emerald : ps.toPar > 0 ? C.flagRed : C.bunker, flexShrink: 0 }}>{ps.thru === 0 ? '—' : fmtToPar(ps.toPar)}</span>
+                    {align === 'right' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(ps.name)}</Chip>}
                   </div>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ivory, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pair.pairName}</span>
-                  <span style={{ fontSize: 11, color: C.bunker }}>Thru {pair.thru}</span>
-                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: diffColor, lineHeight: 1 }}>{diffStr}</span>
+                );
+              };
+              return (
+                <div key={pair.pairId} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pair.pairName}</span>
+                    <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftStats.map(ps => nameRow(ps, 'left'))}</div>
+                    <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: diffColor, lineHeight: 1, textAlign: 'center' }}>{diffStr}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightStats.map(ps => nameRow(ps, 'right'))}</div>
+                  </div>
                 </div>
               );
             })}
