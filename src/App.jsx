@@ -424,6 +424,7 @@ function defaultRound(index) {
     },
     customBets: [],
     awards: [],
+    awardsPresentationActive: false,
     flowGroups: [], scoreUpdatedAt: {}, submittedPlayers: [], nineHoleTotals: {},
     started: false,
     handicapMode: 'none',
@@ -6078,6 +6079,15 @@ export default function RoGreen() {
   const [previewMode, setPreviewMode] = useState(false); // false = admin view, true = player preview
   const [roundCompleteOpen, setRoundCompleteOpen] = useState(false);
   const [awardsOpen, setAwardsOpen] = useState(false);
+  // The awards show is a shared, synced event, not a local-only modal — when
+  // the admin starts it, every connected player's screen should pick it up
+  // within the normal Firebase sync window (same as any other round change).
+  // Any viewer can dismiss their own screen without ending it for everyone;
+  // only the admin's close actually ends the broadcast (see AwardsCreditsModal
+  // render below).
+  useEffect(() => {
+    setAwardsOpen(!!state.awardsPresentationActive);
+  }, [state.awardsPresentationActive]);
   const [myPositionOpen, setMyPositionOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [roundSwitcherOpen, setRoundSwitcherOpen] = useState(false);
@@ -6825,10 +6835,10 @@ export default function RoGreen() {
       {roundCompleteOpen && (() => {
         const awardResults = computeAwards(state, tournament, ledger);
         return (
-          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} onOpenAwards={() => { setRoundCompleteOpen(false); setAwardsOpen(true); }} />
+          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} onOpenAwards={() => { setRoundCompleteOpen(false); updateRound(r => ({ ...r, awardsPresentationActive: true })); }} />
         );
       })()}
-      {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => setAwardsOpen(false)} />}
+      {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => { setAwardsOpen(false); if (viewAsAdmin) updateRound(r => ({ ...r, awardsPresentationActive: false })); }} />}
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
       {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
       {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
