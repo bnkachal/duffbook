@@ -625,11 +625,19 @@ function computeBestBall(state) {
     const thru = holeScores.filter(s => s != null).length;
     const totalPar = state.pars.slice(0, thru).reduce((a, b) => a + b, 0);
     const totalScore = holeScores.slice(0, thru).reduce((a, b) => a + (b || 0), 0);
+    const playerStats = players.map(p => {
+      const pHoles = Array.from({ length: state.numHoles }, (_, h) => state.scores[p.id]?.[h]).filter(s => s != null);
+      const pThru = pHoles.length;
+      const pPar = state.pars.slice(0, pThru).reduce((a, b) => a + b, 0);
+      const pTotal = pHoles.reduce((a, b) => a + b, 0);
+      return { id: p.id, name: p.name, thru: pThru, toPar: pThru > 0 ? pTotal - pPar : 0 };
+    });
     return {
       pairId: pair.id,
       playerIds,
       players,
-      pairName: players.map(p => p.name).join(' & '),
+      playerStats,
+      pairName: pair.label && pair.label.trim() ? pair.label.trim() : players.map(p => p.name).join(' & '),
       holeScores,
       thru,
       totalScore,
@@ -2556,17 +2564,43 @@ function GamesTab({ state }) {
       {bestBall && bestBall.length > 0 && (
         <div>
           <SectionHeader title="Best Ball" sub="team scores" icon={Flag} iconColor={C.blue} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {bestBall.map((pair, i) => (
-              <div key={pair.pairId} style={{ ...rowCard, justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.bunker, width: 18 }}>{i + 1}</span>
-                  {pair.players.map(p => <Chip key={p.id} color={pc(p)} style={{ width: 24, height: 24, fontSize: 9 }}>{initials(p.name)}</Chip>)}
-                  <span style={{ fontSize: 13, color: C.ivory }}>{pair.pairName}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            {bestBall.map((pair) => {
+              const half = Math.ceil(pair.playerStats.length / 2);
+              const leftStats = pair.playerStats.slice(0, half);
+              const rightStats = pair.playerStats.slice(half);
+              const teamColor = pair.toPar < 0 ? C.emerald : pair.toPar > 0 ? C.flagRed : C.bunker;
+              const renderCol = (stats) => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, flex: 1, minWidth: 0 }}>
+                  {stats.map(ps => {
+                    const player = pair.players.find(p => p.id === ps.id);
+                    return (
+                      <div key={ps.id} style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                        <Chip color={pc(player)} style={{ width: 18, height: 18, fontSize: 7, flexShrink: 0 }}>{initials(ps.name)}</Chip>
+                        <span style={{ fontSize: 11, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{ps.name.split(' ')[0]}</span>
+                        <span style={{ fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', color: ps.thru === 0 ? C.bunker : ps.toPar < 0 ? C.emerald : ps.toPar > 0 ? C.flagRed : C.bunker, flexShrink: 0 }}>{ps.thru === 0 ? '—' : fmtToPar(ps.toPar)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: pair.toPar < 0 ? C.emerald : pair.toPar > 0 ? C.flagRed : C.bunker }}>{pair.thru === 0 ? '—' : fmtToPar(pair.toPar)}</span>
-              </div>
-            ))}
+              );
+              return (
+                <div key={pair.pairId} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pair.pairName}</span>
+                    <span style={{ fontSize: 10, color: C.bunker, flexShrink: 0, marginLeft: 8 }}>{pair.thru === 0 ? 'Not started' : pair.thru === state.numHoles ? 'Final' : `thru ${pair.thru}`}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {renderCol(leftStats)}
+                    <div style={{ textAlign: 'center', flexShrink: 0, minWidth: 44, borderLeft: `1px solid ${C.turfBorder}`, borderRight: `1px solid ${C.turfBorder}`, padding: '0 10px' }}>
+                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: teamColor }}>{pair.thru === 0 ? '—' : fmtToPar(pair.toPar)}</div>
+                      <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.5 }}>Team</div>
+                    </div>
+                    {renderCol(rightStats)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -4113,6 +4147,11 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
     updateRound(prev => ({ ...prev, games: { ...prev.games, [gameKey]: { ...prev.games[gameKey], pairs: newPairs } } }));
   };
 
+  const setPairLabel = (pairId, label) => {
+    const newPairs = pairs.map(pair => pair.id === pairId ? { ...pair, label } : pair);
+    updateRound(prev => ({ ...prev, games: { ...prev.games, [gameKey]: { ...prev.games[gameKey], pairs: newPairs } } }));
+  };
+
   const copyFrom = (sourceKey) => {
     const sourcePairs = Array.isArray(state.games[sourceKey]?.pairs) ? state.games[sourceKey].pairs : [];
     if (pairs.length > 0 && !window.confirm(`This will replace ${gameKey === 'bestBall' ? 'Best Ball' : gameKey === 'scramble' ? 'Scramble' : 'Shamble'}'s current pairs with a copy of ${TEAM_GAME_LABELS[sourceKey]}'s. Continue?`)) return;
@@ -4133,9 +4172,14 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
       )}
       {pairs.map((pair, i) => (
         <div key={pair.id} style={{ background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: 10, marginBottom: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.ivory }}>Pair {i + 1}</span>
-            <button onClick={() => removePair(pair.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer', fontSize: 11 }}>Remove</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+            <input
+              value={pair.label || ''}
+              onChange={e => setPairLabel(pair.id, e.target.value)}
+              placeholder={`Pair ${i + 1} (optional name)`}
+              style={{ background: 'transparent', border: 'none', borderBottom: `1px solid ${C.turfBorder}`, fontSize: 12, fontWeight: 700, color: C.ivory, padding: '2px 0', flex: 1, minWidth: 0 }}
+            />
+            <button onClick={() => removePair(pair.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer', fontSize: 11, flexShrink: 0 }}>Remove</button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {state.players.map(p => {
