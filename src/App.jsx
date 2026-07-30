@@ -5364,6 +5364,30 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
     const base = Date.now() + 10 * 60000;
     updateGroups(() => chunks.map((chunk, i) => ({ id: 'flow_' + Date.now() + '_' + i, groupNumber: i + 1, teeTime: new Date(base + i * 10 * 60000).toISOString(), startingHole: 1, playerIds: chunk, adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null })));
   };
+  const autoCreateByPairings = (gameKey) => {
+    const gamePairs = Array.isArray(state.games?.[gameKey]?.pairs) ? state.games[gameKey].pairs : [];
+    if (gamePairs.length === 0) return;
+    const targetSize = 4;
+    const built = [];
+    let current = [];
+    const flush = () => { if (current.length > 0) built.push(current); current = []; };
+    gamePairs.forEach(pair => {
+      const ids = (Array.isArray(pair.playerIds) ? pair.playerIds : []).filter(id => tournament.players.some(p => p.id === id));
+      if (ids.length === 0) return;
+      if (current.length > 0 && current.length + ids.length > targetSize) flush();
+      current = [...current, ...ids];
+      if (current.length >= targetSize) flush();
+    });
+    flush();
+    const pairedIds = new Set(gamePairs.flatMap(p => p.playerIds || []));
+    tournament.players.filter(p => !pairedIds.has(p.id)).forEach(p => {
+      let target = built.find(g => g.length < targetSize);
+      if (!target) { target = []; built.push(target); }
+      target.push(p.id);
+    });
+    const base = Date.now() + 10 * 60000;
+    updateGroups(() => built.map((ids, i) => ({ id: 'flow_' + Date.now() + '_' + i, groupNumber: i + 1, teeTime: new Date(base + i * 10 * 60000).toISOString(), startingHole: 1, playerIds: ids, adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null })));
+  };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '88vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
@@ -5373,7 +5397,14 @@ function GroupSetupModal({ tournament, state, updateRound, onClose }) {
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>Pace and current hole are read straight from each player's scorecard — nothing to update by hand once a group's set up.</div>
         {tournament.players.length === 0 ? <div style={{ color: C.ivoryDim, fontSize: 13, marginBottom: 14 }}>Add players to the round first.</div> : (
-          <GhostButton onClick={autoCreate} style={{ width: '100%', textAlign: 'center', marginBottom: 16 }}>Auto-create groups of 4 from the roster</GhostButton>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            <GhostButton onClick={autoCreate} style={{ width: '100%', textAlign: 'center' }}>Auto-create groups of 4 from the roster</GhostButton>
+            {['bestBall', 'scramble', 'shamble'].filter(k => Array.isArray(state.games?.[k]?.pairs) && state.games[k].pairs.length > 0).map(k => (
+              <button key={k} onClick={() => autoCreateByPairings(k)} style={{ width: '100%', textAlign: 'center', background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: '10px 0', fontSize: 13, color: C.gold, cursor: 'pointer' }}>
+                Group by {k === 'bestBall' ? 'Best Ball' : k === 'scramble' ? 'Scramble' : 'Shamble'} teams
+              </button>
+            ))}
+          </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
           {groups.map(g => (
