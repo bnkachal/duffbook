@@ -7,7 +7,8 @@ import {
   Flag, Trophy, Coins, Receipt, Plus, Minus, Settings, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
   MessageCircle, Swords, Shuffle, Copy, LogOut, Loader2, Home, Ticket, KeyRound,
-  Calendar, User, ChevronsUpDown, RefreshCw, Share2,
+  Calendar, User, ChevronsUpDown, RefreshCw, Share2, Target, Zap, TrendingUp,
+  Snowflake, Anchor as AnchorIcon, Mail, Lock,
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
@@ -422,6 +423,7 @@ function defaultRound(index) {
       strokePlay: { enabled: false },
     },
     customBets: [],
+    awards: [],
     flowGroups: [], scoreUpdatedAt: {}, submittedPlayers: [], nineHoleTotals: {},
     started: false,
     handicapMode: 'none',
@@ -664,6 +666,133 @@ function computeShamble(state) {
       toPar: thru > 0 ? totalScore - parBasis : 0,
     };
   }).sort((a, b) => a.totalScore - b.totalScore);
+}
+
+const AWARD_DEFS = {
+  medalist:      { label: 'Medalist', sub: 'low gross', icon: Trophy },
+  netMedalist:   { label: 'Net Medalist', sub: 'low net', icon: Target, requires: 'handicaps' },
+  birdieMachine: { label: 'Birdie Machine', sub: 'most birdies or better', icon: Zap },
+  grinder:       { label: 'The Grinder', sub: 'most pars', icon: Flag },
+  theOut:        { label: 'The Out', sub: 'best front 9', icon: Flag },
+  theIn:         { label: 'The In', sub: 'best back 9', icon: Flag },
+  makingTheTurn: { label: 'Making the Turn', sub: 'biggest front-to-back improvement', icon: TrendingUp },
+  theSnowman:    { label: 'The Snowman', sub: "the round's biggest number", icon: Snowflake },
+  steadyEddie:   { label: 'Steady Eddie', sub: 'most consistent scorecard', icon: Trophy },
+  bigWinner:     { label: 'Big Winner', sub: 'largest payout', icon: Coins, requires: 'betting' },
+  highRoller:    { label: 'High Roller', sub: 'most pari-mutuel tickets bought', icon: Ticket, requires: 'parimutuel' },
+  skinsChamp:    { label: 'Skins King/Queen', sub: 'most skins won', icon: Coins, requires: 'skins' },
+  theAnchor:     { label: 'The Anchor', sub: "team's top performer", icon: AnchorIcon, requires: 'flights', perTeam: true },
+};
+
+function computeAwards(state, tournament, ledger) {
+  const selected = Array.isArray(state.awards) ? state.awards : [];
+  if (selected.length === 0) return [];
+  const players = state.players.filter(p => (state.scores[p.id] || []).some(s => s != null));
+  if (players.length === 0) return [];
+  const numHoles = state.numHoles || 18;
+  const pars = state.pars || [];
+  const grossTotal = (p) => (state.scores[p.id] || []).slice(0, numHoles).reduce((a, b) => a + (b || 0), 0);
+  const parTotal = (from, to) => pars.slice(from, to).reduce((a, b) => a + (b || 4), 0);
+  const holeScore = (p, h) => state.scores[p.id]?.[h];
+  const netStrokesFor = (p) => {
+    const ch = getCourseHandicap(p, state);
+    return Array.from({ length: numHoles }, (_, h) => strokesOnHole(ch, state.strokeIndex, h)).reduce((a, b) => a + b, 0);
+  };
+  const results = [];
+  const push = (key, winner, statText, extra) => { if (winner) results.push({ key, ...AWARD_DEFS[key], winner, statText, ...extra }); };
+
+  if (selected.includes('medalist')) {
+    const sorted = [...players].sort((a, b) => grossTotal(a) - grossTotal(b));
+    if (sorted[0]) push('medalist', sorted[0], `${fmtToPar(grossTotal(sorted[0]) - parTotal(0, numHoles))}`);
+  }
+  if (selected.includes('netMedalist') && state.handicapsEnabled) {
+    const sorted = [...players].sort((a, b) => (grossTotal(a) - netStrokesFor(a)) - (grossTotal(b) - netStrokesFor(b)));
+    if (sorted[0]) push('netMedalist', sorted[0], `${fmtToPar((grossTotal(sorted[0]) - netStrokesFor(sorted[0])) - parTotal(0, numHoles))} net`);
+  }
+  if (selected.includes('birdieMachine')) {
+    const counts = players.map(p => ({ p, n: Array.from({ length: numHoles }, (_, h) => holeScore(p, h)).filter((s, h) => s != null && s <= (pars[h] || 4) - 1).length }));
+    counts.sort((a, b) => b.n - a.n);
+    if (counts[0] && counts[0].n > 0) push('birdieMachine', counts[0].p, `${counts[0].n} birdie${counts[0].n !== 1 ? 's' : ''} or better`);
+  }
+  if (selected.includes('grinder')) {
+    const counts = players.map(p => ({ p, n: Array.from({ length: numHoles }, (_, h) => holeScore(p, h)).filter((s, h) => s != null && s === (pars[h] || 4)).length }));
+    counts.sort((a, b) => b.n - a.n);
+    if (counts[0] && counts[0].n > 0) push('grinder', counts[0].p, `${counts[0].n} par${counts[0].n !== 1 ? 's' : ''}`);
+  }
+  if (selected.includes('theOut')) {
+    const half = Math.floor(numHoles / 2);
+    const sorted = [...players].sort((a, b) => grossTotal9(a, 0, half) - grossTotal9(b, 0, half));
+    function grossTotal9(p, from, to) { return Array.from({ length: to - from }, (_, i) => holeScore(p, from + i) || 0).reduce((a, b) => a + b, 0); }
+    if (sorted[0]) push('theOut', sorted[0], `${fmtToPar(grossTotal9(sorted[0], 0, half) - parTotal(0, half))}`);
+  }
+  if (selected.includes('theIn')) {
+    const half = Math.floor(numHoles / 2);
+    function grossTotal9(p, from, to) { return Array.from({ length: to - from }, (_, i) => holeScore(p, from + i) || 0).reduce((a, b) => a + b, 0); }
+    const sorted = [...players].sort((a, b) => grossTotal9(a, half, numHoles) - grossTotal9(b, half, numHoles));
+    if (sorted[0]) push('theIn', sorted[0], `${fmtToPar(grossTotal9(sorted[0], half, numHoles) - parTotal(half, numHoles))}`);
+  }
+  if (selected.includes('makingTheTurn')) {
+    const half = Math.floor(numHoles / 2);
+    function relTo(p, from, to) { const tot = Array.from({ length: to - from }, (_, i) => holeScore(p, from + i) || 0).reduce((a, b) => a + b, 0); return tot - parTotal(from, to); }
+    const withDelta = players.map(p => ({ p, delta: relTo(p, 0, half) - relTo(p, half, numHoles) }));
+    withDelta.sort((a, b) => b.delta - a.delta);
+    if (withDelta[0] && withDelta[0].delta > 0) push('makingTheTurn', withDelta[0].p, `${withDelta[0].delta} stroke${withDelta[0].delta !== 1 ? 's' : ''} better on the back`);
+  }
+  if (selected.includes('theSnowman')) {
+    let worst = null;
+    players.forEach(p => {
+      for (let h = 0; h < numHoles; h++) {
+        const s = holeScore(p, h);
+        if (s == null) continue;
+        const rel = s - (pars[h] || 4);
+        if (!worst || rel > worst.rel) worst = { p, rel, hole: h + 1, score: s };
+      }
+    });
+    if (worst && worst.rel >= 3) push('theSnowman', worst.p, `${worst.score} on hole ${worst.hole}`);
+  }
+  if (selected.includes('steadyEddie')) {
+    const withVar = players.map(p => {
+      const vals = Array.from({ length: numHoles }, (_, h) => { const s = holeScore(p, h); return s != null ? s - (pars[h] || 4) : null; }).filter(v => v != null);
+      if (vals.length < numHoles) return { p, variance: Infinity };
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+      return { p, variance };
+    });
+    withVar.sort((a, b) => a.variance - b.variance);
+    if (withVar[0] && withVar[0].variance !== Infinity) push('steadyEddie', withVar[0].p, 'steady all day');
+  }
+  if (selected.includes('bigWinner') && tournament?.bettingEnabled !== false && ledger) {
+    const sorted = [...players].sort((a, b) => (ledger[b.id]?.netPosition || 0) - (ledger[a.id]?.netPosition || 0));
+    if (sorted[0] && (ledger[sorted[0].id]?.netPosition || 0) > 0) push('bigWinner', sorted[0], fmtMoney(ledger[sorted[0].id]?.netPosition || 0));
+  }
+  if (selected.includes('highRoller') && state.games?.parimutuel?.enabled) {
+    const tickets = Array.isArray(state.games.parimutuel.tickets) ? state.games.parimutuel.tickets : [];
+    const byBettor = {};
+    tickets.forEach(t => { byBettor[t.bettorId] = (byBettor[t.bettorId] || 0) + (t.count || 1); });
+    const topId = Object.entries(byBettor).sort((a, b) => b[1] - a[1])[0];
+    if (topId) { const p = players.find(pl => pl.id === topId[0]); if (p) push('highRoller', p, `${topId[1]} ticket${topId[1] !== 1 ? 's' : ''}`); }
+  }
+  if (selected.includes('skinsChamp') && state.games?.skins?.enabled) {
+    const sk = computeSkins(state, holeScoreFn(state, state.games.skins.net ?? false));
+    const byWinner = {};
+    (sk.results || []).forEach(r => { if (r.winnerId) byWinner[r.winnerId] = (byWinner[r.winnerId] || 0) + 1; });
+    const topId = Object.entries(byWinner).sort((a, b) => b[1] - a[1])[0];
+    if (topId) { const p = players.find(pl => pl.id === topId[0]); if (p) push('skinsChamp', p, `${topId[1]} skin${topId[1] !== 1 ? 's' : ''}`); }
+  }
+  if (selected.includes('theAnchor') && Array.isArray(state.flights) && state.flights.length >= 2) {
+    state.flights.forEach(flight => {
+      const teamPlayers = players.filter(p => p.flightId === flight.id);
+      if (teamPlayers.length === 0) return;
+      const useNet = state.handicapsEnabled;
+      const sorted = [...teamPlayers].sort((a, b) => {
+        const av = useNet ? grossTotal(a) - netStrokesFor(a) : grossTotal(a);
+        const bv = useNet ? grossTotal(b) - netStrokesFor(b) : grossTotal(b);
+        return av - bv;
+      });
+      if (sorted[0]) results.push({ key: 'theAnchor', ...AWARD_DEFS.theAnchor, label: `The Anchor — ${flight.name}`, winner: sorted[0], statText: fmtToPar((useNet ? grossTotal(sorted[0]) - netStrokesFor(sorted[0]) : grossTotal(sorted[0])) - parTotal(0, numHoles)), teamColor: flight.color });
+    });
+  }
+  return results;
 }
 
 function computeScramble(state) {
@@ -4273,7 +4402,34 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
   );
 }
 
-/* ============================== SETUP MODAL (scroll mode, for adjustments) ============================== */
+function AwardsSetupSection({ state, tournament, updateRound }) {
+  const selected = Array.isArray(state.awards) ? state.awards : [];
+  const toggle = (key) => updateRound(p => ({ ...p, awards: (Array.isArray(p.awards) ? p.awards : []).includes(key) ? p.awards.filter(k => k !== key) : [...(p.awards || []), key] }));
+  const g = state.games || {};
+  const meets = (req) => {
+    if (!req) return true;
+    if (req === 'handicaps') return !!state.handicapsEnabled;
+    if (req === 'betting') return tournament?.bettingEnabled !== false;
+    if (req === 'parimutuel') return !!g.parimutuel?.enabled && tournament?.bettingEnabled !== false;
+    if (req === 'skins') return !!g.skins?.enabled && tournament?.bettingEnabled !== false;
+    if (req === 'flights') return Array.isArray(state.flights) && state.flights.length >= 2;
+    return true;
+  };
+  const entries = Object.entries(AWARD_DEFS).filter(([, def]) => meets(def.requires));
+  return (
+    <Accordion title="Awards & recap" badge={selected.length ? `${selected.length} on` : 'off'}>
+      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 12, lineHeight: 1.5 }}>Pick which awards show up in the end-of-tournament recap. Only shows once the tournament is marked complete — the admin taps "Show Awards" from that screen.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {entries.map(([key, def]) => (
+          <ToggleRow key={key} label={def.label} sub={def.sub} enabled={selected.includes(key)} onToggle={() => toggle(key)} />
+        ))}
+      </div>
+      {Object.keys(AWARD_DEFS).length > entries.length && (
+        <div style={{ fontSize: 11, color: C.bunker, marginTop: 8 }}>Some awards are hidden until their game or setting is turned on (e.g. handicaps for Net Medalist, flights for The Anchor).</div>
+      )}
+    </Accordion>
+  );
+}
 function SetupModal({ tournament, state, updateTournament, updateRound, onClose, roundCode, newPlayerName, setNewPlayerName, addPlayer, removePlayer, selectProviderCourse, selectCustomCourse, setNumHoles, setPar, setSI, setYardage, setCourseField, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, startRound, resetScores, onPreview, onAddRound, onSwitchRound }) {
   const [copied, setCopied] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -4363,6 +4519,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
           )}
         </Accordion>
         <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
+        <AwardsSetupSection state={state} tournament={tournament} updateRound={updateRound} />
         <Accordion title="Round Roster" badge={state.roundPlayers?.length > 0 ? state.roundPlayers.length + ' overrides' : null}>
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 10, lineHeight: 1.5 }}>By default this round uses the full tournament roster. Remove players here to exclude them from this round only.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
@@ -5289,7 +5446,65 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
 }
 
 /* ============================== ROUND COMPLETE WRAP-UP ============================== */
-function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose }) {
+function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
+  const scrollRef = useRef(null);
+  const [paused, setPaused] = useState(false);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const step = () => {
+      if (!paused && scrollRef.current) {
+        scrollRef.current.scrollTop += 0.6;
+      }
+      rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [paused]);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#050709', zIndex: 70, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 2, display: 'flex', gap: 8 }}>
+        <button onClick={() => setPaused(p => !p)} style={{ background: 'rgba(255,255,255,0.08)', border: `1px solid ${C.turfBorder}`, borderRadius: 999, color: C.ivory, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}>{paused ? 'Resume' : 'Pause'}</button>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.08)', border: `1px solid ${C.turfBorder}`, borderRadius: 999, color: C.ivory, padding: '8px 10px', cursor: 'pointer' }}><X size={16} /></button>
+      </div>
+      <div
+        ref={scrollRef}
+        onTouchStart={() => setPaused(true)}
+        onMouseDown={() => setPaused(true)}
+        style={{ flex: 1, overflowY: 'auto', textAlign: 'center', padding: '0 24px' }}
+      >
+        <div style={{ height: '40vh' }} />
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold, marginBottom: 10 }}>MatchBook Presents</div>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 30, color: '#FFFFFF', marginBottom: 8 }}>{tournament?.name || 'The Tournament'}</div>
+        <div style={{ fontSize: 13, color: C.ivoryDim, marginBottom: '18vh' }}>{roundName}</div>
+
+        {awards.map((a, i) => {
+          const Icon = a.icon || Trophy;
+          return (
+            <div key={`${a.key}-${i}`} style={{ marginBottom: '14vh' }}>
+              <Icon size={30} color={C.goldBright} style={{ marginBottom: 10 }} />
+              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 12, letterSpacing: 2.5, textTransform: 'uppercase', color: C.gold, marginBottom: 4 }}>{a.label}</div>
+              <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 16 }}>{a.sub}</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 6 }}>
+                <Chip color={a.teamColor || pc(a.winner)} style={{ width: 40, height: 40, fontSize: 15 }}>{initials(a.winner.name)}</Chip>
+              </div>
+              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: '#FFFFFF' }}>{a.winner.name}</div>
+              <div style={{ fontSize: 13, color: C.goldBright, marginTop: 2 }}>{a.statText}</div>
+            </div>
+          );
+        })}
+
+        <div style={{ height: '20vh' }} />
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: '#FFFFFF', marginBottom: 6 }}>Thanks for playing</div>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold }}>MatchBook</div>
+        <div style={{ height: '50vh' }} />
+      </div>
+    </div>
+  );
+}
+
+function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
   const final = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
@@ -5327,7 +5542,10 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose }) {
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 18 }}>${totalSettled.toFixed(totalSettled % 1 ? 2 : 0)} settled across the group so far — check Settle for who pays whom.</div>
 
-        <GoldButton onClick={onClose} style={{ width: '100%', padding: '13px 0' }}>Done</GoldButton>
+        {isLastRound && hasAwards && (
+          <GoldButton onClick={onOpenAwards} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>🎬 Show Awards</GoldButton>
+        )}
+        <GhostButton onClick={onClose} style={{ width: '100%', padding: '13px 0', textAlign: 'center' }}>Done</GhostButton>
       </div>
     </div>
   );
@@ -5738,6 +5956,7 @@ export default function RoGreen() {
   const [betTemplates, setBetTemplates] = useState(null);
   const [previewMode, setPreviewMode] = useState(false); // false = admin view, true = player preview
   const [roundCompleteOpen, setRoundCompleteOpen] = useState(false);
+  const [awardsOpen, setAwardsOpen] = useState(false);
   const [myPositionOpen, setMyPositionOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [roundSwitcherOpen, setRoundSwitcherOpen] = useState(false);
@@ -6426,7 +6645,13 @@ export default function RoGreen() {
         return <FullStandingsModal tournament={tournament} tournamentStandings={fullStandings} useNet={standingsUseNet} ryderCup={modalRyderCup} onClose={() => setStandingsOpen(false)} />;
       })()}
       {chatOpen && <ChatModal state={state} chat={chat} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} sendChat={sendChat} onClose={() => setChatOpen(false)} />}
-      {roundCompleteOpen && <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} />}
+      {roundCompleteOpen && (() => {
+        const awardResults = computeAwards(state, tournament, ledger);
+        return (
+          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} onOpenAwards={() => { setRoundCompleteOpen(false); setAwardsOpen(true); }} />
+        );
+      })()}
+      {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => setAwardsOpen(false)} />}
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
       {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
       {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
