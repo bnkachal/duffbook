@@ -4089,6 +4089,11 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
   const pairs = Array.isArray(state.games[gameKey]?.pairs) ? state.games[gameKey].pairs : [];
   const allPairedIds = pairs.flatMap(p => p.playerIds || []);
   const unpairedPlayers = state.players.filter(p => !allPairedIds.includes(p.id));
+  const TEAM_GAME_LABELS = { bestBall: 'Best Ball', scramble: 'Scramble', shamble: 'Shamble' };
+  const copyableSources = Object.keys(TEAM_GAME_LABELS)
+    .filter(k => k !== gameKey)
+    .map(k => ({ key: k, label: TEAM_GAME_LABELS[k], pairs: Array.isArray(state.games[k]?.pairs) ? state.games[k].pairs : [] }))
+    .filter(src => src.pairs.length > 0);
 
   const addPair = () => {
     const newPair = { id: 'pair_' + Date.now(), playerIds: [] };
@@ -4108,8 +4113,24 @@ function BestBallPairBuilder({ gameKey, state, updateRound }) {
     updateRound(prev => ({ ...prev, games: { ...prev.games, [gameKey]: { ...prev.games[gameKey], pairs: newPairs } } }));
   };
 
+  const copyFrom = (sourceKey) => {
+    const sourcePairs = Array.isArray(state.games[sourceKey]?.pairs) ? state.games[sourceKey].pairs : [];
+    if (pairs.length > 0 && !window.confirm(`This will replace ${gameKey === 'bestBall' ? 'Best Ball' : gameKey === 'scramble' ? 'Scramble' : 'Shamble'}'s current pairs with a copy of ${TEAM_GAME_LABELS[sourceKey]}'s. Continue?`)) return;
+    const copied = sourcePairs.map((p, i) => ({ id: `pair_${Date.now()}_${i}`, playerIds: [...(p.playerIds || [])] }));
+    updateRound(prev => ({ ...prev, games: { ...prev.games, [gameKey]: { ...prev.games[gameKey], pairs: copied } } }));
+  };
+
   return (
     <div style={{ marginLeft: 12, marginBottom: 12 }}>
+      {copyableSources.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {copyableSources.map(src => (
+            <button key={src.key} onClick={() => copyFrom(src.key)} style={{ fontSize: 11, color: C.gold, background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: '6px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Copy size={11} /> Use {src.label}'s teams ({src.pairs.length})
+            </button>
+          ))}
+        </div>
+      )}
       {pairs.map((pair, i) => (
         <div key={pair.id} style={{ background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: 10, marginBottom: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -4197,6 +4218,40 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
     setGroups(newGroups);
   };
 
+  // Groups players so teammates from a given team game (Best Ball/Scramble/
+  // Shamble) end up in the same physical tee-time group — keeps pairs/teams
+  // playing together instead of admin having to manually rebuild groupings
+  // that already exist as game pairs. Players not on any team for that game
+  // get distributed into whatever room is left afterward.
+  const autoSplitByGamePairings = (gameKey) => {
+    const gamePairs = Array.isArray(state.games?.[gameKey]?.pairs) ? state.games[gameKey].pairs : [];
+    if (gamePairs.length === 0) return;
+    const targetSize = 4;
+    const built = [];
+    let current = [];
+    const flush = () => { if (current.length > 0) built.push(current); current = []; };
+    gamePairs.forEach(pair => {
+      const ids = (Array.isArray(pair.playerIds) ? pair.playerIds : []).filter(id => players.some(p => p.id === id));
+      if (ids.length === 0) return;
+      if (current.length > 0 && current.length + ids.length > targetSize) flush();
+      current = [...current, ...ids];
+      if (current.length >= targetSize) flush();
+    });
+    flush();
+    const pairedIds = new Set(gamePairs.flatMap(p => p.playerIds || []));
+    players.filter(p => !pairedIds.has(p.id)).forEach(p => {
+      let target = built.find(g => g.length < targetSize);
+      if (!target) { target = []; built.push(target); }
+      target.push(p.id);
+    });
+    setGroups(built.map((ids, i) => ({
+      id: groups[i]?.id || ('flow_g' + (i + 1) + '_' + Date.now() + '_' + i),
+      groupNumber: i + 1, teeTime: groups[i]?.teeTime || null,
+      startingHole: groups[i]?.startingHole || 1, playerIds: ids,
+      adminNotes: '', delayedMinutes: 0, overrideCurrentHole: null,
+    })));
+  };
+
   const movePlayer = (playerId, toGroupId) => {
     setGroups(prev => prev.map(g => ({
       ...g,
@@ -4248,10 +4303,17 @@ function WizardGroupsStep({ tournament, state, updateRound, goNext }) {
         );
       })()}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.5, flex: 1 }}>Tap any player to assign them to a group.</div>
-        <button onClick={autoSplit} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer', flexShrink: 0, marginLeft: 10 }}>Auto-split</button>
-        <button onClick={autoSplitByHandicap} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer', flexShrink: 0, marginLeft: 8 }}>Auto-split by handicap</button>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.5, marginBottom: 10 }}>Tap any player to assign them to a group.</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button onClick={autoSplit} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer' }}>Auto-split</button>
+          <button onClick={autoSplitByHandicap} style={{ background: C.pineDark, border: '1px solid ' + C.turfBorder, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.ivory, cursor: 'pointer' }}>Auto-split by handicap</button>
+          {['bestBall', 'scramble', 'shamble'].filter(k => Array.isArray(state.games?.[k]?.pairs) && state.games[k].pairs.length > 0).map(k => (
+            <button key={k} onClick={() => autoSplitByGamePairings(k)} style={{ background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: C.gold, cursor: 'pointer' }}>
+              Group by {k === 'bestBall' ? 'Best Ball' : k === 'scramble' ? 'Scramble' : 'Shamble'} teams
+            </button>
+          ))}
+        </div>
       </div>
 
       {groups.map((g, gi) => (
