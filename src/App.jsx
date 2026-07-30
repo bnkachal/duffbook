@@ -1,4 +1,4 @@
-import { storage } from './firebase';
+import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import matchbookLanding from './assets/images/matchbook-landing.jpg';
 import matchbookBunker from './assets/images/matchbook-bunker.jpg';
@@ -1777,7 +1777,102 @@ function Collage() {
 
 
 
-function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, onSaveName, joinError, joinChecking }) {
+function AdminAuthModal({ onClose, onSignedIn }) {
+  const [mode, setMode] = useState('signin'); // signin | signup | forgot
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
+  const switchMode = (m) => { setMode(m); setError(''); setResetSent(false); };
+
+  const submit = async () => {
+    setError('');
+    if (!email.trim()) { setError('Enter your email.'); return; }
+    if (mode !== 'forgot' && password.length < 6) { setError('Password needs to be at least 6 characters.'); return; }
+    if (mode === 'signup' && password !== confirmPassword) { setError('Passwords don\'t match.'); return; }
+    setBusy(true);
+    let res;
+    if (mode === 'signup') res = await signUpAdmin(email, password);
+    else if (mode === 'signin') res = await signInAdmin(email, password);
+    else res = await resetAdminPassword(email);
+    setBusy(false);
+    if (!res.ok) { setError(res.error); return; }
+    if (mode === 'forgot') { setResetSent(true); return; }
+    onSignedIn?.();
+    onClose();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 380, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20 }}>
+            {mode === 'signup' ? 'Create admin account' : mode === 'forgot' ? 'Reset password' : 'Admin sign in'}
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 20, lineHeight: 1.5 }}>
+          {mode === 'signup' ? 'For tournament creators only — players never need an account.' : mode === 'forgot' ? "We'll email you a reset link." : 'Keep every tournament you\'ve created in one place.'}
+        </div>
+
+        {mode === 'forgot' && resetSent ? (
+          <div style={{ ...rowCard, background: `${C.emerald}18`, border: `1px solid ${C.emerald}44`, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, color: C.ivory, lineHeight: 1.5 }}>If an account exists for <strong>{email}</strong>, a reset link is on its way. Check your inbox (and spam folder).</div>
+          </div>
+        ) : (
+          <>
+            <Field label="Email">
+              <div style={{ position: 'relative' }}>
+                <Mail size={15} color={C.ivoryDim} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inputStyle, paddingLeft: 36 }} placeholder="you@example.com" />
+              </div>
+            </Field>
+            {mode !== 'forgot' && (
+              <Field label="Password">
+                <div style={{ position: 'relative' }}>
+                  <Lock size={15} color={C.ivoryDim} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                  <input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingLeft: 36 }} placeholder="At least 6 characters" />
+                </div>
+              </Field>
+            )}
+            {mode === 'signup' && (
+              <Field label="Confirm password">
+                <div style={{ position: 'relative' }}>
+                  <Lock size={15} color={C.ivoryDim} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                  <input type="password" autoComplete="new-password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} style={{ ...inputStyle, paddingLeft: 36 }} placeholder="Type it again" />
+                </div>
+              </Field>
+            )}
+            {error && <div style={{ color: C.flagRed, fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>{error}</div>}
+            <GoldButton onClick={submit} disabled={busy} style={{ width: '100%', padding: '13px 0', marginBottom: 14 }}>
+              {busy ? 'Working…' : mode === 'signup' ? 'Create account' : mode === 'forgot' ? 'Send reset email' : 'Sign in'}
+            </GoldButton>
+          </>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', fontSize: 12 }}>
+          {mode === 'signin' && (
+            <>
+              <button onClick={() => switchMode('forgot')} style={{ background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', textDecoration: 'underline' }}>Forgot your password?</button>
+              <button onClick={() => switchMode('signup')} style={{ background: 'transparent', border: 'none', color: C.goldBright, cursor: 'pointer' }}>New here? Create an admin account</button>
+            </>
+          )}
+          {mode === 'signup' && (
+            <button onClick={() => switchMode('signin')} style={{ background: 'transparent', border: 'none', color: C.goldBright, cursor: 'pointer' }}>Already have an account? Sign in</button>
+          )}
+          {mode === 'forgot' && (
+            <button onClick={() => switchMode('signin')} style={{ background: 'transparent', border: 'none', color: C.goldBright, cursor: 'pointer' }}>Back to sign in</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, onSaveName, joinError, joinChecking, adminAccount, cloudTournaments, onOpenAdminAuth, onSignOutAdmin }) {
   const [code, setCode] = useState('');
   const [localName, setLocalName] = useState(deviceName || '');
   const [codeFocused, setCodeFocused] = useState(false);
@@ -1862,20 +1957,45 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
           </div>
         )}
 
-        {/* Recent rounds — compact */}
-        {myTournaments && myTournaments.length > 0 && (
+        {/* Recent rounds — compact, or full cloud-backed list if admin is signed in */}
+        {adminAccount ? (
           <div>
-            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Inter, sans-serif', fontWeight: 600, textAlign: 'center', marginBottom: 6 }}>Recent rounds</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {myTournaments.slice(0, 4).map((t, i) => (
-                <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? `${C.gold}22` : 'rgba(255,255,255,0.06)', border: i === 0 ? `1px solid ${C.gold}4D` : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? C.gold : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 13, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
-                </button>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>My tournaments · {adminAccount.email}</div>
+              <button onClick={onSignOutAdmin} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}>Sign out</button>
             </div>
+            {cloudTournaments && cloudTournaments.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                {cloudTournaments.map((t, i) => (
+                  <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? `${C.gold}22` : 'rgba(255,255,255,0.06)', border: i === 0 ? `1px solid ${C.gold}4D` : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? C.gold : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 13, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '8px 0' }}>No tournaments yet — create one and it'll show up here.</div>
+            )}
           </div>
+        ) : (
+          <>
+            {myTournaments && myTournaments.length > 0 && (
+              <div>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Inter, sans-serif', fontWeight: 600, textAlign: 'center', marginBottom: 6 }}>Recent rounds</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {myTournaments.slice(0, 4).map((t, i) => (
+                    <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: i === 0 ? `${C.gold}22` : 'rgba(255,255,255,0.06)', border: i === 0 ? `1px solid ${C.gold}4D` : '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? C.gold : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: '#FFF', fontWeight: i === 0 ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5, fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{t.code}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button onClick={onOpenAdminAuth} style={{ display: 'block', margin: '14px auto 0', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.45)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>Tournament creator? Sign in for your full history</button>
+          </>
         )}
       </div>
 
@@ -5977,6 +6097,9 @@ export default function RoGreen() {
   const [deviceName, setDeviceName] = useState('');
   const [profileOpen, setProfileOpen] = useState(false);
   const [myTournaments, setMyTournaments] = useState([]);
+  const [adminAccount, setAdminAccount] = useState(null);
+  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [cloudTournaments, setCloudTournaments] = useState([]);
   const loadedRef = useRef(false);
   const justCreatedRef = useRef(null);
   const preloadedRef = useRef(null);
@@ -5998,12 +6121,50 @@ export default function RoGreen() {
     })();
   }, []);
 
+  // Track the signed-in admin account (if any) and, whenever it changes,
+  // subscribe to that admin's own tournament index so "My Tournaments" can
+  // show every tournament they've ever created, not just the last few
+  // opened on this specific device.
+  useEffect(() => {
+    const unsubAuth = onAdminAuthChange((account) => {
+      setAdminAccount(account);
+      if (!account) { setCloudTournaments([]); return; }
+    });
+    return () => unsubAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!adminAccount) return;
+    const key = `admin-${adminAccount.uid}-tournaments`;
+    const unsub = storage.subscribe(key, true, (result) => {
+      if (!result) { setCloudTournaments([]); return; }
+      try {
+        const parsed = JSON.parse(result.value);
+        const list = Object.values(parsed || {}).sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+        setCloudTournaments(list);
+      } catch (e) { setCloudTournaments([]); }
+    });
+    return () => { if (typeof unsub === 'function') unsub(); };
+  }, [adminAccount]);
+
+  const rememberForAdmin = async (code, name) => {
+    if (!adminAccount) return;
+    const key = `admin-${adminAccount.uid}-tournaments`;
+    try {
+      const existing = await storage.get(key, true);
+      const parsed = existing ? JSON.parse(existing.value) : {};
+      parsed[code] = { code, name, lastOpened: Date.now() };
+      await storage.set(key, JSON.stringify(parsed), true);
+    } catch (e) { console.error('Could not save tournament to admin account:', e); }
+  };
+
   const rememberTournament = (code, name) => {
     setMyTournaments(prev => {
       const next = [{ code, name, lastOpened: Date.now() }, ...prev.filter(t => t.code !== code)].slice(0, 5);
       try { localStorage.setItem('db:my-tournaments', JSON.stringify(next)); } catch(e) {}
       return next;
     });
+    rememberForAdmin(code, name);
   };
 
   useEffect(() => {
@@ -6470,7 +6631,8 @@ export default function RoGreen() {
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
     <>
-      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} />
+      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
+      {adminAuthOpen && <AdminAuthModal onClose={() => setAdminAuthOpen(false)} onSignedIn={() => {}} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );

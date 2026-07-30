@@ -2,15 +2,22 @@
   "rules": {
     ".read": false,
     ".write": false,
+
     "shared": {
       "$roundKey": {
-        ".read": "auth != null && $roundKey.matches(/^round-[ABCDEFGHJKMNPQRSTUVWXY3456789]{5}-(state|chat)$/)",
-        ".write": "auth != null && $roundKey.matches(/^round-[ABCDEFGHJKMNPQRSTUVWXY3456789]{5}-(state|chat)$/)",
+        ".read": "auth != null && ($roundKey.matches(/^round-[ABCDEFGHJKMNPQRSTUVWXY3456789]{5}-(state|chat)$/) || ($roundKey.beginsWith('admin-') && $roundKey == 'admin-' + auth.uid + '-tournaments'))",
+        ".write": "auth != null && ($roundKey.matches(/^round-[ABCDEFGHJKMNPQRSTUVWXY3456789]{5}-(state|chat)$/) || ($roundKey.beginsWith('admin-') && $roundKey == 'admin-' + auth.uid + '-tournaments'))",
         ".validate": "newData.hasChildren() || newData.val() == null"
       }
     },
+
     "private": {
-      "$deviceId": { "$key": { ".read": "auth != null", ".write": "auth != null" } }
+      "$deviceId": {
+        "$key": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
     }
   }
 }
