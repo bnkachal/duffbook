@@ -1,4 +1,4 @@
-import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange, registerTournamentInOwnerIndex, getOwnerTournamentIndex } from './firebase';
+import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange, registerTournamentInOwnerIndex, getOwnerTournamentIndex, getOwnerAccountIndex } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import matchbookLanding from './assets/images/matchbook-landing.jpg';
 import matchbookBunker from './assets/images/matchbook-bunker.jpg';
@@ -1978,14 +1978,16 @@ function OwnerConsole({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [registry, setRegistry] = useState({});
   const [details, setDetails] = useState({});
+  const [accounts, setAccounts] = useState({});
   const now = useNow(15000);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const idx = await getOwnerTournamentIndex();
+      const [idx, accts] = await Promise.all([getOwnerTournamentIndex(), getOwnerAccountIndex()]);
       if (cancelled) return;
       setRegistry(idx);
+      setAccounts(accts);
       const codes = Object.keys(idx);
       const found = {};
       await Promise.all(codes.map(async (code) => {
@@ -2044,16 +2046,22 @@ function OwnerConsole({ onBack }) {
   });
   const formatList = Object.entries(formatCounts).sort((a, b) => b[1] - a[1]);
 
-  // Retention
+  // Retention (based on who's actually hosted tournaments)
   const byCreator = {};
   codes.forEach(code => {
     const uid = registry[code]?.creatorUid;
     if (!uid) return;
     byCreator[uid] = (byCreator[uid] || 0) + 1;
   });
-  const creators = Object.values(byCreator);
-  const returning = creators.filter(n => n >= 2).length;
-  const oneTime = creators.filter(n => n === 1).length;
+  const hostingCreators = Object.values(byCreator);
+  const returning = hostingCreators.filter(n => n >= 2).length;
+  const oneTime = hostingCreators.filter(n => n === 1).length;
+
+  // True sign-up count — includes people who made an account but never
+  // hosted anything, which the tournament-based numbers above can't see.
+  const totalAccounts = Object.keys(accounts).length;
+  const activatedAccounts = Object.keys(byCreator).length;
+  const activationRate = totalAccounts > 0 ? Math.round((activatedAccounts / totalAccounts) * 100) : 0;
 
   const StatCard = ({ label, value, sub }) => (
     <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
@@ -2084,7 +2092,7 @@ function OwnerConsole({ onBack }) {
           <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Growth</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
             <StatCard label="Total tournaments" value={total} />
-            <StatCard label="Total accounts" value={creators.length} />
+            <StatCard label="Total accounts" value={totalAccounts} sub={`${activationRate}% created a tournament`} />
           </div>
           <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', marginBottom: 24 }}>
             <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 8 }}>New tournaments, last 14 days</div>

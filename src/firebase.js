@@ -76,6 +76,14 @@ function friendlyAuthError(e) {
 export async function signUpAdmin(email, password) {
   try {
     const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    // Record the sign-up itself, not just tournaments hosted — this is what
+    // lets the owner console see "signed up but never created anything,"
+    // which the tournament registry alone can never show.
+    try {
+      await set(ref(db, `shared/owner-console/accounts/${cred.user.uid}`), {
+        email: cred.user.email, createdAt: Date.now(),
+      });
+    } catch (e) { console.error('Account registry write error:', e); }
     return { ok: true, uid: cred.user.uid, email: cred.user.email };
   } catch (e) {
     return { ok: false, error: friendlyAuthError(e) };
@@ -284,6 +292,20 @@ export async function registerTournamentInOwnerIndex(code, meta) {
     });
   } catch (e) {
     console.error('Owner registry write error:', e);
+  }
+}
+
+// Owner-only: fetch every account that's ever signed up, regardless of
+// whether they went on to create a tournament. Same fail-safe-empty
+// behavior as the tournament index above.
+export async function getOwnerAccountIndex() {
+  try {
+    await authReady;
+    const snapshot = await get(ref(db, 'shared/owner-console/accounts'));
+    return snapshot.exists() ? snapshot.val() : {};
+  } catch (e) {
+    console.error('Account registry read error (expected if not the owner):', e);
+    return {};
   }
 }
 
