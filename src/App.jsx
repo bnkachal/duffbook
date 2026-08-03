@@ -1831,7 +1831,6 @@ function AdminAuthModal({ onClose, onSignedIn }) {
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 20, lineHeight: 1.5 }}>
-          {mode === 'signup' ? 'For tournament creators only — players never need an account.' : mode === 'forgot' ? "We'll email you a reset link." : 'Keep every tournament you\'ve created in one place.'}
         </div>
 
         {mode === 'forgot' && resetSent ? (
