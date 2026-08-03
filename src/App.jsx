@@ -425,6 +425,7 @@ function defaultRound(index) {
     customBets: [],
     awards: [],
     awardsPresentationActive: false,
+    presence: {},
     flowGroups: [], scoreUpdatedAt: {}, submittedPlayers: [], nineHoleTotals: {},
     started: false,
     handicapMode: 'none',
@@ -2704,6 +2705,8 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
     return () => clearInterval(timerRef.current);
   }, [shouldScroll, paused, total]);
 
+  const positionChanges = usePositionChanges(leaderboard.map(p => p.id));
+
   const handleTap = () => {
     if (!shouldScroll) return;
     clearInterval(timerRef.current);
@@ -2737,7 +2740,11 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
             const scoreColor = score < 0 ? C.emerald : score > 0 ? C.flagRed : C.bunker;
             return (
               <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent' }}>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400 }}>{rank}</span>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {rank}
+                  {positionChanges[p.id] === 'up' && <ChevronUp size={11} color={C.emerald} style={{ flexShrink: 0 }} />}
+                  {positionChanges[p.id] === 'down' && <ChevronDown size={11} color={C.flagRed} style={{ flexShrink: 0 }} />}
+                </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
                   <span style={{ fontSize: 13, fontWeight: rank === 1 ? 700 : 500, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
@@ -3100,6 +3107,11 @@ function KoSModal({ tournament, updateTournament, onClose }) {
 }
 
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs }) {
+  const now = useNow(5000);
+  const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
+  const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
+  const bestBallPositionChanges = usePositionChanges(bbResultsEarly.map(p => p.pairId));
+  const shamblePositionChanges = usePositionChanges(shambleResultsEarly.map(p => p.pairId));
   if (!state.started && state.players.length === 0) return (
     <div style={{ textAlign: 'center', marginTop: 60, fontSize: 14, padding: '0 20px' }}>
       <div data-testid="no-players-state" style={{ color: C.ivoryDim, marginBottom: 14 }}>{isAdmin ? 'Finish setup and start this round to see the dashboard.' : "The admin hasn't started this round yet."}</div>
@@ -3157,6 +3169,25 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <HeaderBanner src={matchbookBunker} title={state.roundName} sub={tournament ? tournament.name : 'Live round'} height={220} />
+      {(() => {
+        const liveCount = Object.values(state.presence || {}).filter(ts => now - ts < 100000).length;
+        const lastUpdateTs = Math.max(0, ...Object.values(state.scoreUpdatedAt || {}));
+        const secondsAgo = lastUpdateTs > 0 ? Math.floor((now - lastUpdateTs) / 1000) : null;
+        const agoText = secondsAgo == null ? null : secondsAgo < 5 ? 'just now' : secondsAgo < 60 ? `${secondsAgo}s ago` : secondsAgo < 3600 ? `${Math.floor(secondsAgo / 60)}m ago` : `${Math.floor(secondsAgo / 3600)}h ago`;
+        if (liveCount === 0 && !agoText) return null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, fontSize: 11, color: C.bunker }}>
+            {liveCount > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.emerald, boxShadow: `0 0 6px ${C.emerald}`, animation: 'presencePulse 2s ease-in-out infinite' }} />
+                {liveCount} live now
+              </span>
+            )}
+            {liveCount > 0 && agoText && <span style={{ color: C.turfBorder }}>·</span>}
+            {agoText && <span>Updated {agoText}</span>}
+          </div>
+        );
+      })()}
       {nextStep && (
         <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: C.turfLight, border: `1.5px solid ${C.gold}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={C.goldBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>{nextStep.text}</span></div>
@@ -3408,9 +3439,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </div>
       )}
 
-      {state.games?.bestBall?.enabled && (() => {
-        const bbResults = computeBestBall(state);
-        if (bbResults.length === 0) return null;
+      {state.games?.bestBall?.enabled && bbResultsEarly.length > 0 && (() => {
+        const bbResults = bbResultsEarly;
         return (
           <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
             <SectionHeader title="Best Ball" sub="pair scores · tap for details" icon={Trophy} iconColor={C.blue} />
@@ -3432,16 +3462,65 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                   </div>
                 );
               };
+              const isLeader = i === 0 && pair.thru > 0;
               return (
-                <div key={pair.pairId} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pair.pairName}</span>
+                <div key={pair.pairId} className={bestBallPositionChanges[pair.pairId] ? 'row-glow' : ''} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isLeader && <Trophy size={11} color={C.gold} style={{ flexShrink: 0 }} />}
+                      {pair.pairName}
+                      {bestBallPositionChanges[pair.pairId] === 'up' && <ChevronUp size={12} color={C.emerald} style={{ flexShrink: 0 }} />}
+                      {bestBallPositionChanges[pair.pairId] === 'down' && <ChevronDown size={12} color={C.flagRed} style={{ flexShrink: 0 }} />}
+                    </span>
                     <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftStats.map(ps => nameRow(ps, 'left'))}</div>
                     <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: diffColor, lineHeight: 1, textAlign: 'center' }}>{diffStr}</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightStats.map(ps => nameRow(ps, 'right'))}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </button>
+        );
+      })()}
+
+      {state.games?.shamble?.enabled && shambleResultsEarly.length > 0 && (() => {
+        const shResults = shambleResultsEarly;
+        return (
+          <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
+            <SectionHeader title="Shamble" sub={`lowest total wins · ${state.games.shamble.net ? 'net' : 'gross'}`} icon={Trophy} iconColor={C.blue} />
+            {shResults.map((pair, i) => {
+              const half = Math.ceil(pair.players.length / 2);
+              const leftPlayers = pair.players.slice(0, half);
+              const rightPlayers = pair.players.slice(half);
+              const isLeader = i === 0 && pair.thru > 0;
+              const nameRow = (player, align) => (
+                <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 0 }}>
+                  {align === 'left' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
+                  <span style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name.split(' ')[0]}</span>
+                  {align === 'right' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
+                </div>
+              );
+              return (
+                <div key={pair.pairId} className={shamblePositionChanges[pair.pairId] ? 'row-glow' : ''} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isLeader && <Trophy size={11} color={C.gold} style={{ flexShrink: 0 }} />}
+                      {pair.pairName}
+                      {shamblePositionChanges[pair.pairId] === 'up' && <ChevronUp size={12} color={C.emerald} style={{ flexShrink: 0 }} />}
+                      {shamblePositionChanges[pair.pairId] === 'down' && <ChevronDown size={12} color={C.flagRed} style={{ flexShrink: 0 }} />}
+                    </span>
+                    <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftPlayers.map(p => nameRow(p, 'left'))}</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: C.gold, lineHeight: 1 }}>{pair.thru === 0 ? '—' : pair.totalScore}</div>
+                      {pair.thru > 0 && <div style={{ fontSize: 9, color: C.bunker, marginTop: 1 }}>{fmtToPar(pair.toPar)}</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightPlayers.map(p => nameRow(p, 'right'))}</div>
                   </div>
                 </div>
               );
@@ -4063,20 +4142,24 @@ function PlayersSection({ state, newPlayerName, setNewPlayerName, addPlayer, rem
         {state.players.map(p => {
           const flight = (flights || []).find(f => f.id === p.flightId);
           return (
-            <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Chip color={pc(p)}>{initials(p.name)}</Chip>
-                <div>
-                  <span style={{ fontSize: 14 }}>{p.name}</span>
-                  {flight && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, fontSize: 11, color: C.ivoryDim }}><span style={{ width: 7, height: 7, borderRadius: 999, background: flight.color }} />{flight.name}</span>}
+            <div key={p.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: '10px 10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <Chip color={pc(p)}>{initials(p.name)}</Chip>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{p.name}</span>
+                    {flight && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.ivoryDim }}><span style={{ width: 7, height: 7, borderRadius: 999, background: flight.color, flexShrink: 0 }} />{flight.name}</span>}
+                  </div>
                 </div>
+                <button onClick={() => removePlayer(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer', flexShrink: 0 }}><Trash2 size={16} /></button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {flightsOn && flights.map(f => (
-                  <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : C.turfBorder}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? C.pineDark : C.ivoryDim, cursor: 'pointer' }}>{f.name}</button>
-                ))}
-                <button onClick={() => removePlayer(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={16} /></button>
-              </div>
+              {flightsOn && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {flights.map(f => (
+                    <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : C.turfBorder}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? C.pineDark : C.ivoryDim, cursor: 'pointer', flexShrink: 0 }}>{f.name}</button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -5886,6 +5969,9 @@ function FontLoader() {
       @keyframes btnPulse { 0%,100%{box-shadow:0 4px 0 rgba(0,0,0,0.2)} 50%{box-shadow:0 4px 16px rgba(196,144,10,0.5)} }
       @keyframes countdownBar { from{width:100%} to{width:0%} }
       @keyframes shimmerPremium { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
+      @keyframes presencePulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+      @keyframes rowGlow { 0%{background:rgba(201,162,39,0.22)} 100%{background:transparent} }
+      .row-glow { animation: rowGlow 1.8s ease-out both; }
       .tab-content { animation: tabSlide 0.22s ease both; }
       .card-appear { animation: cardFadeUp 0.28s ease both; }
       .score-animate { animation: scoreSlideIn 0.18s cubic-bezier(0.34,1.56,0.64,1) both; }
@@ -6020,6 +6106,48 @@ function LibraryLoader() {
 }
 
 /* ============================== SWIPE NAV ============================== */
+function useNow(intervalMs) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
+// Tracks an ordered list of ids (rank order) and reports which ones moved
+// since the last time the order changed. Each change clears itself after
+// a few seconds — used for the leaderboard's up/down arrows and the
+// brief gold glow on a team card when its position changes.
+function usePositionChanges(orderedIds) {
+  const key = orderedIds.join(',');
+  const prevRef = useRef(null);
+  const [changes, setChanges] = useState({});
+  const timeoutsRef = useRef({});
+  useEffect(() => {
+    const prev = prevRef.current;
+    if (prev && prev !== key) {
+      const prevIds = prev.split(',').filter(Boolean);
+      const newChanges = {};
+      orderedIds.forEach((id, i) => {
+        const prevIdx = prevIds.indexOf(id);
+        if (prevIdx !== -1 && prevIdx !== i) newChanges[id] = prevIdx > i ? 'up' : 'down';
+      });
+      if (Object.keys(newChanges).length > 0) {
+        setChanges(c => ({ ...c, ...newChanges }));
+        Object.keys(newChanges).forEach(id => {
+          if (timeoutsRef.current[id]) clearTimeout(timeoutsRef.current[id]);
+          timeoutsRef.current[id] = setTimeout(() => {
+            setChanges(c => { const n = { ...c }; delete n[id]; return n; });
+          }, 4000);
+        });
+      }
+    }
+    prevRef.current = key;
+  }, [key]);
+  return changes;
+}
+
 function useSwipeNav(activeTab, setActiveTab, goHoleRef) {
   const startRef = useRef(null);
   const onTouchStart = (e) => { const t = e.touches[0]; startRef.current = { x: t.clientX, y: t.clientY }; };
@@ -6407,6 +6535,7 @@ export default function RoGreen() {
           customBets: Array.isArray(r.customBets) ? r.customBets : [],
           flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [],
           scoreUpdatedAt: (r.scoreUpdatedAt && typeof r.scoreUpdatedAt === 'object' && !Array.isArray(r.scoreUpdatedAt)) ? r.scoreUpdatedAt : {}, submittedPlayers: Array.isArray(r.submittedPlayers) ? r.submittedPlayers : [],
+          presence: (r.presence && typeof r.presence === 'object' && !Array.isArray(r.presence)) ? r.presence : {},
           scores: r.scores && typeof r.scores === 'object' ? r.scores : {},
           games: r.games ? { ...defaultRound(0).games, ...r.games,
             matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] },
@@ -6523,6 +6652,28 @@ export default function RoGreen() {
 
   const updateTournament = (fn) => setTournament(prev => fn(prev));
   const updateRound = (fn) => setTournament(prev => ({ ...prev, rounds: prev.rounds.map(r => r.id === prev.activeRoundId ? fn(r) : r) }));
+
+  // Lightweight presence heartbeat — each connected device pings its own
+  // timestamp into the round every 45s. Home reads however many pings are
+  // still fresh (under ~100s old) to show "N live now." This piggybacks on
+  // the same sync path as everything else, no new Firebase plumbing needed.
+  const presenceKeyRef = useRef(null);
+  if (!presenceKeyRef.current) {
+    try {
+      let k = localStorage.getItem('db:presence-key');
+      if (!k) { k = 'dev_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('db:presence-key', k); }
+      presenceKeyRef.current = k;
+    } catch (e) { presenceKeyRef.current = 'anon_' + Math.random().toString(36).slice(2, 8); }
+  }
+  useEffect(() => {
+    if (!roundCode) return;
+    const key = whoamiId || presenceKeyRef.current;
+    const beat = () => updateRound(r => ({ ...r, presence: { ...(r.presence || {}), [key]: Date.now() } }));
+    beat();
+    const interval = setInterval(beat, 45000);
+    return () => clearInterval(interval);
+  }, [roundCode, whoamiId]);
+
   const bets = useMemo(() => buildTournamentBets(tournament, roundCode), [tournament, roundCode]);
   const ledger = useMemo(() => buildPlayerLedger(tournament.players, bets), [tournament.players, bets]);
   const goHoleRef = useRef(null);
