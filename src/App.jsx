@@ -30,7 +30,7 @@ const TABS = ['home', 'card', 'games', 'settle'];
 // Firebase Console → Authentication → your account → copy the "User UID"
 // column. This must match EXACTLY what you put in database.rules.json, or
 // the owner console will just look empty (fails safe, not broken).
-const OWNER_UID = 'REPLACE_WITH_YOUR_OWNER_UID';
+const OWNER_UID = 'gbClxIodjARRH3e3TjI1tbPnqgN2';
 
 /* ============================== PLAYER COLOR RESOLUTION ==============================
    Player avatar/chip color should follow team assignment when teams are in play, so a
