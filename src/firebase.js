@@ -262,3 +262,39 @@ export const storage = {
   // Expose device ID so tests can inject a known ID for isolation
   getDeviceId,
 };
+
+// ─── OWNER CONSOLE REGISTRY ─────────────────────────────────────────────────
+// A lightweight index of every tournament ever created, written by whoever
+// creates it, readable only by the app owner (enforced in database rules,
+// not here — this file just provides the plumbing).
+//
+// Deliberately NOT built on the `storage` get/set-a-whole-blob pattern above:
+// that pattern reads the whole object, edits it, writes it back, which is a
+// real race if two tournaments get created in the same moment. This writes
+// directly to each tournament's own nested path instead, so two creations
+// can never step on each other.
+export async function registerTournamentInOwnerIndex(code, meta) {
+  try {
+    await authReady;
+    await set(ref(db, `shared/owner-console/tournaments/${sanitizeKey(code)}`), {
+      code, ...meta, registeredAt: Date.now(),
+    });
+  } catch (e) {
+    console.error('Owner registry write error:', e);
+  }
+}
+
+// Owner-only: fetch the entire registry in one read. Firebase rules should
+// reject this for anyone whose UID isn't the owner's — if that read fails,
+// this resolves to an empty object rather than throwing, so a non-owner
+// account never sees a scary error, just an empty console.
+export async function getOwnerTournamentIndex() {
+  try {
+    await authReady;
+    const snapshot = await get(ref(db, 'shared/owner-console/tournaments'));
+    return snapshot.exists() ? snapshot.val() : {};
+  } catch (e) {
+    console.error('Owner registry read error (expected if not the owner):', e);
+    return {};
+  }
+}
