@@ -2122,12 +2122,10 @@ function OwnerConsole({ onBack }) {
   );
 }
 
-function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, deviceName, onOpenProfile, onSaveName, joinError, joinChecking, adminAccount, cloudTournaments, onOpenAdminAuth, onSignOutAdmin }) {
+function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, joinError, joinChecking, adminAccount, cloudTournaments, onOpenAdminAuth, onSignOutAdmin }) {
   const [code, setCode] = useState('');
-  const [localName, setLocalName] = useState(deviceName || '');
   const [codeFocused, setCodeFocused] = useState(false);
   const codeInputRef = useRef(null);
-  const hasName = !!(deviceName && deviceName.trim());
   const doJoin = () => { if (code.trim()) onJoin(code.trim()); };
 
   return (
@@ -2150,25 +2148,6 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
 
       {/* Action panel — bottom portion, always visible */}
       <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', width: '100%', maxWidth: 430, margin: '0 auto', padding: '0 20px max(24px, env(safe-area-inset-bottom, 24px)) 20px', boxSizing: 'border-box' }}>
-
-        {/* Name or welcome */}
-        {!hasName ? (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: 'Inter, sans-serif', fontWeight: 600, marginBottom: 6 }}>Your name</div>
-            <input
-              value={localName}
-              onChange={e => { setLocalName(e.target.value); if (e.target.value.trim()) onSaveName(e.target.value.trim()); }}
-              placeholder="Enter your name to get started"
-              data-testid="name-input"
-              style={{ width: '100%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: '1.5px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: '13px 16px', color: '#FFFFFF', fontSize: 16, outline: 'none', boxSizing: 'border-box' }}
-            />
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>Welcome back, <span style={{ color: '#FFF', fontWeight: 700 }}>{deviceName}</span></div>
-            <button onClick={onOpenProfile} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', padding: 0 }}>Not you?</button>
-          </div>
-        )}
 
         {/* Start button */}
         <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 4px 14px rgba(201,162,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -7235,7 +7214,7 @@ export default function RoGreen() {
           onBack={() => setAccountProfileOpen(false)}
         />
       ) : (
-        <Landing onCreate={() => { if (adminAccount) setAccountProfileOpen(true); else setAdminAuthOpen(true); }} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
+        <Landing onCreate={() => { if (adminAccount) setAccountProfileOpen(true); else setAdminAuthOpen(true); }} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
       )}
       {adminAuthOpen && <AdminAuthModal onClose={() => setAdminAuthOpen(false)} onSignedIn={() => setAccountProfileOpen(true)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
