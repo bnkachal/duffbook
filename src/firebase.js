@@ -96,8 +96,11 @@ export async function resetAdminPassword(email) {
     await sendPasswordResetEmail(auth, email.trim());
     return { ok: true };
   } catch (e) {
-    // Deliberately vague on "does this email exist" to avoid leaking who has
-    // an account — Firebase itself follows this same practice by default.
+    // Deliberately vague to the UI on "does this email exist" — a stranger
+    // probing the app shouldn't be able to tell who has an account. Still
+    // logged to console so YOU can actually debug it during development;
+    // this never reaches the person using the app.
+    console.error('Password reset error (hidden from UI on purpose):', e?.code, e?.message);
     if (e?.code?.includes('invalid-email')) return { ok: false, error: 'That doesn\'t look like a valid email address.' };
     return { ok: true };
   }
