@@ -7330,8 +7330,8 @@ export default function RoGreen() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.7)', zIndex: 60 }} onClick={() => setAccountMenuOpen(false)}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 70, right: 16, background: C.pine, border: `1px solid ${C.turfBorder}`, borderRadius: 14, width: 220, padding: 8, boxShadow: C.shadow }}>
             <div style={{ padding: '8px 10px', fontSize: 12, color: C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.turfBorder}`, marginBottom: 6 }}>{adminAccount.email}</div>
-            <button onClick={() => { setAccountMenuOpen(false); setAccountProfileOpen(true); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.ivory, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>My Tournaments</button>
-            <button onClick={async () => { setAccountMenuOpen(false); await signOutAdmin(); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.flagRed, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Sign out</button>
+            <button onClick={() => { setAccountMenuOpen(false); handleLeave(); setAccountProfileOpen(true); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.ivory, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>My Tournaments</button>
+            <button onClick={async () => { setAccountMenuOpen(false); await signOutAdmin(); handleLeave(); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.flagRed, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Sign out</button>
           </div>
         </div>
       )}
