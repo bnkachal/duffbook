@@ -16,12 +16,6 @@
             ".write": "auth != null",
             ".validate": "newData.hasChild('code')"
           }
-        },
-        "accounts": {
-          ".read": "auth != null && auth.uid == 'gbClxIodjARRH3e3TjI1tbPnqgN2'",
-          "$uid": {
-            ".write": "auth != null && auth.uid == $uid"
-          }
         }
       }
     },
