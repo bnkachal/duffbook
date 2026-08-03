@@ -6475,9 +6475,25 @@ export default function RoGreen() {
     }
     const isJustCreated = justCreatedRef.current === roundCode;
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
-    else { (async () => { try { const rv = localStorage.getItem('db:isadmin-' + roundCode); setIsAdmin(rv ? JSON.parse(rv) : false); } catch (e) { setIsAdmin(false); } })(); }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe); } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe);
+        // Determine admin status right here, atomically, the instant real data
+        // is in hand — a local device flag OR a verified account match, either
+        // one grants it. Doing this in one place (instead of splitting the
+        // local-flag check and the account check across separate effects)
+        // is what prevents the two from racing each other on a slow connection.
+        if (!isJustCreated && mounted) {
+          let localFlag = false;
+          try { const rv = localStorage.getItem('db:isadmin-' + roundCode); localFlag = rv ? JSON.parse(rv) : false; } catch (e) {}
+          const uidMatch = !!(adminAccount && safe.creatorUid && safe.creatorUid === adminAccount.uid);
+          if (localFlag || uidMatch) {
+            setIsAdmin(true);
+            try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch (e) {}
+          } else {
+            setIsAdmin(false);
+          }
+        }
+      } catch(e) { setTournament(defaultTournament()); } } } catch (e) { if (mounted) setTournament(defaultTournament()); }
       try { const cres = await storage.get(chatKey(roundCode), true); if (mounted) setChat(cres ? JSON.parse(cres.value) : []); } catch (e) { if (mounted) setChat([]); }
       try { const wresv = localStorage.getItem('db:whoami-' + roundCode); if (mounted) setWhoamiId(wresv ? JSON.parse(wresv) : null); } catch (e) { if (mounted) setWhoamiId(null); }
       if (mounted) { loadedRef.current = true; setLoading(false); }
@@ -6485,11 +6501,10 @@ export default function RoGreen() {
     return () => { mounted = false; };
   }, [roundCode]);
 
-  // If a signed-in admin opens a tournament they actually created (verified
-  // against the real Firebase UID stored on the tournament, not just a
-  // locally-remembered flag), skip the PIN entirely — their account login
-  // already proves who they are. This is what makes "My Tournaments" useful
-  // from a brand-new device: no PIN to remember or re-enter.
+  // Safety net for the rare case where signing in happens *after* this
+  // tournament already finished loading (e.g. sign-in on one tab while
+  // already viewing the round in another) — the atomic check above covers
+  // the normal path, this just catches the account-arrives-late edge case.
   useEffect(() => {
     if (!loadedRef.current || !roundCode || isAdmin) return;
     if (adminAccount && tournament.creatorUid && tournament.creatorUid === adminAccount.uid) {
