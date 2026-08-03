@@ -30,7 +30,7 @@ const TABS = ['home', 'card', 'games', 'settle'];
 // Firebase Console → Authentication → your account → copy the "User UID"
 // column. This must match EXACTLY what you put in database.rules.json, or
 // the owner console will just look empty (fails safe, not broken).
-const OWNER_UID = 'gbClxIodjARRH3e3TjI1tbPnqgN2';
+const OWNER_UID = 'REPLACE_WITH_YOUR_OWNER_UID';
 
 /* ============================== PLAYER COLOR RESOLUTION ==============================
    Player avatar/chip color should follow team assignment when teams are in play, so a
@@ -1831,6 +1831,7 @@ function AdminAuthModal({ onClose, onSignedIn }) {
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 20, lineHeight: 1.5 }}>
+          {mode === 'signup' ? 'For tournament creators only — players never need an account.' : mode === 'forgot' ? "We'll email you a reset link." : 'Keep every tournament you\'ve created in one place.'}
         </div>
 
         {mode === 'forgot' && resetSent ? (
@@ -2243,7 +2244,6 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, dev
                 </div>
               </div>
             )}
-            <button onClick={onOpenAdminAuth} style={{ display: 'block', margin: '14px auto 0', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.45)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>Tournament creator? Sign in for your full history</button>
           </>
         )}
       </div>
