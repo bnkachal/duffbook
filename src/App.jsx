@@ -1,4 +1,4 @@
-import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange } from './firebase';
+import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange, registerTournamentInOwnerIndex, getOwnerTournamentIndex } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import matchbookLanding from './assets/images/matchbook-landing.jpg';
 import matchbookBunker from './assets/images/matchbook-bunker.jpg';
@@ -25,6 +25,12 @@ const C = {
 const CHIP_COLORS = ['#C9A227', '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
 const FLIGHT_COLORS = ['#123C73', '#7A1F32', '#C9A227', '#19C37D'];
 const TABS = ['home', 'card', 'games', 'settle'];
+
+// ⚠️ REPLACE THIS with your real Firebase UID before deploying — find it at
+// Firebase Console → Authentication → your account → copy the "User UID"
+// column. This must match EXACTLY what you put in database.rules.json, or
+// the owner console will just look empty (fails safe, not broken).
+const OWNER_UID = 'gbClxIodjARRH3e3TjI1tbPnqgN2';
 
 /* ============================== PLAYER COLOR RESOLUTION ==============================
    Player avatar/chip color should follow team assignment when teams are in play, so a
@@ -1878,6 +1884,240 @@ function AdminAuthModal({ onClose, onSignedIn }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProfilePage({ adminAccount, cloudTournaments, onCreateTournament, onQuickJoin, onSignOut, onOpenOwnerConsole, onBack }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const isOwner = adminAccount && adminAccount.uid === OWNER_UID;
+  const isFirstTime = !cloudTournaments || cloudTournaments.length === 0;
+
+  return (
+    <div style={{ minHeight: '100vh', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ padding: '20px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><ChevronLeft size={16} /> Back</button>
+        <button onClick={() => setSettingsOpen(true)} style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.turfBorder}`, borderRadius: 999, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: C.ivory }}>
+          <Settings size={17} />
+        </button>
+      </div>
+
+      <div style={{ padding: '24px 20px', maxWidth: 560, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: `linear-gradient(180deg, ${C.goldBright}, ${C.gold})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: C.pineDark, flexShrink: 0 }}>
+            {(adminAccount?.email || '?')[0].toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminAccount?.email}</div>
+            <div style={{ display: 'inline-block', marginTop: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: C.goldBright, background: `${C.gold}22`, border: `1px solid ${C.gold}44`, borderRadius: 999, padding: '3px 10px' }}>Free plan</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
+          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, color: C.gold }}>{cloudTournaments?.length || 0}</div>
+            <div style={{ fontSize: 11, color: C.bunker }}>Tournaments hosted</div>
+          </div>
+          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, color: C.gold }}>{cloudTournaments?.[0] ? new Date(cloudTournaments[0].lastOpened).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</div>
+            <div style={{ fontSize: 11, color: C.bunker }}>Most recent</div>
+          </div>
+        </div>
+
+        {isOwner && (
+          <button onClick={onOpenOwnerConsole} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '12px 0', color: C.ivory, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 24 }}>
+            <ChevronsUpDown size={15} /> Owner Console
+          </button>
+        )}
+
+        <GoldButton onClick={onCreateTournament} style={{ width: '100%', padding: '15px 0', marginBottom: 24, fontSize: 15 }}>
+          {isFirstTime ? 'Create Your First Tournament' : '+ Create Tournament'}
+        </GoldButton>
+
+        <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Your tournaments</div>
+        {isFirstTime ? (
+          <div style={{ ...rowCard, color: C.ivoryDim, fontSize: 13, justifyContent: 'center', padding: '24px 16px' }}>Nothing here yet — create your first tournament above to get started.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {cloudTournaments.map((t, i) => (
+              <button key={t.code} onClick={() => onQuickJoin(t.code)} style={{ ...rowCard, width: '100%', textAlign: 'left', cursor: 'pointer', justifyContent: 'space-between' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                  <div style={{ fontSize: 11, color: C.bunker, marginTop: 2 }}>{new Date(t.lastOpened).toLocaleDateString()}</div>
+                </div>
+                <span style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 1, flexShrink: 0, marginLeft: 8 }}>{t.code}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {settingsOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => { setSettingsOpen(false); setResetSent(false); }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.pine, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 360, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18 }}>Account settings</div>
+              <button onClick={() => { setSettingsOpen(false); setResetSent(false); }} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 16 }}>{adminAccount?.email}</div>
+            {resetSent ? (
+              <div style={{ fontSize: 13, color: C.emerald, marginBottom: 16 }}>Check your inbox for a password reset link.</div>
+            ) : (
+              <GhostButton onClick={async () => { const res = await resetAdminPassword(adminAccount.email); if (res.ok) setResetSent(true); }} style={{ width: '100%', padding: '11px 0', marginBottom: 10 }}>Change password</GhostButton>
+            )}
+            <button onClick={onSignOut} style={{ width: '100%', padding: '11px 0', background: 'transparent', border: `1px solid ${C.flagRed}66`, color: C.flagRed, borderRadius: 10, cursor: 'pointer', fontSize: 13 }}>Sign out</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OwnerConsole({ onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [registry, setRegistry] = useState({});
+  const [details, setDetails] = useState({});
+  const now = useNow(15000);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const idx = await getOwnerTournamentIndex();
+      if (cancelled) return;
+      setRegistry(idx);
+      const codes = Object.keys(idx);
+      const found = {};
+      await Promise.all(codes.map(async (code) => {
+        try {
+          const res = await storage.get(tournamentKey(code), true);
+          if (!res) return;
+          const raw = JSON.parse(res.value);
+          const activeRound = (raw.rounds || []).find(r => r.id === raw.activeRoundId) || raw.rounds?.[0];
+          found[code] = {
+            name: raw.name || '(untitled)',
+            playerCount: (raw.players || []).length,
+            presence: activeRound?.presence || {},
+            bettingEnabled: raw.bettingEnabled !== false,
+            gamesUsed: activeRound?.games ? Object.entries(activeRound.games).filter(([, v]) => v && v.enabled).map(([k]) => k) : [],
+          };
+        } catch (e) { /* skip tournaments that fail to load */ }
+      }));
+      if (!cancelled) { setDetails(found); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const codes = Object.keys(registry);
+  const total = codes.length;
+
+  // Live right now
+  let liveNow = 0, liveTournaments = 0;
+  codes.forEach(code => {
+    const presence = details[code]?.presence || {};
+    const activeCount = Object.values(presence).filter(ts => now - ts < 100000).length;
+    if (activeCount > 0) { liveTournaments++; liveNow += activeCount; }
+  });
+
+  // Growth — last 14 days
+  const dayBuckets = {};
+  codes.forEach(code => {
+    const ts = registry[code]?.createdAt || registry[code]?.registeredAt;
+    if (!ts) return;
+    const day = new Date(ts).toISOString().slice(0, 10);
+    dayBuckets[day] = (dayBuckets[day] || 0) + 1;
+  });
+  const last14 = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(now - (13 - i) * 86400000).toISOString().slice(0, 10);
+    return { day: d, count: dayBuckets[d] || 0 };
+  });
+  const maxDay = Math.max(1, ...last14.map(d => d.count));
+
+  // Format & feature popularity
+  const formatCounts = {};
+  let bettingOn = 0;
+  codes.forEach(code => {
+    const d = details[code];
+    if (!d) return;
+    if (d.bettingEnabled) bettingOn++;
+    d.gamesUsed.forEach(g => { formatCounts[g] = (formatCounts[g] || 0) + 1; });
+  });
+  const formatList = Object.entries(formatCounts).sort((a, b) => b[1] - a[1]);
+
+  // Retention
+  const byCreator = {};
+  codes.forEach(code => {
+    const uid = registry[code]?.creatorUid;
+    if (!uid) return;
+    byCreator[uid] = (byCreator[uid] || 0) + 1;
+  });
+  const creators = Object.values(byCreator);
+  const returning = creators.filter(n => n >= 2).length;
+  const oneTime = creators.filter(n => n === 1).length;
+
+  const StatCard = ({ label, value, sub }) => (
+    <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24, color: C.gold }}>{value}</div>
+      <div style={{ fontSize: 11, color: C.bunker }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: C.ivoryDim, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight: '100vh', background: `linear-gradient(160deg, ${C.pineDark} 0%, ${C.pine} 100%)`, color: C.ivory, fontFamily: 'Inter, sans-serif', padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, maxWidth: 560, margin: '0 auto 20px' }}>
+        <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><ChevronLeft size={16} /> Back</button>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16 }}>Owner Console</div>
+        <span style={{ width: 40 }} />
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', color: C.ivoryDim, marginTop: 60 }}>Loading every tournament — this reads each one individually, give it a moment…</div>
+      ) : (
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Live right now</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
+            <StatCard label="Concurrent users" value={liveNow} />
+            <StatCard label="Live tournaments" value={liveTournaments} />
+          </div>
+
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Growth</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <StatCard label="Total tournaments" value={total} />
+            <StatCard label="Total accounts" value={creators.length} />
+          </div>
+          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', marginBottom: 24 }}>
+            <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 8 }}>New tournaments, last 14 days</div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 50 }}>
+              {last14.map(d => (
+                <div key={d.day} title={`${d.day}: ${d.count}`} style={{ flex: 1, height: `${Math.max(4, (d.count / maxDay) * 50)}px`, background: d.count > 0 ? C.gold : C.turfBorder, borderRadius: 2 }} />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>What people use</div>
+          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+              <span style={{ color: C.ivoryDim }}>Betting turned on</span>
+              <span style={{ fontWeight: 700 }}>{total > 0 ? Math.round((bettingOn / total) * 100) : 0}%</span>
+            </div>
+            {formatList.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.bunker }}>No format data yet.</div>
+            ) : formatList.map(([key, count]) => (
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ color: C.ivoryDim, textTransform: 'capitalize' }}>{key}</span>
+                <span style={{ fontWeight: 700 }}>{count}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Retention</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <StatCard label="Returning creators" value={returning} sub="2+ tournaments" />
+            <StatCard label="One-and-done" value={oneTime} sub="just 1 tournament" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6395,6 +6635,9 @@ export default function RoGreen() {
   const [myTournaments, setMyTournaments] = useState([]);
   const [adminAccount, setAdminAccount] = useState(null);
   const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [accountProfileOpen, setAccountProfileOpen] = useState(false);
+  const [ownerConsoleOpen, setOwnerConsoleOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [cloudTournaments, setCloudTournaments] = useState([]);
   const loadedRef = useRef(false);
   const justCreatedRef = useRef(null);
@@ -6700,6 +6943,7 @@ export default function RoGreen() {
     (async () => { try { localStorage.setItem('db:last-code', JSON.stringify(code)); localStorage.setItem('db:isadmin-' + code, JSON.stringify(true)); } catch (e) {} })();
     setTournament({ ...defaultTournament(), creatorUid: adminAccount?.uid || null });
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
+    if (adminAccount) registerTournamentInOwnerIndex(code, { creatorUid: adminAccount.uid, creatorEmail: adminAccount.email, createdAt: Date.now() });
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
   const handleJoin = (code) => {
@@ -6979,8 +7223,20 @@ export default function RoGreen() {
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
     <>
-      <Landing onCreate={handleCreate} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
-      {adminAuthOpen && <AdminAuthModal onClose={() => setAdminAuthOpen(false)} onSignedIn={() => {}} />}
+      <Landing onCreate={() => { if (adminAccount) setAccountProfileOpen(true); else setAdminAuthOpen(true); }} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} deviceName={deviceName} onOpenProfile={() => setProfileOpen(true)} onSaveName={saveDeviceProfile} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
+      {accountProfileOpen && (
+        <ProfilePage
+          adminAccount={adminAccount}
+          cloudTournaments={cloudTournaments}
+          onCreateTournament={() => { setAccountProfileOpen(false); handleCreate(); }}
+          onQuickJoin={(code) => { setAccountProfileOpen(false); handleQuickJoin(code); }}
+          onSignOut={async () => { await signOutAdmin(); setAccountProfileOpen(false); }}
+          onOpenOwnerConsole={() => setOwnerConsoleOpen(true)}
+          onBack={() => setAccountProfileOpen(false)}
+        />
+      )}
+      {ownerConsoleOpen && <OwnerConsole onBack={() => setOwnerConsoleOpen(false)} />}
+      {adminAuthOpen && <AdminAuthModal onClose={() => setAdminAuthOpen(false)} onSignedIn={() => setAccountProfileOpen(true)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );
@@ -7060,10 +7316,24 @@ export default function RoGreen() {
               {previewMode ? <><User size={13} /> Player</> : <><Settings size={13} /> Admin</>}
             </button>
           )}
+          {adminAccount && (
+            <button onClick={() => setAccountMenuOpen(true)} style={{ border: `1px solid ${C.turfBorder}`, borderRadius: 999, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer', flexShrink: 0, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, background: `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` }} title="Account">
+              {adminAccount.email[0].toUpperCase()}
+            </button>
+          )}
           <button onClick={() => setQrOpen(true)} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivory, cursor: 'pointer', flexShrink: 0 }} title="Share round QR"><Share2 size={17} /></button>
           <button onClick={() => setSettingsOpen(true)} aria-label="Settings" style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivory, cursor: 'pointer', flexShrink: 0 }}><Settings size={18} /></button>
         </div>
       </div>
+      {accountMenuOpen && adminAccount && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.7)', zIndex: 60 }} onClick={() => setAccountMenuOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 70, right: 16, background: C.pine, border: `1px solid ${C.turfBorder}`, borderRadius: 14, width: 220, padding: 8, boxShadow: C.shadow }}>
+            <div style={{ padding: '8px 10px', fontSize: 12, color: C.ivoryDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.turfBorder}`, marginBottom: 6 }}>{adminAccount.email}</div>
+            <button onClick={() => { setAccountMenuOpen(false); setAccountProfileOpen(true); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.ivory, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>My Tournaments</button>
+            <button onClick={async () => { setAccountMenuOpen(false); await signOutAdmin(); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: C.flagRed, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Sign out</button>
+          </div>
+        </div>
+      )}
       <div style={{ height: 2, background: `linear-gradient(90deg, ${C.emerald} 0%, ${C.goldBright} 50%, ${C.blue} 100%)`, flexShrink: 0 }} />
       {previewMode && (
         <div style={{ flexShrink: 0, background: C.gold, color: C.pineDark, padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
