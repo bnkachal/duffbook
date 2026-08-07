@@ -30,7 +30,7 @@ const TABS = ['home', 'card', 'games', 'settle'];
 // Firebase Console → Authentication → your account → copy the "User UID"
 // column. This must match EXACTLY what you put in database.rules.json, or
 // the owner console will just look empty (fails safe, not broken).
-const OWNER_UID = 'REPLACE_WITH_YOUR_OWNER_UID';
+const OWNER_UID = 'gbClxIodjARRH3e3TjI1tbPnqgN2';
 
 /* ============================== PLAYER COLOR RESOLUTION ==============================
    Player avatar/chip color should follow team assignment when teams are in play, so a
@@ -3058,7 +3058,10 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
             {skins.results.map(r => (
               <div key={r.hole} style={{ ...rowCard, justifyContent: 'space-between' }}>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.bunker, fontSize: 13 }}>Hole {r.hole + 1}</span>
-                <span style={{ fontSize: 13, color: r.status === 'push' ? C.bunker : C.ivory }}>{r.status === 'push' ? 'Push — carried' : r.status === 'pending' ? 'In progress' : `${state.players.find(p => p.id === r.winnerId)?.name || '?'} wins`}</span>
+                <span style={{ fontSize: 13, color: r.status === 'push' ? C.bunker : C.ivory }}>
+                  {r.status === 'push' ? 'Push — carried' : r.status === 'pending' ? 'In progress' : `${state.players.find(p => p.id === r.winnerId)?.name || '?'} wins`}
+                  {r.status === 'won' && <span style={{ color: C.gold, fontWeight: 700 }}> · ${r.pot}</span>}
+                </span>
               </div>
             ))}
           </div>
