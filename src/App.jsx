@@ -30,7 +30,7 @@ const TABS = ['home', 'card', 'games', 'settle'];
 // Firebase Console → Authentication → your account → copy the "User UID"
 // column. This must match EXACTLY what you put in database.rules.json, or
 // the owner console will just look empty (fails safe, not broken).
-const OWNER_UID = 'gbClxIodjARRH3e3TjI1tbPnqgN2';
+const OWNER_UID = 'REPLACE_WITH_YOUR_OWNER_UID';
 
 /* ============================== PLAYER COLOR RESOLUTION ==============================
    Player avatar/chip color should follow team assignment when teams are in play, so a
@@ -450,6 +450,44 @@ function defaultTournament() {
     kingsOfSwing: { enabled: false, seededPlayers: [], rounds: [], champion: null },
   };
 }
+// Two devices can edit different players' scores within the same ~500ms
+// sync window. Without this, whichever write reaches Firebase second wins
+// *in its entirety* — silently discarding the other device's just-tapped,
+// not-yet-synced score the instant its own live update arrives. This merges
+// cell-by-cell using the timestamp already tracked per player-hole
+// (scoreUpdatedAt), so a genuinely newer local tap can never be clobbered
+// by an older remote snapshot, and vice versa.
+function mergeRoundScores(localRound, remoteRound) {
+  if (!localRound) return remoteRound;
+  if (!remoteRound) return localRound;
+  const localUpdatedAt = localRound.scoreUpdatedAt || {};
+  const remoteUpdatedAt = remoteRound.scoreUpdatedAt || {};
+  const localScores = localRound.scores || {};
+  const remoteScores = remoteRound.scores || {};
+  const allPlayerIds = new Set([...Object.keys(localScores), ...Object.keys(remoteScores)]);
+  const mergedScores = {};
+  const mergedUpdatedAt = { ...remoteUpdatedAt };
+  allPlayerIds.forEach(pid => {
+    const localArr = Array.isArray(localScores[pid]) ? localScores[pid] : [];
+    const remoteArr = Array.isArray(remoteScores[pid]) ? remoteScores[pid] : [];
+    const maxLen = Math.max(localArr.length, remoteArr.length);
+    const resultArr = [];
+    for (let h = 0; h < maxLen; h++) {
+      const key = `${pid}-${h}`;
+      const localTs = localUpdatedAt[key] || 0;
+      const remoteTs = remoteUpdatedAt[key] || 0;
+      if (localTs > remoteTs) {
+        resultArr[h] = localArr[h] ?? null;
+        mergedUpdatedAt[key] = localTs;
+      } else {
+        resultArr[h] = remoteArr[h] ?? null;
+      }
+    }
+    mergedScores[pid] = resultArr;
+  });
+  return { ...remoteRound, scores: mergedScores, scoreUpdatedAt: mergedUpdatedAt };
+}
+
 function getRoundView(tournament, roundId) {
   const round = tournament.rounds.find(r => r.id === roundId) || tournament.rounds[0] || defaultRound(0);
   const players = (() => {
@@ -6811,8 +6849,13 @@ export default function RoGreen() {
             });
           }
           prevTournamentRef = safe;
-          if (JSON.stringify(prev) === JSON.stringify(safe)) return prev;
-          return safe;
+          const mergedRounds = safe.rounds.map(remoteRound => {
+            const localRound = prev.rounds?.find(r => r.id === remoteRound.id);
+            return mergeRoundScores(localRound, remoteRound);
+          });
+          const merged = { ...safe, rounds: mergedRounds };
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+          return merged;
         } catch(e) { return prev; }
       });
     });
