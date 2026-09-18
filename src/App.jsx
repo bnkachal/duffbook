@@ -6570,16 +6570,7 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
   const canvasRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [qrReady, setQrReady] = useState(false);
-
-  useEffect(() => {
-    if (window.QRCode) { renderQR(); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-    script.onload = renderQR;
-    document.head.appendChild(script);
-  }, []);
-
-  useEffect(() => { if (window.QRCode) renderQR(); }, [mode]);
+  const [qrLoadFailed, setQrLoadFailed] = useState(false);
 
   const renderQR = () => {
     if (!canvasRef.current || !window.QRCode) return;
@@ -6594,6 +6585,22 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
     });
     setQrReady(true);
   };
+
+  useEffect(() => {
+    if (window.QRCode) { renderQR(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.onload = renderQR;
+    script.onerror = () => setQrLoadFailed(true);
+    document.head.appendChild(script);
+  }, []);
+
+  // Re-render whenever the target URL changes (switching Player/Spectator).
+  // The canvas div below carries key={url} so React gives the QR library a
+  // genuinely fresh, empty DOM node each time instead of asking it to
+  // re-initialize on the same node — that in-place reuse is what produced
+  // the blank square, since this QR library doesn't reliably support it.
+  useEffect(() => { if (window.QRCode) renderQR(); }, [url]);
 
   const copyLink = () => {
     navigator.clipboard?.writeText(url).then(() => {
@@ -6613,15 +6620,11 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', background: C.pineDark, borderRadius: 10, padding: 3, marginBottom: 18 }}>
-          <button onClick={() => setMode('player')} style={{ flex: 1, background: mode === 'player' ? C.gold : 'transparent', color: mode === 'player' ? C.pineDark : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, cursor: 'pointer' }}>Player</button>
-          <button onClick={() => setMode('spectator')} style={{ flex: 1, background: mode === 'spectator' ? C.gold : 'transparent', color: mode === 'spectator' ? C.pineDark : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, cursor: 'pointer' }}>Spectator</button>
-        </div>
-
         {mode === 'spectator' && !spectatorsEnabled ? (
           <div style={{ padding: '20px 4px' }}>
             <div style={{ fontSize: 13, color: C.ivoryDim, lineHeight: 1.6, marginBottom: 16 }}>Spectators are currently turned off for this tournament. Turn them on to generate a follow-along link.</div>
-            <GoldButton onClick={onToggleSpectators} style={{ width: '100%', padding: '12px 0' }}>Turn On Spectators</GoldButton>
+            <GoldButton onClick={onToggleSpectators} style={{ width: '100%', padding: '12px 0', marginBottom: 10 }}>Turn On Spectators</GoldButton>
+            <button onClick={() => setMode('player')} style={{ background: 'transparent', border: 'none', color: C.bunker, fontSize: 12, cursor: 'pointer' }}>Back to player link</button>
           </div>
         ) : (
           <>
@@ -6630,8 +6633,8 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
 
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
               <div style={{ background: C.turf, padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
-                <div ref={canvasRef} style={{ width: 240, height: 240 }} />
-                {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13 }}>Loading QR…</div>}
+                <div key={url} ref={canvasRef} style={{ width: 240, height: 240 }} />
+                {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13, textAlign: 'center', padding: '0 16px' }}>{qrLoadFailed ? 'QR code unavailable — use the code or link below instead' : 'Loading QR…'}</div>}
               </div>
             </div>
 
@@ -6645,7 +6648,7 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <button onClick={shareLink} style={{ flex: 1, background: `linear-gradient(135deg, #00874A, ${C.gold})`, border: 'none', borderRadius: 12, padding: '13px 0', color: '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <Share2 size={16} /> Share link
               </button>
@@ -6653,6 +6656,10 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
                 <Copy size={16} /> {copied ? 'Copied!' : 'Copy link'}
               </button>
             </div>
+
+            <button onClick={() => { setQrReady(false); setMode(mode === 'player' ? 'spectator' : 'player'); }} style={{ width: '100%', background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 10, padding: '10px 0', color: C.gold, fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {mode === 'player' ? <>👀 Get spectator link instead</> : <>🏌️ Get player link instead</>}
+            </button>
 
             <div style={{ fontSize: 11, color: C.bunker, marginBottom: 16, lineHeight: 1.5 }}>
               {mode === 'spectator' ? 'Anyone with this link can follow the leaderboard and chat live — they can\'t enter scores or see admin controls.' : 'Players scan the QR or tap the link to land directly in your round — no code typing needed.'}
