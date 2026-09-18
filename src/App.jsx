@@ -444,6 +444,7 @@ function defaultTournament() {
   return {
     name: '', adminPin: null,
     players: [], flights: [], handicapsEnabled: false, bettingEnabled: true,
+    spectatorsEnabled: false, spectatorShowBetting: false,
     rounds: [r0], activeRoundId: r0.id,
     tournamentCustomBets: [],
     ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
@@ -2186,6 +2187,176 @@ function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
         <GoldButton onClick={onCreateProfile} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>Create My Profile</GoldButton>
         <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', color: C.bunker, fontSize: 12, cursor: 'pointer', padding: '6px 0' }}>Maybe later</button>
       </div>
+    </div>
+  );
+}
+
+function SpectatorScreen({ roundCode, onExit }) {
+  const [loading, setLoading] = useState(true);
+  const [tournament, setTournament] = useState(null);
+  const [chat, setChat] = useState([]);
+  const [expandedPlayerId, setExpandedPlayerId] = useState(null);
+  const [chatText, setChatText] = useState('');
+  const [spectatorName, setSpectatorName] = useState(() => { try { return localStorage.getItem('db:spectator-name') || ''; } catch (e) { return ''; } });
+  const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    const unsubT = storage.subscribe(tournamentKey(roundCode), true, (res) => {
+      if (!res) { setLoading(false); return; }
+      try { setTournament(JSON.parse(res.value)); } catch (e) {}
+      setLoading(false);
+    });
+    const unsubC = storage.subscribe(chatKey(roundCode), true, (res) => {
+      if (!res) return;
+      try { setChat(JSON.parse(res.value)); } catch (e) {}
+    });
+    return () => { if (typeof unsubT === 'function') unsubT(); if (typeof unsubC === 'function') unsubC(); };
+  }, [roundCode]);
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat.length]);
+
+  if (loading) return <div style={{ minHeight: '100vh', background: C.pine, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivoryDim, fontFamily: 'Inter, sans-serif' }}>Loading…</div>;
+  if (!tournament || !tournament.spectatorsEnabled) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.pine, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: C.ivoryDim, fontFamily: 'Inter, sans-serif', padding: 24, textAlign: 'center' }}>
+        <div style={{ marginBottom: 12 }}>This tournament isn't open to spectators right now.</div>
+        <button onClick={onExit} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.ivory, borderRadius: 10, padding: '10px 20px', cursor: 'pointer' }}>Back</button>
+      </div>
+    );
+  }
+
+  const state = getRoundView(tournament, tournament.activeRoundId);
+  setActiveFlightsForRender(tournament.flights);
+  const stats = computeStats(state);
+  const useNet = state.handicapsEnabled && state.handicapMode !== 'none' && state.matchFormat !== 'captain-choice' && !state.games?.scramble?.enabled;
+  const sorted = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
+  const showBetting = tournament.spectatorShowBetting === true;
+  const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
+  const ryderCup = tournament.ryderCup?.enabled ? tournament.ryderCup : null;
+
+  const sendSpectatorChat = () => {
+    const text = chatText.trim();
+    if (!text) return;
+    if (!spectatorName.trim()) { setNamePromptOpen(true); return; }
+    const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: null, authorName: `${spectatorName} · Spectator`, text, ts: Date.now() };
+    const next = [...chat, msg].slice(-150);
+    setChat(next);
+    setChatText('');
+    (async () => { try { await storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })();
+  };
+
+  const saveSpectatorName = () => {
+    const n = nameDraft.trim();
+    if (!n) return;
+    setSpectatorName(n);
+    try { localStorage.setItem('db:spectator-name', n); } catch (e) {}
+    setNamePromptOpen(false);
+  };
+
+  const heroLabel = ryderCup ? `${ryderCup.teamAName} vs ${ryderCup.teamBName}` : (sorted[0] ? sorted[0].name : '');
+  const heroValue = ryderCup ? null : (sorted[0] && sorted[0].thru > 0 ? fmtToPar(useNet ? sorted[0].netToPar : sorted[0].toPar) : '—');
+
+  const leaderboardBlock = (playersInGroup) => playersInGroup.map((p, i) => {
+    const val = useNet ? p.netToPar : p.toPar;
+    const expanded = expandedPlayerId === p.id;
+    return (
+      <div key={p.id}>
+        <div onClick={() => setExpandedPlayerId(expanded ? null : p.id)} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none', cursor: 'pointer' }}>
+          <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
+          <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+          <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
+          <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
+        </div>
+        {expanded && (
+          <div style={{ display: 'flex', gap: 3, padding: '6px 14px 12px', overflowX: 'auto', background: C.pineDark }}>
+            {Array.from({ length: state.numHoles }, (_, h) => {
+              const s = state.scores[p.id]?.[h];
+              const par = state.pars[h] ?? 4;
+              return (
+                <div key={h} style={{ flexShrink: 0, width: 26, textAlign: 'center' }}>
+                  <div style={{ fontSize: 8, color: C.bunker }}>{h + 1}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: s == null ? C.turfBorder : s < par ? C.emerald : s > par ? C.flagRed : C.ivory }}>{s ?? '–'}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  });
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.pine, fontFamily: 'Inter, sans-serif', color: C.ivory, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</div>
+          <div style={{ fontSize: 11, color: C.emerald, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: C.emerald, animation: 'pulse 2.2s ease-in-out infinite' }} /> LIVE · Spectator
+          </div>
+        </div>
+        <button onClick={onExit} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.ivoryDim, borderRadius: 8, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }}>Exit</button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <div style={{ textAlign: 'center', marginBottom: 20, padding: '18px 0', background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}` }}>
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1 }}>{ryderCup ? 'Team Match' : 'Leader'}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{heroLabel}</div>
+          {heroValue && <div style={{ fontSize: 32, fontWeight: 700, color: C.gold, marginTop: 2 }}>{heroValue}</div>}
+        </div>
+
+        <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
+          <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Leaderboard</div>
+          {flights.length >= 2 ? flights.map((flight, fi) => {
+            const inFlight = sorted.filter(p => p.flightId === flight.id);
+            if (inFlight.length === 0) return null;
+            return (
+              <div key={flight.id} style={{ borderTop: fi > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: flight.color }}>{flight.name}</span>
+                </div>
+                {leaderboardBlock(inFlight)}
+              </div>
+            );
+          }) : leaderboardBlock(sorted)}
+        </div>
+
+        {showBetting && state.games?.skins?.enabled && (
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 20, textAlign: 'center' }}>Skins are being tracked — check back for results as holes finish.</div>
+        )}
+
+        <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Chat</div>
+          <div style={{ maxHeight: 220, overflowY: 'auto', padding: '8px 14px' }}>
+            {chat.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.bunker, padding: '10px 0' }}>No messages yet.</div>
+            ) : chat.map(m => (
+              <div key={m.id} style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: m.authorName?.includes('Spectator') ? C.blueBright : C.gold }}>{m.authorName}</span>
+                <span style={{ fontSize: 13, color: C.ivory, marginLeft: 6 }}>{m.text}</span>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, padding: '10px 14px', borderTop: `1px solid ${C.turfBorder}` }}>
+            <input value={chatText} onChange={e => setChatText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendSpectatorChat(); }} placeholder="Say something…" style={{ flex: 1, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '8px 10px', color: C.ivory, fontSize: 13, outline: 'none' }} />
+            <button onClick={sendSpectatorChat} style={{ background: C.gold, border: 'none', borderRadius: 8, padding: '8px 14px', color: C.pineDark, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>Send</button>
+          </div>
+        </div>
+      </div>
+
+      {namePromptOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setNamePromptOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.pine, border: `1px solid ${C.turfBorder}`, borderRadius: 16, width: '100%', maxWidth: 320, padding: 22, textAlign: 'center' }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>What's your name?</div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Your messages will show as "Name · Spectator"</div>
+            <input value={nameDraft} onChange={e => setNameDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveSpectatorName(); }} placeholder="Your name" style={{ width: '100%', background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '10px 12px', color: C.ivory, fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
+            <GoldButton onClick={saveSpectatorName} style={{ width: '100%', padding: '11px 0' }}>Continue</GoldButton>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5184,6 +5355,22 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
             <div style={{ fontSize: 11, color: C.bunker, marginTop: 4 }}>Betting is off for this trip. Best Ball, Scramble, Shamble, Stroke Play, and Stableford still work — those are scoring formats, not wagers.</div>
           )}
         </Accordion>
+        <Accordion title="Spectators" badge={tournament.spectatorsEnabled ? 'on' : 'off'}>
+          <ToggleRow
+            label="Allow live spectators"
+            sub="Anyone with the spectator link can follow the leaderboard and chat — no scoring access, no admin controls"
+            enabled={!!tournament.spectatorsEnabled}
+            onToggle={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))}
+          />
+          {tournament.spectatorsEnabled && (
+            <ToggleRow
+              label="Show betting info to spectators"
+              sub="Off by default — spectators see scores only, never dollar amounts, unless you turn this on"
+              enabled={!!tournament.spectatorShowBetting}
+              onToggle={() => updateTournament(p => ({ ...p, spectatorShowBetting: !p.spectatorShowBetting }))}
+            />
+          )}
+        </Accordion>
         <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
         <AwardsSetupSection state={state} tournament={tournament} updateRound={updateRound} />
         <Accordion title="Round Roster" badge={state.roundPlayers?.length > 0 ? state.roundPlayers.length + ' overrides' : null}>
@@ -6377,20 +6564,22 @@ function FontLoader() {
   );
 }
 
-function QRShareModal({ roundCode, tournamentName, onClose }) {
-  const url = `${window.location.origin}?code=${roundCode}`;
+function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSpectators, onClose }) {
+  const [mode, setMode] = useState('player'); // 'player' | 'spectator'
+  const url = mode === 'spectator' ? `${window.location.origin}?code=${roundCode}&spectate=1` : `${window.location.origin}?code=${roundCode}`;
   const canvasRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [qrReady, setQrReady] = useState(false);
 
   useEffect(() => {
-    // Load QRCode library from CDN then render
     if (window.QRCode) { renderQR(); return; }
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
     script.onload = renderQR;
     document.head.appendChild(script);
   }, []);
+
+  useEffect(() => { if (window.QRCode) renderQR(); }, [mode]);
 
   const renderQR = () => {
     if (!canvasRef.current || !window.QRCode) return;
@@ -6415,7 +6604,7 @@ function QRShareModal({ roundCode, tournamentName, onClose }) {
 
   const shareLink = () => {
     if (navigator.share) {
-      navigator.share({ title: `Join ${tournamentName} on MatchBook`, text: `Scan or tap to join: ${url}`, url });
+      navigator.share({ title: `${mode === 'spectator' ? 'Follow' : 'Join'} ${tournamentName} on MatchBook`, text: `Scan or tap to ${mode === 'spectator' ? 'follow live' : 'join'}: ${url}`, url });
     } else {
       copyLink();
     }
@@ -6424,41 +6613,52 @@ function QRShareModal({ roundCode, tournamentName, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory, marginBottom: 4 }}>Join {tournamentName}</div>
-        <div style={{ fontSize: 12, color: C.bunker, marginBottom: 20 }}>Scan to join · or share the link below</div>
+        <div style={{ display: 'flex', background: C.pineDark, borderRadius: 10, padding: 3, marginBottom: 18 }}>
+          <button onClick={() => setMode('player')} style={{ flex: 1, background: mode === 'player' ? C.gold : 'transparent', color: mode === 'player' ? C.pineDark : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, cursor: 'pointer' }}>Player</button>
+          <button onClick={() => setMode('spectator')} style={{ flex: 1, background: mode === 'spectator' ? C.gold : 'transparent', color: mode === 'spectator' ? C.pineDark : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, cursor: 'pointer' }}>Spectator</button>
+        </div>
 
-        {/* QR Code */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-          <div style={{ background: C.turf, padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
-            <div ref={canvasRef} style={{ width: 240, height: 240 }} />
-            {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13 }}>Loading QR…</div>}
+        {mode === 'spectator' && !spectatorsEnabled ? (
+          <div style={{ padding: '20px 4px' }}>
+            <div style={{ fontSize: 13, color: C.ivoryDim, lineHeight: 1.6, marginBottom: 16 }}>Spectators are currently turned off for this tournament. Turn them on to generate a follow-along link.</div>
+            <GoldButton onClick={onToggleSpectators} style={{ width: '100%', padding: '12px 0' }}>Turn On Spectators</GoldButton>
           </div>
-        </div>
+        ) : (
+          <>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory, marginBottom: 4 }}>{mode === 'spectator' ? `Follow ${tournamentName}` : `Join ${tournamentName}`}</div>
+            <div style={{ fontSize: 12, color: C.bunker, marginBottom: 20 }}>{mode === 'spectator' ? 'Scan to follow live · scores and chat, no scoring access' : 'Scan to join · or share the link below'}</div>
 
-        {/* Round code badge */}
-        <div style={{ background: C.pineDark, borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>Round code</div>
-            <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 24, fontWeight: 700, color: C.ivory, letterSpacing: 4 }}>{roundCode}</div>
-          </div>
-          <button onClick={copyLink} style={{ background: copied ? C.emerald : C.turf, border: `1px solid ${copied ? C.emerald : C.turfBorder}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: copied ? '#FFF' : C.ivory, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}>
-            {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy code</>}
-          </button>
-        </div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <div style={{ background: C.turf, padding: 12, borderRadius: 12, border: `1px solid ${C.turfBorder}`, display: 'inline-block' }}>
+                <div ref={canvasRef} style={{ width: 240, height: 240 }} />
+                {!qrReady && <div style={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.bunker, fontSize: 13 }}>Loading QR…</div>}
+              </div>
+            </div>
 
-        {/* Share buttons */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={shareLink} style={{ flex: 1, background: `linear-gradient(135deg, #00874A, ${C.gold})`, border: 'none', borderRadius: 12, padding: '13px 0', color: '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Share2 size={16} /> Share link
-          </button>
-          <button onClick={copyLink} style={{ flex: 1, background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '13px 0', color: C.ivory, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <Copy size={16} /> {copied ? 'Copied!' : 'Copy link'}
-          </button>
-        </div>
+            <div style={{ background: C.pineDark, borderRadius: 10, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.8 }}>Round code</div>
+                <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 24, fontWeight: 700, color: C.ivory, letterSpacing: 4 }}>{roundCode}</div>
+              </div>
+              <button onClick={copyLink} style={{ background: copied ? C.emerald : C.turf, border: `1px solid ${copied ? C.emerald : C.turfBorder}`, borderRadius: 8, padding: '6px 12px', fontSize: 12, color: copied ? '#FFF' : C.ivory, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, transition: 'all 0.2s' }}>
+                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy code</>}
+              </button>
+            </div>
 
-        <div style={{ fontSize: 11, color: C.bunker, marginBottom: 16, lineHeight: 1.5 }}>
-          Players scan the QR or tap the link to land directly in your round — no code typing needed.
-        </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button onClick={shareLink} style={{ flex: 1, background: `linear-gradient(135deg, #00874A, ${C.gold})`, border: 'none', borderRadius: 12, padding: '13px 0', color: '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Share2 size={16} /> Share link
+              </button>
+              <button onClick={copyLink} style={{ flex: 1, background: C.turf, border: `1.5px solid ${C.turfBorder}`, borderRadius: 12, padding: '13px 0', color: C.ivory, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Copy size={16} /> {copied ? 'Copied!' : 'Copy link'}
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, color: C.bunker, marginBottom: 16, lineHeight: 1.5 }}>
+              {mode === 'spectator' ? 'Anyone with this link can follow the leaderboard and chat live — they can\'t enter scores or see admin controls.' : 'Players scan the QR or tap the link to land directly in your round — no code typing needed.'}
+            </div>
+          </>
+        )}
 
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.bunker, fontSize: 13, cursor: 'pointer', padding: '4px 0' }}>Close</button>
       </div>
@@ -6667,6 +6867,9 @@ function BetBuilderModal({ state, templates, editingBet, onCreate, onSave, onSav
 
 /* ============================== MAIN APP ============================== */
 export default function RoGreen() {
+  const [isSpectatorSession, setIsSpectatorSession] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('spectate') === '1'; } catch (e) { return false; }
+  });
   const [roundCode, setRoundCode] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -7390,6 +7593,10 @@ export default function RoGreen() {
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );
+  if (isSpectatorSession) {
+    return <SpectatorScreen roundCode={roundCode} onExit={() => { setIsSpectatorSession(false); setRoundCode(null); try { localStorage.removeItem('db:last-code'); } catch (e) {} }} />;
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', background: C.pine, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivoryDim, fontFamily: 'Inter, sans-serif' }}>Loading round…</div>;
 
   const state = getRoundView(tournament, tournament.activeRoundId);
@@ -7586,7 +7793,7 @@ export default function RoGreen() {
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
       {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
       {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
-      {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} onClose={() => setQrOpen(false)} />}
+      {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} spectatorsEnabled={tournament.spectatorsEnabled} onToggleSpectators={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))} onClose={() => setQrOpen(false)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
       {proxyOpen && <ProxyPickerModal tournament={tournament} activeProxyId={proxyPlayerId} onPick={(id) => { setProxyPlayerId(id); setProxyOpen(false); }} onStop={() => { setProxyPlayerId(null); setProxyOpen(false); }} onClose={() => setProxyOpen(false)} />}
       {resetOpen && <ResetRoundModal roundName={state.roundName} onConfirm={() => { resetRound(); setResetOpen(false); }} onClose={() => setResetOpen(false)} />}
