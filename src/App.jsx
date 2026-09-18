@@ -901,11 +901,25 @@ function computeSkins(state, scoreFn) {
     const vals = players.map(p => ({ id: p.id, s: scoreFn(p.id, h) }));
     const allIn = players.length > 0 && vals.every(x => x.s != null);
     if (!allIn) { results.push({ hole: h, status: 'pending' }); continue; }
-    vals.forEach(x => { contributions[x.id] += value; });
     const min = Math.min(...vals.map(x => x.s));
     const winners = vals.filter(x => x.s === min);
-    if (winners.length === 1) { winnings[winners[0].id] += value * players.length * carry; results.push({ hole: h, status: 'won', winnerId: winners[0].id, pot: value * players.length * carry }); carry = 1; }
-    else { results.push({ hole: h, status: 'push' }); carry += 1; }
+    if (winners.length === 1) {
+      // Pot is a flat value×carry regardless of how many players are in the
+      // game — the hole is "worth" $X, not $X-per-player. The players who
+      // lost that hole split the pot equally to pay the winner, keeping the
+      // whole thing zero-sum no matter the group size.
+      const pot = value * carry;
+      const winnerId = winners[0].id;
+      const losers = vals.filter(x => x.id !== winnerId);
+      const share = losers.length > 0 ? pot / losers.length : 0;
+      winnings[winnerId] += pot;
+      losers.forEach(l => { contributions[l.id] += share; });
+      results.push({ hole: h, status: 'won', winnerId, pot });
+      carry = 1;
+    } else {
+      results.push({ hole: h, status: 'push' });
+      carry += 1;
+    }
   }
   const net = {}; players.forEach(p => { net[p.id] = winnings[p.id] - contributions[p.id]; });
   return { results, net };
@@ -1831,8 +1845,8 @@ function Collage() {
 
 
 
-function AdminAuthModal({ onClose, onSignedIn }) {
-  const [mode, setMode] = useState('signin'); // signin | signup | forgot
+function AdminAuthModal({ onClose, onSignedIn, initialMode }) {
+  const [mode, setMode] = useState(initialMode || 'signin'); // signin | signup | forgot
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -2156,6 +2170,22 @@ function OwnerConsole({ onBack }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onDismiss}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 360, padding: 24, textAlign: 'center' }}>
+        <Trophy size={30} color={C.goldBright} style={{ marginBottom: 10 }} />
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Nice round!</div>
+        <div style={{ fontSize: 13, color: C.ivoryDim, lineHeight: 1.6, marginBottom: 20 }}>
+          Create a free profile to keep every tournament you've played in one place — and host your own whenever you're ready.
+        </div>
+        <GoldButton onClick={onCreateProfile} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>Create My Profile</GoldButton>
+        <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', color: C.bunker, fontSize: 12, cursor: 'pointer', padding: '6px 0' }}>Maybe later</button>
+      </div>
     </div>
   );
 }
@@ -6130,6 +6160,22 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
   const ranked = [...state.players].sort((a, b) => (ledger[b.id]?.netPosition || 0) - (ledger[a.id]?.netPosition || 0));
   const bigWinner = ranked[0], bigLoser = ranked[ranked.length - 1];
   const totalSettled = state.players.reduce((sum, p) => sum + Math.abs(ledger[p.id]?.netPosition || 0), 0) / 2;
+  // Front/back split, computed locally to this screen rather than in the
+  // shared computeStats() — keeps this addition contained to exactly where
+  // it's needed instead of changing a function used all over the app.
+  const nineTotal = (p, from, to) => {
+    let strokes = 0, par = 0, thru = 0, netStrokes = 0;
+    const ch = getCourseHandicap(p, state);
+    for (let i = from; i < to; i++) {
+      const s = state.scores[p.id]?.[i];
+      if (s == null) continue;
+      const parVal = state.pars[i] ?? 4;
+      strokes += s; par += parVal; thru++;
+      netStrokes += s - strokesOnHole(ch, state.strokeIndex, i);
+    }
+    if (thru === 0) return null;
+    return useNet ? (netStrokes - par) : (strokes - par);
+  };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', padding: 22, textAlign: 'center' }}>
@@ -6150,7 +6196,21 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
         <div style={{ textAlign: 'left', marginBottom: 14 }}>
           <SectionHeader title="Final standings" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {final.map((p, i) => <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '4px 0' }}><span style={{ width: 16, color: C.ivoryDim }}>{i + 1}</span><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ flex: 1 }}>{p.name}</span><span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: (useNet ? p.netToPar : p.toPar) < 0 ? C.flagRed : C.ivory }}>{fmtToPar(useNet ? p.netToPar : p.toPar)}</span></div>)}
+            {final.map((p, i) => {
+              const front = nineTotal(p, 0, 9);
+              const back = nineTotal(p, 9, state.numHoles);
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '4px 0' }}>
+                  <span style={{ width: 16, color: C.ivoryDim }}>{i + 1}</span>
+                  <Chip color={pc(p)}>{initials(p.name)}</Chip>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                    <div style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace' }}>F {front != null ? fmtToPar(front) : '—'} · B {back != null ? fmtToPar(back) : '—'}</div>
+                  </div>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: (useNet ? p.netToPar : p.toPar) < 0 ? C.flagRed : C.ivory }}>{fmtToPar(useNet ? p.netToPar : p.toPar)}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -6654,6 +6714,9 @@ export default function RoGreen() {
   const [myTournaments, setMyTournaments] = useState([]);
   const [adminAccount, setAdminAccount] = useState(null);
   const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [authInitialMode, setAuthInitialMode] = useState('signin');
+  const [authIntent, setAuthIntent] = useState('create'); // 'create' -> navigate to Profile after; 'stay' -> just close, keep playing
+  const [profilePromptOpen, setProfilePromptOpen] = useState(false);
   const [accountProfileOpen, setAccountProfileOpen] = useState(false);
   const [ownerConsoleOpen, setOwnerConsoleOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -7262,7 +7325,17 @@ export default function RoGreen() {
       ) : (
         <Landing onCreate={() => { if (adminAccount) setAccountProfileOpen(true); else setAdminAuthOpen(true); }} onJoin={handleJoin} onLoadDemo={handleLoadDemo} myTournaments={myTournaments} onQuickJoin={handleQuickJoin} joinError={joinError} joinChecking={joinChecking} adminAccount={adminAccount} cloudTournaments={cloudTournaments} onOpenAdminAuth={() => setAdminAuthOpen(true)} onSignOutAdmin={() => signOutAdmin()} />
       )}
-      {adminAuthOpen && <AdminAuthModal onClose={() => setAdminAuthOpen(false)} onSignedIn={() => setAccountProfileOpen(true)} />}
+      {adminAuthOpen && <AdminAuthModal initialMode={authInitialMode} onClose={() => { setAdminAuthOpen(false); setAuthInitialMode('signin'); setAuthIntent('create'); }} onSignedIn={() => {
+        setAdminAuthOpen(false); setAuthInitialMode('signin');
+        if (authIntent === 'create') setAccountProfileOpen(true);
+        setAuthIntent('create');
+      }} />}
+      {profilePromptOpen && (
+        <CreateProfilePromptModal
+          onCreateProfile={() => { setProfilePromptOpen(false); setAuthInitialMode('signup'); setAuthIntent('stay'); setAdminAuthOpen(true); }}
+          onDismiss={() => { setProfilePromptOpen(false); try { localStorage.setItem('db:profile-prompt-dismissed', 'true'); } catch (e) {} }}
+        />
+      )}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
     </>
   );
@@ -7338,8 +7411,8 @@ export default function RoGreen() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {isAdmin && (
-            <button onClick={() => setPreviewMode(p => !p)} style={{ background: previewMode ? C.gold : C.turf, border: `1px solid ${previewMode ? C.gold : C.turfBorder}`, borderRadius: 10, padding: '0 10px', height: 38, display: 'flex', alignItems: 'center', gap: 5, color: previewMode ? C.pineDark : C.ivoryDim, cursor: 'pointer', fontSize: 11, fontFamily: 'Inter, sans-serif', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap' }}>
-              {previewMode ? <><User size={13} /> Player</> : <><Settings size={13} /> Admin</>}
+            <button onClick={() => setPreviewMode(p => !p)} title={previewMode ? 'Switch to Admin view' : 'Preview as Player'} style={{ background: previewMode ? C.gold : C.turf, border: `1px solid ${previewMode ? C.gold : C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: previewMode ? C.pineDark : C.ivoryDim, cursor: 'pointer', flexShrink: 0 }}>
+              {previewMode ? <User size={17} /> : <Settings size={17} />}
             </button>
           )}
           {adminAccount && (
@@ -7388,7 +7461,14 @@ export default function RoGreen() {
           </div>
         )}
         {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} />}
-        {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={submitScorecard} onUnlock={unlockScorecard} onWolfChoice={setWolfChoice} />}
+        {hasPlayers && activeTab === 'card' && <ScorecardTab state={state} h={h} par={par} tapPlus={tapPlus} tapMinus={tapMinus} tapCenter={tapCenter} clearScore={clearScore} goHole={goHole} setHole={setViewHole} onOpenScan={() => setScanOpen(true)} isAdmin={viewAsAdmin} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onSubmit={(playerId) => {
+          submitScorecard(playerId);
+          if (!adminAccount && whoami && playerId === whoami.id) {
+            let dismissed = false;
+            try { dismissed = localStorage.getItem('db:profile-prompt-dismissed') === 'true'; } catch (e) {}
+            if (!dismissed) setProfilePromptOpen(true);
+          }
+        }} onUnlock={unlockScorecard} onWolfChoice={setWolfChoice} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
