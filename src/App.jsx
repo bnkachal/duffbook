@@ -5603,7 +5603,7 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundFlow, onOpenProxy, onOpenReset, onOpenLayout }) {
+function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundFlow, onOpenProxy, onOpenReset, onOpenLayout }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -5612,6 +5612,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px' }}>
         <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>Round code <strong style={{ color: C.goldBright, letterSpacing: 1 }}>{roundCode}</strong> <Copy size={13} /> {copied && 'copied!'}</button>
         {isAdmin && <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 12 }}>You're an admin · PIN {adminPin}</div>}
+        {isAdmin && !previewMode && item(User, 'Preview as Player', onEnterPreview)}
         {previewMode && item(LogOut, 'Exit player preview', onExitPreview)}
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {hasPlayers && item(Flag, 'Round Flow', onOpenRoundFlow)}
@@ -7410,11 +7411,6 @@ export default function RoGreen() {
           })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {isAdmin && (
-            <button onClick={() => setPreviewMode(p => !p)} title={previewMode ? 'Switch to Admin view' : 'Preview as Player'} style={{ background: previewMode ? C.gold : C.turf, border: `1px solid ${previewMode ? C.gold : C.turfBorder}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: previewMode ? C.pineDark : C.ivoryDim, cursor: 'pointer', flexShrink: 0 }}>
-              {previewMode ? <User size={17} /> : <Settings size={17} />}
-            </button>
-          )}
           {adminAccount && (
             <button onClick={() => setAccountMenuOpen(true)} style={{ border: `1px solid ${C.turfBorder}`, borderRadius: 999, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer', flexShrink: 0, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, background: `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` }} title="Account">
               {adminAccount.email[0].toUpperCase()}
@@ -7513,7 +7509,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
