@@ -2974,6 +2974,46 @@ function LeaderboardTab({ state, stats }) {
   );
 }
 
+function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap }) {
+  return (
+    <div onClick={onTap} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${C.turfBorder}` }}>
+        <IconBadge icon={Trophy} color={C.gold} size={26} />
+        <div>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>This Round</div>
+          <div style={{ fontSize: 10, color: C.bunker }}>ranked within each flight · tap for full board</div>
+        </div>
+      </div>
+      {flights.map((flight, fi) => {
+        const flightPlayers = leaderboard.filter(p => p.flightId === flight.id);
+        if (flightPlayers.length === 0) return null;
+        return (
+          <div key={flight.id} style={{ borderTop: fi > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color }}>{flight.name}</span>
+            </div>
+            {flightPlayers.slice(0, 3).map((p, i) => {
+              const val = useNet ? p.netToPar : p.toPar;
+              return (
+                <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
+                  <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
+                </div>
+              );
+            })}
+            {flightPlayers.length > 3 && (
+              <div style={{ padding: '5px 14px 8px', fontSize: 10, color: C.bunker }}>+{flightPlayers.length - 3} more in {flight.name}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
   const ITEM_HEIGHT = 44;
   const VISIBLE = 5;
@@ -3008,8 +3048,8 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <IconBadge icon={Trophy} color={C.gold} size={26} />
           <div>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>Leaderboard</div>
-            <div style={{ fontSize: 10, color: C.bunker }}>this round · {paused ? 'tap to resume' : 'tap to pause'}</div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>This Round</div>
+            <div style={{ fontSize: 10, color: C.bunker }}>{paused ? 'tap to resume' : 'tap to pause'}</div>
           </div>
         </div>
         {shouldScroll && <div style={{ display: 'flex', gap: 2 }}>{[0,1,2].map(i => <div key={i} style={{ width: 3, height: paused ? 6 : 10, borderRadius: 999, background: paused ? C.bunker : C.gold, animation: paused ? 'none' : `scrollDot 1s ease-in-out ${i*0.2}s infinite alternate` }} />)}</div>}
@@ -3871,18 +3911,28 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       })()}
 
       {!(state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled) && (
-        <ScrollingLeaderboard
-          leaderboard={leaderboard}
-          stats={stats}
-          useNet={useNet}
-          fmtToPar={fmtToPar}
-          onTap={() => setActiveTab('leaderboard')}
-        />
+        Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? (
+          <FlightedLeaderboard
+            leaderboard={leaderboard}
+            flights={tournament.flights}
+            useNet={useNet}
+            fmtToPar={fmtToPar}
+            onTap={() => setActiveTab('leaderboard')}
+          />
+        ) : (
+          <ScrollingLeaderboard
+            leaderboard={leaderboard}
+            stats={stats}
+            useNet={useNet}
+            fmtToPar={fmtToPar}
+            onTap={() => setActiveTab('leaderboard')}
+          />
+        )
       )}
 
       {layoutPrefs.standings !== false && !ryderCup && multiRound && tournamentStandings.length > 0 && (
-        <div style={{ ...cardBtn, cursor: 'default' }}>
-          <SectionHeader title="Tournament standings" sub="cumulative across every started round" icon={Calendar} iconColor={C.blueBright} />
+        <div style={{ ...cardBtn, cursor: 'default', background: `${C.blueBright}14`, border: `1px solid ${C.blueBright}44` }}>
+          <SectionHeader title="Overall Standings" sub="cumulative across every started round" icon={Calendar} iconColor={C.blueBright} />
           {tournamentStandings.slice(0, 6).map((p, i) => {
             const flight = tournament.flights?.find(f => f.id === p.flightId);
             const pts = ryderCup ? computePlayerPoints(tournament, p.id) : null;
@@ -5583,7 +5633,7 @@ const HOME_LAYOUT_CARDS = [
   { key: 'payout', label: 'Live payout' },
   { key: 'roundFlow', label: 'Round Flow link' },
   { key: 'ryderCup', label: 'Ryder Cup team score' },
-  { key: 'standings', label: 'Tournament Standings' },
+  { key: 'standings', label: 'Overall Standings' },
   { key: 'kos', label: 'King of Swing bracket' },
 ];
 function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
@@ -5991,7 +6041,7 @@ function FullStandingsModal({ tournament, tournamentStandings, useNet, ryderCup,
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px', maxHeight: '82vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Tournament Standings</div>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Overall Standings</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 12 }}>{tournamentStandings.length} players · cumulative across every started round</div>
