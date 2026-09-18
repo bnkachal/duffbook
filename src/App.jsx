@@ -274,6 +274,7 @@ function roundFieldsFromCourse(course, teeName) {
   return {
     courseId: course.courseId, courseName: course.courseName, providerId: course.providerId,
     courseRating: tee.rating, courseSlope: tee.slope, teeName: tee.teeName,
+    courseTeeBoxes: course.teeBoxes.map(t => ({ teeName: t.teeName, rating: t.rating, slope: t.slope })),
     numHoles: course.numberOfHoles,
     pars: course.holes.map(h => h.par), strokeIndex: course.holes.map(h => h.handicap),
     yardage: course.holes.map(h => h.yardagesByTee[tee.teeName] ?? null),
@@ -329,7 +330,7 @@ function lowManStrokes(match, state) {
   const chById = {};
   allIds.forEach(id => {
     const p = state.players.find(pl => pl.id === id);
-    chById[id] = p ? courseHandicap(p.handicapIndex, state.courseSlope) : null;
+    chById[id] = p ? getCourseHandicap(p, state) : null;
   });
   const validChs = allIds.map(id => chById[id]).filter(ch => ch != null);
   if (validChs.length === 0) return null;
@@ -384,7 +385,15 @@ function getCourseHandicap(player, state) {
   const idx = parseFloat(player.handicapIndex);
   if (isNaN(idx)) return 0;
   const totalPar = state.pars.reduce((a, b) => a + (b || 4), 0);
-  return Math.round(idx * ((state.courseSlope || 113) / 113) + ((state.courseRating || totalPar) - totalPar));
+  // Use this player's own assigned tee when one exists and matches a known
+  // tee box (API-selected courses only — manual courses have no tee catalog
+  // to look up, and correctly fall through to the round's single rating/slope).
+  const playerTee = player.teeName && Array.isArray(state.courseTeeBoxes)
+    ? state.courseTeeBoxes.find(t => t.teeName === player.teeName)
+    : null;
+  const rating = playerTee ? playerTee.rating : (state.courseRating || totalPar);
+  const slope = playerTee ? playerTee.slope : (state.courseSlope || 113);
+  return Math.round(idx * (slope / 113) + (rating - totalPar));
 }
 function strokesOnHole(h, strokeIndexArr, holeIdx) {
   if (!h) return 0;
@@ -2630,8 +2639,8 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
       const oppId = onSideA ? (myMatch.sideB || [])[0] : (myMatch.sideA || [])[0];
       const oppPlayer = state.players.find(p => p.id === oppId);
       if (!oppPlayer) return new Set();
-      const myCh = courseHandicap(whoami.handicapIndex, state.courseSlope);
-      const oppCh = courseHandicap(oppPlayer.handicapIndex, state.courseSlope);
+      const myCh = getCourseHandicap(whoami, state);
+      const oppCh = getCourseHandicap(oppPlayer, state);
       if (myCh == null || oppCh == null) return new Set();
       const myStrokes = Math.max(0, myCh - oppCh);
       const rangeStart = inFrontHalf ? 0 : half, rangeEnd = inFrontHalf ? half : state.numHoles;
@@ -2646,8 +2655,8 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
       const oppId = onSideA ? (myMatch.sideB || [])[0] : (myMatch.sideA || [])[0];
       const oppPlayer = state.players.find(p => p.id === oppId);
       if (!oppPlayer) return new Set();
-      const myCh = courseHandicap(whoami.handicapIndex, state.courseSlope);
-      const oppCh = courseHandicap(oppPlayer.handicapIndex, state.courseSlope);
+      const myCh = getCourseHandicap(whoami, state);
+      const oppCh = getCourseHandicap(oppPlayer, state);
       if (myCh == null || oppCh == null) return new Set();
       const myStrokes = Math.max(0, myCh - oppCh);
       return distributeStrokes(myStrokes, state.strokeIndex, state.numHoles);
@@ -3706,7 +3715,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
                 <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
-                {courseHandicap(whoami.handicapIndex, state.courseSlope) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {courseHandicap(whoami.handicapIndex, state.courseSlope)}</div>}
+                {getCourseHandicap(whoami, state) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {getCourseHandicap(whoami, state)}</div>}
               </div>
             ) : (
               <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px', border: `1px dashed ${C.turfBorder}` }}>
@@ -3754,8 +3763,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           // Stroke display — plain-language explanation, only for relevant formats
           let strokeInfo = null;
           if ((format === 'singles' || format === 'split9') && aPlayers.length === 1 && bPlayers.length === 1) {
-            const chA = courseHandicap(aPlayers[0].handicapIndex, state.courseSlope);
-            const chB = courseHandicap(bPlayers[0].handicapIndex, state.courseSlope);
+            const chA = getCourseHandicap(aPlayers[0], state);
+            const chB = getCourseHandicap(bPlayers[0], state);
             if (chA != null && chB != null && chA !== chB) {
               const { strokesToA, strokesToB } = singlesStrokeHoles(chA, chB, state.strokeIndex, state.numHoles);
               const giver = strokesToA > 0 ? bPlayers[0] : aPlayers[0];
@@ -3766,7 +3775,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           } else if (format === 'best-ball' && aPlayers.length === 2 && bPlayers.length === 2) {
             const lm = lowManStrokes(m, state);
             if (lm) {
-              const lowManPlayer = [...aPlayers, ...bPlayers].find(p => courseHandicap(p.handicapIndex, state.courseSlope) === lm.lowMan);
+              const lowManPlayer = [...aPlayers, ...bPlayers].find(p => getCourseHandicap(p, state) === lm.lowMan);
               strokeInfo = `${lowManPlayer?.name.split(' ')[0] || 'Low man'} (CH ${lm.lowMan}) sets the baseline — teams play off ${lm.teamAAdj} vs ${lm.teamBAdj} combined strokes`;
             }
           }
@@ -3781,14 +3790,14 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                   {aPlayers.map(p => {
-                    const pch = courseHandicap(p.handicapIndex, state.courseSlope);
+                    const pch = getCourseHandicap(p, state);
                     return <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Chip color={pc(p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>{pch != null && <span style={{ fontSize: 8, color: C.bunker }}>{pch}</span>}</div>;
                   })}
                 </div>
                 <span style={{ fontSize: 11, fontWeight: r.outcome === 'A' ? 700 : 400, color: r.outcome === 'B' ? C.bunker : C.ivory, flex: 1, textAlign: 'center', padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{aNames} <span style={{ color: C.bunker, fontWeight: 400 }}>vs</span> {bNames}</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                   {bPlayers.map(p => {
-                    const pch = courseHandicap(p.handicapIndex, state.courseSlope);
+                    const pch = getCourseHandicap(p, state);
                     return <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{pch != null && <span style={{ fontSize: 8, color: C.bunker }}>{pch}</span>}<Chip color={pc(p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip></div>;
                   })}
                 </div>
@@ -4712,7 +4721,33 @@ function HandicapsFlightsSection({ state, updateTournament, setPlayerField, auto
       {!canConfigure ? <div style={{ color: C.ivoryDim, fontSize: 13 }}>Add players first.</div> : (
         <>
           <ToggleRow label="Use handicaps" sub="Net scoring, GHIN-style Course Handicap from each player's index" enabled={state.handicapsEnabled} onToggle={() => updateTournament(p => ({ ...p, handicapsEnabled: !p.handicapsEnabled }))} />
-          {state.handicapsEnabled && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>{state.players.map(p => { const ch = getCourseHandicap(p, state); return <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{p.name}</span></div><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" style={{ ...inputStyle, width: 64, padding: '6px 8px' }} /><span style={{ fontSize: 11, color: C.ivoryDim, minWidth: 50 }}>CH {ch}</span></div></div>; })}</div>}
+          {state.handicapsEnabled && <div style={{ fontSize: 11, color: C.bunker, marginBottom: 8 }}>Plus-handicap? Enter it as negative — e.g. type -2 for a +2.</div>}
+          {state.handicapsEnabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+              {state.players.map(p => {
+                const ch = getCourseHandicap(p, state);
+                const teeOptions = Array.isArray(state.courseTeeBoxes) ? state.courseTeeBoxes : [];
+                return (
+                  <div key={p.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{p.name}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" title="Plus-handicap? Enter as negative — e.g. -2 for +2" style={{ ...inputStyle, width: 64, padding: '6px 8px' }} />
+                        <span style={{ fontSize: 11, color: C.ivoryDim, minWidth: 50 }}>CH {ch}</span>
+                      </div>
+                    </div>
+                    {teeOptions.length >= 2 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {teeOptions.map(tee => (
+                          <button key={tee.teeName} onClick={() => setPlayerField(p.id, 'teeName', tee.teeName)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.teeName === tee.teeName ? C.gold : C.turfBorder}`, background: p.teeName === tee.teeName ? C.gold : 'transparent', color: p.teeName === tee.teeName ? C.pineDark : C.ivoryDim, cursor: 'pointer' }}>{tee.teeName}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <ToggleRow label="Use flights / teams" sub="Separate leaderboards, or Red vs Blue for team match play" enabled={state.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : [{ id: 'f1', name: 'Red', color: FLIGHT_COLORS[0] }, { id: 'f2', name: 'Blue', color: FLIGHT_COLORS[1] }] }))} />
           {state.flights.length > 0 && (
             <div>
@@ -5567,7 +5602,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               {tournament.players.map(p => (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13, flex: 1 }}>{p.name}</span>
-                  <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" style={{ ...inputStyle, width: 70, padding: '6px 8px' }} />
+                  <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" title="Plus-handicap? Enter as negative — e.g. -2 for +2" style={{ ...inputStyle, width: 70, padding: '6px 8px' }} />
                 </div>
               ))}
             </div>
