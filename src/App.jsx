@@ -1776,10 +1776,17 @@ function NetToggle({ value, onChange }) {
 function IdentityPicker({ state, onPick, onAddSelf }) {
   const [name, setName] = useState('');
   return (
-    <div style={{ ...rowCard, flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-      <span style={{ fontSize: 13, width: '100%' }}>👋 Tap your name to get started</span>
-      {state.players.map(p => <button key={p.id} onClick={() => onPick(p.id)} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, borderRadius: 999, padding: 2, cursor: 'pointer' }}><Chip color={pc(p)}>{initials(p.name)}</Chip></button>)}
-      <div style={{ display: 'flex', gap: 6, width: '100%', marginTop: 6 }}>
+    <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 13 }}>👋 Tap your name to get started</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {state.players.map(p => (
+          <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left' }}>
+            <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Not listed? Add your name" style={{ ...inputStyle, flex: 1, fontSize: 12, padding: '7px 10px' }} />
         <GhostButton onClick={() => { if (name.trim()) { onAddSelf(name.trim()); setName(''); } }} style={{ padding: '7px 12px', fontSize: 12 }}>Add me</GhostButton>
       </div>
