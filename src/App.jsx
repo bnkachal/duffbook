@@ -3348,7 +3348,8 @@ function LeaderboardTab({ state, stats }) {
   );
 }
 
-function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap }) {
+function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, presence, now }) {
+  const isLive = (playerId) => presence && now && presence[playerId] && (now - presence[playerId] < 100000);
   return (
     <div onClick={onTap} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${C.turfBorder}` }}>
@@ -3372,7 +3373,10 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap }) 
               return (
                 <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
                   <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
-                  <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                    {isLive(p.id) && <span style={{ width: 6, height: 6, borderRadius: 999, background: C.emerald, flexShrink: 0, animation: 'pulse 2.2s ease-in-out infinite' }} />}
+                    <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+                  </span>
                   <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
                   <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
                 </div>
@@ -3388,7 +3392,8 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap }) 
   );
 }
 
-function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
+function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, presence, now }) {
+  const isLive = (playerId) => presence && now && presence[playerId] && (now - presence[playerId] < 100000);
   const ITEM_HEIGHT = 44;
   const VISIBLE = 5;
   const SCROLL_MS = 2200;
@@ -3447,6 +3452,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar }) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
+                  {isLive(p.id) && <span style={{ width: 6, height: 6, borderRadius: 999, background: C.emerald, flexShrink: 0, animation: 'pulse 2.2s ease-in-out infinite' }} />}
                   <span style={{ fontSize: 13, fontWeight: rank === 1 ? 700 : 500, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 12, color: C.bunker }}>{p.thru > 0 ? p.thru : '–'}</div>
@@ -4336,6 +4342,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             useNet={useNet}
             fmtToPar={fmtToPar}
             onTap={() => setActiveTab('leaderboard')}
+            presence={state.presence}
+            now={now}
           />
         ) : (
           <ScrollingLeaderboard
@@ -4344,6 +4352,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             useNet={useNet}
             fmtToPar={fmtToPar}
             onTap={() => setActiveTab('leaderboard')}
+            presence={state.presence}
+            now={now}
           />
         )
       )}
