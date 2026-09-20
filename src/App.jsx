@@ -4714,10 +4714,10 @@ function PlayersSection({ state, newPlayerName, setNewPlayerName, addPlayer, rem
     </Accordion>
   );
 }
-function HandicapsFlightsSection({ state, updateTournament, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight }) {
+function HandicapsFlightsSection({ state, updateTournament, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, defaultOpen }) {
   const canConfigure = state.players.length >= 1;
   return (
-    <Accordion title="Handicaps & flights" badge={state.handicapsEnabled || state.flights.length ? 'on' : 'off'}>
+    <Accordion title="Handicaps & flights" badge={state.handicapsEnabled || state.flights.length ? 'on' : 'off'} defaultOpen={defaultOpen}>
       {!canConfigure ? <div style={{ color: C.ivoryDim, fontSize: 13 }}>Add players first.</div> : (
         <>
           <ToggleRow label="Use handicaps" sub="Net scoring, GHIN-style Course Handicap from each player's index" enabled={state.handicapsEnabled} onToggle={() => updateTournament(p => ({ ...p, handicapsEnabled: !p.handicapsEnabled }))} />
@@ -5474,8 +5474,8 @@ function WizardNextButton({ onClick, disabled, label }) {
   return <GoldButton onClick={onClick} disabled={disabled} style={{ width: '100%', padding: '14px 0', fontSize: 15, marginTop: 18 }}>{label || 'Next'}</GoldButton>;
 }
 
-function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, setCourseField, startRound, isNewRound, onFinish }) {
-  const baseSteps = isNewRound ? ['course', 'holes', 'format', 'games', 'review'] : ['basics', 'course', 'holes', 'format', 'players', 'groups', 'games', 'review'];
+function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, setCourseField, startRound, isNewRound, onFinish }) {
+  const baseSteps = isNewRound ? ['course', 'holes', 'format', 'handicaps', 'games', 'review'] : ['basics', 'course', 'holes', 'format', 'players', 'handicaps', 'groups', 'games', 'review'];
   const [step, setStep] = useState(0);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
@@ -5519,7 +5519,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   return (
     <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", handicaps: 'Handicaps & tees', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
       {stepKey === 'basics' && (
         <div>
@@ -5625,6 +5625,14 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               });
             }
           }} onClose={() => setWizardImportOpen(false)} />}
+        </div>
+      )}
+
+      {stepKey === 'handicaps' && (
+        <div>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Optional — turn on handicaps and/or flights now, or skip and set it up later from Settings.</div>
+          <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} defaultOpen />
+          <WizardNextButton onClick={goNext} />
         </div>
       )}
 
@@ -7804,7 +7812,7 @@ export default function RoGreen() {
         <SetupModal tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => setSetupOpen(false)} roundCode={roundCode} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} startRound={startRound} resetScores={resetScores} onPreview={() => { setSetupOpen(false); setPreviewMode(true); setActiveTab('card'); }} onAddRound={addRound} onSwitchRound={switchRound} />
       )}
       {wizardOpen && isAdmin && (
-        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
+        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
         <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} />
