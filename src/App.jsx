@@ -2197,6 +2197,32 @@ function OwnerConsole({ onBack }) {
   );
 }
 
+function CreateChoiceModal({ onPick, onClose }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 380, padding: 24 }}>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4, textAlign: 'center', marginBottom: 4 }}>What are you setting up?</div>
+        <div style={{ fontSize: 12, color: C.bunker, textAlign: 'center', marginBottom: 20 }}>You can always add more rounds later from a Quick Round if it turns into something bigger.</div>
+        <button onClick={() => onPick(true)} style={{ width: '100%', textAlign: 'left', background: `linear-gradient(135deg, ${C.gold}29, ${C.gold}0D)`, border: `1px solid ${C.gold}59`, borderRadius: 14, padding: 16, marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 26 }}>⚡</span>
+          <div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, color: C.ivory }}>Quick Round</div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 2 }}>One round, minimal setup — a few taps and you're scoring</div>
+          </div>
+        </button>
+        <button onClick={() => onPick(false)} style={{ width: '100%', textAlign: 'left', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, padding: 16, marginBottom: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 26 }}>🏆</span>
+          <div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, color: C.ivory }}>Create Tournament</div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 2 }}>Multiple rounds, full setup — club events, trips, and series</div>
+          </div>
+        </button>
+        <button onClick={onClose} style={{ width: '100%', background: 'transparent', border: 'none', color: C.bunker, fontSize: 12, cursor: 'pointer', padding: '4px 0' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onDismiss}>
@@ -5686,8 +5712,12 @@ function WizardNextButton({ onClick, disabled, label }) {
   return <GoldButton onClick={onClick} disabled={disabled} style={{ width: '100%', padding: '14px 0', fontSize: 15, marginTop: 18 }}>{label || 'Next'}</GoldButton>;
 }
 
-function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, setCourseField, startRound, isNewRound, onFinish }) {
-  const baseSteps = isNewRound ? ['course', 'holes', 'format', 'handicaps', 'games', 'review'] : ['basics', 'course', 'holes', 'format', 'players', 'handicaps', 'groups', 'games', 'review'];
+function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, setCourseField, startRound, isNewRound, quickMode, onFinish }) {
+  const baseSteps = isNewRound
+    ? ['course', 'holes', 'format', 'handicaps', 'games', 'review']
+    : quickMode
+      ? ['quick-basics', 'players', 'handicaps', 'format', 'games']
+      : ['basics', 'course', 'holes', 'format', 'players', 'handicaps', 'groups', 'games', 'review'];
   const [step, setStep] = useState(0);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
@@ -5698,7 +5728,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   useEffect(() => {
     const t = setTimeout(() => {
-      if (stepKey === 'basics') nameInputRef.current?.focus();
+      if (stepKey === 'basics' || stepKey === 'quick-basics') nameInputRef.current?.focus();
       else if (stepKey === 'players') playerInputRef.current?.focus();
     }, 120);
     return () => clearTimeout(t);
@@ -5731,8 +5761,36 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
   return (
     <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", handicaps: 'Handicaps & tees', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+      { basics: 'The basics', 'quick-basics': 'Name & course', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", handicaps: 'Handicaps & tees', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
     }>
+      {stepKey === 'quick-basics' && (
+        <div>
+          <Field label="Round name"><input ref={nameInputRef} value={tournament.name} onChange={e => updateTournament(p => ({ ...p, name: e.target.value }))} style={inputStyle} placeholder="Name your round" /></Field>
+          <Field label="Course">
+            {state.providerId ? (
+              <div style={{ ...rowCard, justifyContent: 'space-between' }}>
+                <div><div style={{ fontWeight: 600, fontSize: 14 }}>{state.courseName}</div><div style={{ fontSize: 11, color: C.ivoryDim }}>{state.teeName} tees · {state.courseRating}/{state.courseSlope}</div></div>
+                <Check size={16} color={C.gold} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ flex: 1, padding: '12px 0' }}>Search for a course</GoldButton>
+                <GhostButton onClick={() => selectCustomCourse()} style={{ flex: 1, textAlign: 'center' }}>Enter manually</GhostButton>
+              </div>
+            )}
+            {coursePickerOpen && <CoursePickerModal onSelect={(course, teeName) => { selectProviderCourse(course, teeName); setCoursePickerOpen(false); }} onCustom={() => { selectCustomCourse(); setCoursePickerOpen(false); }} onClose={() => setCoursePickerOpen(false)} />}
+          </Field>
+          <Field label="Holes">
+            <div style={{ display: 'flex', gap: 10 }}>
+              {[9, 18].map(n => (
+                <button key={n} onClick={() => setNumHoles(n)} style={{ flex: 1, padding: '14px 0', borderRadius: 12, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, background: state.numHoles === n ? C.gold : C.turf, color: state.numHoles === n ? C.pineDark : C.ivory, border: `1px solid ${state.numHoles === n ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>{n}</button>
+              ))}
+            </div>
+          </Field>
+          <WizardNextButton onClick={goNext} disabled={!tournament.name.trim()} />
+        </div>
+      )}
+
       {stepKey === 'basics' && (
         <div>
           <Field label="Tournament name"><input ref={nameInputRef} value={tournament.name} onChange={e => updateTournament(p => ({ ...p, name: e.target.value }))} style={inputStyle} placeholder="Name your tournament" /></Field>
@@ -5795,7 +5853,21 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         </div>
       )}
 
-      {stepKey === 'players' && (
+      {stepKey === 'players' && quickMode && (
+        <div>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Just type a name and hit add — repeat for everyone playing.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+            {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+            <input ref={playerInputRef} value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayerLocal(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
+            <button onClick={addPlayerLocal} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer' }}><UserPlus size={18} /></button>
+          </div>
+          <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} />
+        </div>
+      )}
+
+      {stepKey === 'players' && !quickMode && (
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
             {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
@@ -5915,7 +5987,13 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               </div>
             </div>
           ))}
-          <WizardNextButton onClick={goNext} />
+          {quickMode && (
+            <div style={{ display: 'flex', gap: 14, margin: '4px 0 16px', flexWrap: 'wrap' }}>
+              <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Round code</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.goldBright, letterSpacing: 1 }}>{roundCode}</div></div>
+              {tournament.adminPin && <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Admin PIN</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.goldBright, letterSpacing: 1 }}>{tournament.adminPin}</div></div>}
+            </div>
+          )}
+          <WizardNextButton onClick={quickMode ? finish : goNext} label={quickMode ? 'Start Round' : undefined} />
         </div>
       )}
 
@@ -7197,6 +7275,8 @@ export default function RoGreen() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardIsNewRound, setWizardIsNewRound] = useState(false);
+  const [createChoiceOpen, setCreateChoiceOpen] = useState(false);
+  const [wizardQuickMode, setWizardQuickMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -7575,13 +7655,16 @@ export default function RoGreen() {
   const goHoleRef = useRef(null);
   const swipe = useSwipeNav(activeTab, setActiveTab, goHoleRef);
 
-  const handleCreate = () => {
+  const handleCreate = () => { setCreateChoiceOpen(true); };
+  const startCreateFlow = (isQuick) => {
+    setCreateChoiceOpen(false);
     const code = genCode(), pin = genPin();
     justCreatedRef.current = code;
     (async () => { try { localStorage.setItem('db:last-code', JSON.stringify(code)); localStorage.setItem('db:isadmin-' + code, JSON.stringify(true)); } catch (e) {} })();
     setTournament({ ...defaultTournament(), creatorUid: adminAccount?.uid || null });
     setIsAdmin(true); setRoundCode(code); setPendingAdminPin(pin);
     if (adminAccount) registerTournamentInOwnerIndex(code, { creatorUid: adminAccount.uid, creatorEmail: adminAccount.email, createdAt: Date.now() });
+    setWizardQuickMode(isQuick);
     setTimeout(() => { setWizardIsNewRound(false); setWizardOpen(true); }, 120);
   };
   const handleJoin = (code) => {
@@ -7888,6 +7971,7 @@ export default function RoGreen() {
         />
       )}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
+      {createChoiceOpen && <CreateChoiceModal onPick={startCreateFlow} onClose={() => setCreateChoiceOpen(false)} />}
     </>
   );
   if (isSpectatorSession) {
@@ -8050,7 +8134,7 @@ export default function RoGreen() {
         <SetupModal tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => setSetupOpen(false)} roundCode={roundCode} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} startRound={startRound} resetScores={resetScores} onPreview={() => { setSetupOpen(false); setPreviewMode(true); setActiveTab('home'); setDrawerOpen(true); }} onAddRound={addRound} onSwitchRound={switchRound} />
       )}
       {wizardOpen && isAdmin && (
-        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
+        <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
         <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} />
