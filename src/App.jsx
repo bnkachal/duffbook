@@ -2619,13 +2619,26 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     });
     setDraftScores(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewHole]);
+  }, [viewHole, whoami?.id, viewAsAdmin]);
+
+  // Computes the effective draft value on demand rather than trusting
+  // draftScores to already hold an entry for this player. This is what
+  // actually fixes the bug: right after picking an identity, the player
+  // becomes available before the effect above has a chance to re-run for
+  // them, so draftScores[playerId] can still be unset the very first time
+  // — getDraft() never depends on that timing, so confirm() can't save an
+  // unset value no matter when it's called.
+  const getDraft = (playerId) => {
+    if (draftScores[playerId] != null) return draftScores[playerId];
+    const saved = state.scores[playerId]?.[viewHole];
+    return saved != null ? saved : par;
+  };
 
   const bump = (playerId, delta) => {
     setDraftScores(prev => ({ ...prev, [playerId]: Math.max(1, (prev[playerId] ?? par) + delta) }));
   };
   const confirm = (playerId) => {
-    setScoreVal(playerId, viewHole, draftScores[playerId]);
+    setScoreVal(playerId, viewHole, getDraft(playerId));
     if (viewHole === numHoles - 1 && whoami && playerId === whoami.id) onFinalHoleConfirmed?.(playerId);
   };
   const isConfirmed = (playerId) => {
@@ -2691,7 +2704,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         )}
 
         {playersToShow.map(p => {
-          const draft = draftScores[p.id] ?? par;
+          const draft = getDraft(p.id);
           const confirmed = isConfirmed(p.id);
           const numStyle = { fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, cursor: 'pointer', borderRadius: 12, transition: 'background 0.2s, color 0.2s' };
           if (viewAsAdmin) {
