@@ -3817,6 +3817,18 @@ function KoSModal({ tournament, updateTournament, onClose }) {
 
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer }) {
   const now = useNow(5000);
+  // Tracks whether the main "tap to score" trigger card is currently on
+  // screen, so the floating badge can appear once it scrolls out of view
+  // and disappear again once it's back — the two are never shown together.
+  const triggerCardRef = useRef(null);
+  const [triggerVisible, setTriggerVisible] = useState(true);
+  useEffect(() => {
+    const el = triggerCardRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([entry]) => setTriggerVisible(entry.isIntersecting), { threshold: 0 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
   const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
   const bestBallPositionChanges = usePositionChanges(bbResultsEarly.map(p => p.pairId));
@@ -3912,13 +3924,52 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               </div>
             )}
 
-            <div onClick={onOpenDrawer} style={{ background: `linear-gradient(135deg, ${C.gold}29, ${C.gold}0D)`, border: `1px solid ${C.gold}59`, borderRadius: 16, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: 16 }}>
+            <div ref={triggerCardRef} onClick={onOpenDrawer} style={{ background: `linear-gradient(135deg, ${C.gold}29, ${C.gold}0D)`, border: `1px solid ${C.gold}59`, borderRadius: 16, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 11, color: C.goldBright, marginBottom: 3 }}>{whoami ? (nextHole != null ? 'TAP TO SCORE' : 'ROUND COMPLETE') : isAdmin ? 'ADMIN' : 'GET STARTED'}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: C.ivory }}>{whoami ? (nextHole != null ? `Hole ${nextHole + 1} · Par ${state.pars[nextHole] ?? 4}` : 'View your scorecard') : isAdmin ? 'Enter scores' : "Who's playing? Tap to pick"}</div>
               </div>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, fontSize: 19, fontWeight: 700 }}>{!whoami || nextHole != null ? '＋' : '▤'}</div>
             </div>
+
+            {!triggerVisible && (() => {
+              const ringR = 33, circ = 2 * Math.PI * ringR;
+              const pct = whoami ? Math.min(1, thru / state.numHoles) : 0;
+              const offset = circ * (1 - pct);
+              const displayNum = whoami ? (nextHole != null ? nextHole + 1 : null) : null;
+              return (
+                <div onClick={onOpenDrawer} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
+                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.emerald}`, animation: 'beaconPulse 2.4s ease-out infinite' }} />
+                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.emerald}`, animation: 'beaconPulse 2.4s ease-out infinite', animationDelay: '0.8s' }} />
+                  <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+                    <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={C.emerald} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                  </svg>
+                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, border: `2.5px solid ${C.emerald}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                      <line x1="4" y1="14" x2="54" y2="14" stroke={C.flagRed} strokeWidth="1.2" opacity="0.6" />
+                      <line x1="4" y1="24" x2="54" y2="24" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="4" y1="34" x2="54" y2="34" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="4" y1="44" x2="54" y2="44" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="14" y1="4" x2="14" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="24" y1="4" x2="24" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="34" y1="4" x2="34" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                      <line x1="44" y1="4" x2="44" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
+                    </svg>
+                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+                      {displayNum != null ? (
+                        <>
+                          <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: 0.6, color: C.gold, marginBottom: 1 }}>HOLE</span>
+                          <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: 20, color: C.pineDark }}>{displayNum}</span>
+                        </>
+                      ) : (
+                        <Check size={22} color={C.pineDark} strokeWidth={3} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
@@ -6889,6 +6940,7 @@ function FontLoader() {
       button { transition: transform 0.08s ease; }
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
       @keyframes birdFly {
