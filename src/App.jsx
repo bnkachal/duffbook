@@ -4448,6 +4448,7 @@ function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded })
           <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '78%' }}>
             {!mine && <div style={{ fontSize: 10, color: C.ivoryDim, marginBottom: 2, marginLeft: 4 }}>{m.authorName}</div>}
             <div style={{ background: mine ? C.gold : C.turf, color: mine ? C.pineDark : C.ivory, border: mine ? 'none' : `1px solid ${C.turfBorder}`, borderRadius: 14, padding: '8px 12px', fontSize: 14, wordBreak: 'break-word' }}>{m.text}</div>
+            <div style={{ fontSize: 9, color: C.bunker, marginTop: 2, textAlign: mine ? 'right' : 'left', marginLeft: mine ? 0 : 4, marginRight: mine ? 4 : 0, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtClockTime(m.ts)}</div>
           </div>
         ); })}
         <div ref={endRef} />
@@ -4459,6 +4460,49 @@ function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded })
     </div>
   );
 }
+function ChatToasts({ chat, players }) {
+  const [toasts, setToasts] = useState([]);
+  const lastSeenIdRef = useRef(undefined);
+
+  useEffect(() => {
+    if (lastSeenIdRef.current === undefined) {
+      // First mount: just remember where the history currently ends.
+      // Don't toast the entire existing chat log on load.
+      lastSeenIdRef.current = chat.length > 0 ? chat[chat.length - 1].id : null;
+      return;
+    }
+    const lastIdx = chat.findIndex(m => m.id === lastSeenIdRef.current);
+    const freshMessages = lastIdx === -1 ? chat.slice(-1) : chat.slice(lastIdx + 1);
+    if (freshMessages.length === 0) return;
+    lastSeenIdRef.current = chat[chat.length - 1].id;
+    freshMessages.forEach(m => {
+      setToasts(prev => [...prev, m]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== m.id)), 5000);
+    });
+  }, [chat]);
+
+  if (toasts.length === 0) return null;
+  return (
+    <div style={{ position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 66px)', right: 12, left: 12, zIndex: 40, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end', pointerEvents: 'none' }}>
+      {toasts.slice(-3).map(m => {
+        const sender = (players || []).find(p => p.id === m.authorId);
+        return (
+        <div key={m.id} style={{ background: 'rgba(23,26,31,0.94)', backdropFilter: 'blur(6px)', border: `1px solid ${C.turfBorder}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 8, padding: '7px 11px', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 260, boxShadow: '0 4px 14px rgba(0,0,0,0.35)' }}>
+          <Chip color={sender ? pc(sender) : C.blue} style={{ width: 22, height: 22, fontSize: 9, flexShrink: 0 }}>{initials(m.authorName)}</Chip>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.goldBright }}>{pgaName(m.authorName)}</span>
+              <span style={{ fontSize: 9, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtClockTime(m.ts)}</span>
+            </div>
+            <div style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.text}</div>
+          </div>
+        </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45 }} onClick={onClose}>
@@ -7972,21 +8016,7 @@ export default function RoGreen() {
   };
   const switchRound = (roundId) => { updateTournament(prev => ({ ...prev, activeRoundId: roundId })); autoJumpRef.current = false; };
 
-  // Chat drawer tabs — tap opens instantly; drag from the tab past a threshold also opens.
-  // Gesture is scoped to touches starting on the tab itself, so it never competes with
-  // the card-screen hole-swipe gesture (which listens on the content area, not the edges).
-  const chatDragRef = useRef(null);
-  const chatDraggedRef = useRef(false);
   const openChat = () => { setChatOpen(true); setChatSeenLen(chat.length); };
-  const onChatTabTouchStart = (side) => (e) => { const t = e.touches[0]; chatDragRef.current = { x: t.clientX, side }; chatDraggedRef.current = false; };
-  const onChatTabTouchMove = (e) => {
-    if (!chatDragRef.current) return;
-    const t = e.touches[0]; const dx = t.clientX - chatDragRef.current.x;
-    const opening = chatDragRef.current.side === 'left' ? dx > 36 : dx < -36;
-    if (opening) { chatDraggedRef.current = true; chatDragRef.current = null; openChat(); }
-  };
-  const onChatTabTouchEnd = () => { chatDragRef.current = null; };
-  const onChatTabClick = () => { if (chatDraggedRef.current) { chatDraggedRef.current = false; return; } openChat(); };
 
   if (!initChecked) return <div style={{ minHeight: '100vh', background: C.pine }} />;
   if (!roundCode) return (
@@ -8158,27 +8188,29 @@ export default function RoGreen() {
         </div>
       )}
 
+      {hasPlayers && <ChatToasts chat={chat} players={tournament.players} />}
+
       {hasPlayers && (
-        <>
-          {[{ side: 'right', edge: { right: -2, borderRadius: '14px 0 0 14px' } }].map(({ side, edge }) => (
-            <button
-              key={side}
-              onTouchStart={onChatTabTouchStart(side)} onTouchMove={onChatTabTouchMove} onTouchEnd={onChatTabTouchEnd}
-              onClick={onChatTabClick} aria-label="Group chat" style={{
-                position: 'fixed', top: '58%', transform: 'translateY(-50%)', ...edge,
-                width: 22, height: 84, background: C.gold, border: 'none', ...edge,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.35)', cursor: 'pointer', zIndex: 25, touchAction: 'pan-y',
-              }}>
-              <MessageCircle size={18} color="#FFFFFF" strokeWidth={2} />
-              {chat.length > chatSeenLen && (
-                <span style={{ position: 'absolute', top: -6, [side === 'left' ? 'right' : 'left']: -6, background: C.flagRed, color: C.ivory, borderRadius: 999, fontSize: 9, minWidth: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', fontFamily: 'Inter, sans-serif', fontWeight: 700 }}>
-                  {Math.min(chat.length - chatSeenLen, 9)}{chat.length - chatSeenLen > 9 ? '+' : ''}
-                </span>
-              )}
-            </button>
-          ))}
-        </>
+        <button onClick={openChat} aria-label="Group chat" style={{
+          position: 'fixed', bottom: 90, left: 16, width: 50, height: 50, borderRadius: '50%',
+          background: C.turf, border: `2px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.35)', cursor: 'pointer', zIndex: 30,
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4.5 4v-4H5a2 2 0 0 1-2-2V6z" fill={C.gold} stroke={C.goldBright} strokeWidth="1" />
+            <circle cx="8.2" cy="9" r="0.9" fill={C.pineDark} />
+            <circle cx="12" cy="7.6" r="0.9" fill={C.pineDark} />
+            <circle cx="15.8" cy="9" r="0.9" fill={C.pineDark} />
+            <circle cx="9.6" cy="12" r="0.9" fill={C.pineDark} />
+            <circle cx="14.4" cy="12" r="0.9" fill={C.pineDark} />
+            <circle cx="12" cy="14.5" r="0.9" fill={C.pineDark} />
+          </svg>
+          {chat.length > chatSeenLen && (
+            <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 19, height: 19, borderRadius: 999, background: C.flagRed, color: '#fff', border: `2px solid ${C.pine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, padding: '0 4px' }}>
+              {Math.min(chat.length - chatSeenLen, 99)}{chat.length - chatSeenLen > 99 ? '+' : ''}
+            </span>
+          )}
+        </button>
       )}
 
       {setupOpen && isAdmin && (
