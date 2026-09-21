@@ -4509,11 +4509,11 @@ function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose }
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{
-        position: 'fixed', top: '50%', right: 0, transform: 'translateY(-50%)',
-        background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRight: 'none',
-        borderRadius: '50% 0 0 50%', width: 'min(88vw, 400px)', height: '82vh', maxHeight: 640,
-        display: 'flex', flexDirection: 'column', padding: '20px 16px 16px 44px', boxSizing: 'border-box',
-        boxShadow: '-8px 0 30px rgba(0,0,0,0.4)',
+        position: 'fixed', top: '50%', left: 0, transform: 'translateY(-50%)',
+        background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderLeft: 'none',
+        borderRadius: '0 50% 50% 0', width: 'min(88vw, 400px)', height: '82vh', maxHeight: 640,
+        display: 'flex', flexDirection: 'column', padding: '20px 44px 16px 16px', boxSizing: 'border-box',
+        boxShadow: '8px 0 30px rgba(0,0,0,0.4)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexShrink: 0 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4 }}>Group chat</div>
