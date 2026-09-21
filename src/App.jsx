@@ -2754,9 +2754,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                 <Chip color={pc(p)} style={{ width: 28, height: 28, fontSize: 10.5 }}>{initials(p.name)}</Chip>
                 <span style={{ fontSize: 14, fontWeight: 600, color: C.ivory }}>{pgaName(p.name)}</span>
               </div>
-              <div style={{ width: 84, margin: '0 auto', background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 42, padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 88, margin: '0 auto', background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 44, padding: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                 <button onClick={() => bump(p.id, 1)} style={bubbleBtn}>+</button>
-                <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 34, padding: '4px 0', width: 60, textAlign: 'center', background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
+                <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 34, padding: '14px 0', width: 64, textAlign: 'center', background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
                 <button onClick={() => bump(p.id, -1)} style={bubbleBtn}>−</button>
               </div>
               <div style={{ textAlign: 'center', fontSize: 10.5, color: confirmed ? C.emerald : C.bunker, marginTop: 6 }}>{confirmed ? 'Saved ✓' : 'Tap the score to save'}</div>
@@ -3817,18 +3817,6 @@ function KoSModal({ tournament, updateTournament, onClose }) {
 
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer }) {
   const now = useNow(5000);
-  // Tracks whether the main "tap to score" trigger card is currently on
-  // screen, so the floating badge can appear once it scrolls out of view
-  // and disappear again once it's back — the two are never shown together.
-  const triggerCardRef = useRef(null);
-  const [triggerVisible, setTriggerVisible] = useState(true);
-  useEffect(() => {
-    const el = triggerCardRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(([entry]) => setTriggerVisible(entry.isIntersecting), { threshold: 0 });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
   const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
   const bestBallPositionChanges = usePositionChanges(bbResultsEarly.map(p => p.pairId));
@@ -3924,28 +3912,20 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               </div>
             )}
 
-            <div ref={triggerCardRef} onClick={onOpenDrawer} style={{ background: `linear-gradient(135deg, ${C.gold}29, ${C.gold}0D)`, border: `1px solid ${C.gold}59`, borderRadius: 16, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 11, color: C.goldBright, marginBottom: 3 }}>{whoami ? (nextHole != null ? 'TAP TO SCORE' : 'ROUND COMPLETE') : isAdmin ? 'ADMIN' : 'GET STARTED'}</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: C.ivory }}>{whoami ? (nextHole != null ? `Hole ${nextHole + 1} · Par ${state.pars[nextHole] ?? 4}` : 'View your scorecard') : isAdmin ? 'Enter scores' : "Who's playing? Tap to pick"}</div>
-              </div>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, fontSize: 19, fontWeight: 700 }}>{!whoami || nextHole != null ? '＋' : '▤'}</div>
-            </div>
-
-            {!triggerVisible && (() => {
+            {(() => {
               const ringR = 33, circ = 2 * Math.PI * ringR;
               const pct = whoami ? Math.min(1, thru / state.numHoles) : 0;
               const offset = circ * (1 - pct);
               const displayNum = whoami ? (nextHole != null ? nextHole + 1 : null) : null;
               return (
                 <div onClick={onOpenDrawer} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
-                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.emerald}`, animation: 'beaconPulse 2.4s ease-out infinite' }} />
-                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.emerald}`, animation: 'beaconPulse 2.4s ease-out infinite', animationDelay: '0.8s' }} />
+                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite' }} />
+                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite', animationDelay: '0.8s' }} />
                   <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
                     <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={C.emerald} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={C.blue} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
                   </svg>
-                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, border: `2.5px solid ${C.emerald}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, border: `2.5px solid ${C.blue}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                     <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
                       <line x1="4" y1="14" x2="54" y2="14" stroke={C.flagRed} strokeWidth="1.2" opacity="0.6" />
                       <line x1="4" y1="24" x2="54" y2="24" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
@@ -4481,8 +4461,14 @@ function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded })
 }
 function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, height: '78vh', display: 'flex', flexDirection: 'column', padding: '16px 16px 12px', boxSizing: 'border-box' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        position: 'fixed', top: '50%', right: 0, transform: 'translateY(-50%)',
+        background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRight: 'none',
+        borderRadius: '50% 0 0 50%', width: 'min(88vw, 400px)', height: '82vh', maxHeight: 640,
+        display: 'flex', flexDirection: 'column', padding: '20px 16px 16px 44px', boxSizing: 'border-box',
+        boxShadow: '-8px 0 30px rgba(0,0,0,0.4)',
+      }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexShrink: 0 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4 }}>Group chat</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
@@ -7715,7 +7701,6 @@ export default function RoGreen() {
   const bets = useMemo(() => buildTournamentBets(tournament, roundCode), [tournament, roundCode]);
   const ledger = useMemo(() => buildPlayerLedger(tournament.players, bets), [tournament.players, bets]);
   const goHoleRef = useRef(null);
-  const swipe = useSwipeNav(activeTab, setActiveTab, goHoleRef);
 
   const handleCreate = () => { setCreateChoiceOpen(true); };
   const startCreateFlow = (isQuick) => {
@@ -8096,11 +8081,15 @@ export default function RoGreen() {
       )}
       <div style={{ flexShrink: 0, background: C.turf, borderBottom: `1px solid ${C.turfBorder}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} data-testid="app-header">
         <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: C.ivory }}>{tournament.name}</div>
           <div style={{ fontSize: 11, color: C.ivoryDim, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: C.blueBright, display: 'inline-block', flexShrink: 0, animation: 'pulse 2.2s ease-in-out infinite' }} />
-            {viewAsAdmin ? 'admin · ' : ''}{multiRound ? (
+            {viewAsAdmin && 'admin'}
+            {viewAsAdmin && multiRound && ' · '}
+            {multiRound && (
               <button onClick={() => setRoundSwitcherOpen(true)} style={{ background: 'transparent', border: 'none', color: C.gold, padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>Round {tournament.rounds.findIndex(r => r.id === tournament.activeRoundId) + 1} of {tournament.rounds.length} <ChevronsUpDown size={11} /></button>
-            ) : `${state.numHoles} holes`} · code <span data-testid="round-code">{roundCode}</span>
+            )}
+            {(viewAsAdmin || multiRound) && ' · '}code <span data-testid="round-code">{roundCode}</span>
           </div>
           {(() => {
             const g = state.games || {};
@@ -8142,7 +8131,7 @@ export default function RoGreen() {
         </div>
       )}
 
-      <div onTouchStart={swipe.onTouchStart} onTouchEnd={swipe.onTouchEnd} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
         {!hasPlayers && (
           <div style={{ textAlign: 'center', marginTop: 60, padding: '0 12px' }}>
             <Flag size={40} color={C.gold} style={{ marginBottom: 14 }} />
