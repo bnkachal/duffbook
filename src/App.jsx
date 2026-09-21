@@ -2754,12 +2754,14 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                 <Chip color={pc(p)} style={{ width: 28, height: 28, fontSize: 10.5 }}>{initials(p.name)}</Chip>
                 <span style={{ fontSize: 14, fontWeight: 600, color: C.ivory }}>{pgaName(p.name)}</span>
               </div>
-              <div style={{ width: 88, margin: '0 auto', background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 44, padding: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                <button onClick={() => bump(p.id, 1)} style={bubbleBtn}>+</button>
-                <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 34, padding: '14px 0', width: 64, textAlign: 'center', background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
-                <button onClick={() => bump(p.id, -1)} style={bubbleBtn}>−</button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                <div style={{ width: 88, flexShrink: 0, background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 44, padding: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+                  <button onClick={() => bump(p.id, 1)} style={bubbleBtn}>+</button>
+                  <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 34, padding: '14px 0', width: 64, textAlign: 'center', background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
+                  <button onClick={() => bump(p.id, -1)} style={bubbleBtn}>−</button>
+                </div>
+                <div style={{ fontSize: 10.5, color: confirmed ? C.emerald : C.bunker, maxWidth: 70, lineHeight: 1.4 }}>{confirmed ? 'Saved ✓' : 'Tap # to save'}</div>
               </div>
-              <div style={{ textAlign: 'center', fontSize: 10.5, color: confirmed ? C.emerald : C.bunker, marginTop: 6 }}>{confirmed ? 'Saved ✓' : 'Tap the score to save'}</div>
             </div>
           );
         })}
