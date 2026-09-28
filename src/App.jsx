@@ -3817,7 +3817,7 @@ function KoSModal({ tournament, updateTournament, onClose }) {
   );
 }
 
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules }) {
   const now = useNow(5000);
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
   const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
@@ -3891,6 +3891,11 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const nextHole = whoami ? (() => { for (let i = 0; i < state.numHoles; i++) { if (myScores[i] == null) return i; } return null; })() : 0;
         return (
           <div style={{ padding: '0 16px', marginTop: 10 }}>
+            <div onClick={onOpenRules} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '10px 14px', marginBottom: 12, cursor: 'pointer' }}>
+              <FileText size={15} color={C.gold} />
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ivoryDim, flex: 1 }}>Tournament Rules</span>
+              <ChevronRight size={14} color={C.bunker} />
+            </div>
             {whoami && (
               <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, padding: '10px 0', marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 14px 8px', fontSize: 11, color: C.bunker }}>
@@ -4447,7 +4452,7 @@ function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded })
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
         {chat.length === 0 && <div style={{ color: C.ivoryDim, fontSize: 13, textAlign: 'center', marginTop: 30 }}>No messages yet — say something to the group.</div>}
         {chat.map(m => { const mine = whoami && m.authorId === whoami.id; return (
-          <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '78%' }}>
+          <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '70%' }}>
             {!mine && <div style={{ fontSize: 10, color: C.ivoryDim, marginBottom: 2, marginLeft: 4 }}>{m.authorName}</div>}
             <div style={{ background: mine ? C.gold : C.turf, color: mine ? C.pineDark : C.ivory, border: mine ? 'none' : `1px solid ${C.turfBorder}`, borderRadius: 14, padding: '8px 12px', fontSize: 14, wordBreak: 'break-word' }}>{m.text}</div>
             <div style={{ fontSize: 9, color: C.bunker, marginTop: 2, textAlign: mine ? 'right' : 'left', marginLeft: mine ? 0 : 4, marginRight: mine ? 4 : 0, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtClockTime(m.ts)}</div>
@@ -4512,7 +4517,7 @@ function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose }
         position: 'fixed', top: '50%', left: 0, transform: 'translateY(-50%)',
         background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderLeft: 'none',
         borderRadius: '0 50% 50% 0', width: 'min(88vw, 400px)', height: '82vh', maxHeight: 640,
-        display: 'flex', flexDirection: 'column', padding: '20px 44px 16px 16px', boxSizing: 'border-box',
+        display: 'flex', flexDirection: 'column', padding: '20px 64px 16px 16px', boxSizing: 'border-box',
         boxShadow: '8px 0 30px rgba(0,0,0,0.4)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexShrink: 0 }}>
@@ -6998,10 +7003,88 @@ function FontLoader() {
   );
 }
 
-function RulesModal({ rules, isAdmin, onSave, onClose }) {
+const BUILTIN_RULE_TEMPLATES = [
+  {
+    id: 'builtin-usga', name: 'Standard USGA Rules', builtin: true,
+    text: `USGA Rules govern play, with the following exceptions:
+
+LOST BALL: 3 minutes to look for a lost ball.
+
+OUT OF BOUNDS: marked with white stakes. Relief of stroke and distance applies.
+
+PENALTY AREAS: marked with red or yellow stakes / lines per standard USGA definitions.
+
+BUNKERS: play the ball as it lies. Rake your bunker and leave the rake outside the bunker, away from the line of play.
+
+RULINGS: if unsure about a ruling, play your original ball as it lies, then play a second ball taking the relief you believe is correct. Report both scores to the committee.`,
+  },
+  {
+    id: 'builtin-winter', name: 'USGA Rules + Winter Rules', builtin: true,
+    text: `USGA Rules govern play, with the following exceptions:
+
+NO RADIOS — no music during play. Weather updates are permitted.
+
+WINTER RULES: you may move the ball one club length, no closer to the hole, if your ball lies in the fairway or fringe of the hole being played. You must remain in the same condition you were in.
+
+GROUND UNDER REPAIR: marked areas may be taken with nearest relief, no closer to the hole, no penalty. Notify your opponent before moving your ball.
+
+OUT OF BOUNDS: white stakes with green tops mark the course boundary. Relief of stroke and distance applies.
+
+PENALTY AREAS: marked with white stakes with red tops and red dotted lines.
+
+LOST BALL: 3 minutes to look for a lost ball.
+
+BUNKERS: lift, clean, and place in all formats if your ball lies in a bunker — one club length, no closer to the hole, remaining in the bunker. Still rake your bunker.`,
+  },
+  {
+    id: 'builtin-memberguest', name: 'Member-Guest / Member-Member', builtin: true,
+    text: `FORMAT: [Describe your specific format here — e.g. 1st nine two-person best ball, 2nd nine alternate shot, etc.]
+
+SCORING: All matches are match play — one point per match won, half a point for a tie. If your match is decided before the final hole, continue playing to keep pace with groups behind you.
+
+TEES: [Describe tee assignments by category — e.g. age, gender, or handicap-based.]
+
+PACE OF PLAY: please keep up with the group in front of you. If you lose your position, allow faster groups to play through.
+
+Standard USGA rules govern play otherwise.`,
+  },
+];
+
+function RulesModal({ rules, isAdmin, onSave, onClose, adminAccount }) {
   const [draft, setDraft] = useState(rules || '');
-  const [editing, setEditing] = useState(isAdmin && !rules);
-  const dirty = draft !== (rules || '');
+  const [mode, setMode] = useState(isAdmin && !rules ? 'picker' : 'view'); // picker | editor | view
+  const [savedTemplates, setSavedTemplates] = useState([]);
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin || !adminAccount) return;
+    (async () => {
+      try {
+        const res = await storage.get(`admin-${adminAccount.uid}-rule-templates`, true);
+        if (res && res.value) setSavedTemplates(JSON.parse(res.value));
+      } catch (e) {}
+    })();
+  }, [isAdmin, adminAccount]);
+
+  const allTemplates = [...savedTemplates, ...BUILTIN_RULE_TEMPLATES];
+
+  const openTemplate = (text) => { setDraft(text); setMode('editor'); setSaveAsTemplate(false); setTemplateName(''); };
+
+  const save = async () => {
+    setSaving(true);
+    onSave(draft);
+    if (saveAsTemplate && templateName.trim() && adminAccount) {
+      const newTemplate = { id: 't_' + Date.now(), name: templateName.trim(), text: draft, builtin: false };
+      const next = [newTemplate, ...savedTemplates];
+      setSavedTemplates(next);
+      try { await storage.set(`admin-${adminAccount.uid}-rule-templates`, JSON.stringify(next), true); } catch (e) {}
+    }
+    setSaving(false);
+    setMode('view');
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px', maxHeight: '82vh', overflowY: 'auto', boxSizing: 'border-box' }}>
@@ -7010,20 +7093,63 @@ function RulesModal({ rules, isAdmin, onSave, onClose }) {
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
 
-        {editing ? (
+        {mode === 'picker' && (
+          <div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Pick a starting template, then edit anything you need — or start blank.</div>
+            {allTemplates.map(t => (
+              <button key={t.id} onClick={() => openTemplate(t.text)} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'pointer' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ivory, display: 'flex', alignItems: 'center' }}>
+                    {t.name}
+                    {!t.builtin && <span style={{ fontSize: 9, background: 'rgba(25,195,125,0.15)', color: C.emerald, padding: '2px 7px', borderRadius: 999, marginLeft: 8, fontWeight: 700 }}>Your template</span>}
+                  </div>
+                </div>
+                <span style={{ color: C.bunker }}>›</span>
+              </button>
+            ))}
+            <button onClick={() => openTemplate('')} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'transparent', border: `1px dashed ${C.turfBorder}`, borderRadius: 12, padding: 12, cursor: 'pointer' }}>
+              <div style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: C.goldBright }}>Start from scratch</div>
+              <span style={{ color: C.bunker }}>›</span>
+            </button>
+          </div>
+        )}
+
+        {mode === 'editor' && (
           <>
+            <button onClick={() => setMode('picker')} style={{ background: 'transparent', border: 'none', color: C.goldBright, fontSize: 12, cursor: 'pointer', padding: 0, marginBottom: 10 }}>‹ Choose Different Template</button>
             <textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Format, tee assignments, local rules, winter rules, pace of play, anything players should know — this replaces the printed sheet." rows={12} style={{ width: '100%', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, color: C.ivory, fontSize: 14, lineHeight: 1.6, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'Inter, sans-serif' }} />
+            {adminAccount && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.ivoryDim, background: C.pineDark, borderRadius: 8, padding: '10px 12px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={saveAsTemplate} onChange={e => setSaveAsTemplate(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.gold }} />
+                  Save this as a new template for future tournaments
+                </label>
+                {saveAsTemplate && (
+                  <input value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="Name this template, e.g. Ironwood Winter Rules" style={{ width: '100%', marginTop: 8, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '8px 10px', color: C.ivory, fontSize: 12.5, boxSizing: 'border-box' }} />
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              {rules && <GhostButton onClick={() => { setDraft(rules); setEditing(false); }} style={{ flex: 1, padding: '12px 0', textAlign: 'center' }}>Cancel</GhostButton>}
-              <GoldButton onClick={() => { onSave(draft); setEditing(false); }} style={{ flex: 1, padding: '12px 0' }}>Save Rules</GoldButton>
+              {rules && <GhostButton onClick={() => { setDraft(rules); setMode('view'); }} style={{ flex: 1, padding: '12px 0', textAlign: 'center' }}>Cancel</GhostButton>}
+              <GoldButton onClick={save} disabled={saving || (saveAsTemplate && !templateName.trim())} style={{ flex: 1, padding: '12px 0' }}>Save Rules</GoldButton>
             </div>
           </>
-        ) : rules ? (
+        )}
+
+        {mode === 'view' && rules && (
           <>
+            {!isAdmin && <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.bunker, padding: '9px 11px', background: C.turf, borderRadius: 8, marginBottom: 14 }}><Lock size={12} /> Posted by tournament admin — view only</div>}
             <div style={{ fontSize: 14, lineHeight: 1.7, color: C.ivoryDim, whiteSpace: 'pre-wrap' }}>{rules}</div>
-            {isAdmin && <button onClick={() => setEditing(true)} style={{ marginTop: 16, background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.goldBright, borderRadius: 10, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>Edit Rules</button>}
+            {isAdmin && (
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <button onClick={() => { setDraft(rules); setMode('editor'); }} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.goldBright, borderRadius: 10, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>Edit Rules</button>
+                <button onClick={() => setMode('picker')} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.ivoryDim, borderRadius: 10, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>Choose Different Template</button>
+              </div>
+            )}
           </>
-        ) : (
+        )}
+
+        {mode === 'view' && !rules && (
           <div style={{ textAlign: 'center', padding: '20px 0', color: C.ivoryDim, fontSize: 13 }}>No rules posted for this tournament yet.</div>
         )}
       </div>
@@ -8176,7 +8302,7 @@ export default function RoGreen() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => prev === false ? 'show' : prev); }} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => prev === false ? 'show' : prev); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
@@ -8233,7 +8359,7 @@ export default function RoGreen() {
           if (!dismissed) setProfilePromptOpen(true);
         }
       }} />}
-      {rulesOpen && <RulesModal rules={tournament.rules} isAdmin={viewAsAdmin} onSave={(text) => updateTournament(p => ({ ...p, rules: text }))} onClose={() => setRulesOpen(false)} />}
+      {rulesOpen && <RulesModal rules={tournament.rules} isAdmin={viewAsAdmin} adminAccount={adminAccount} onSave={(text) => updateTournament(p => ({ ...p, rules: text }))} onClose={() => setRulesOpen(false)} />}
       {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
       {betBuilderOpen && <BetBuilderModal state={{ ...state, players: tournament.players.length > state.players.length ? tournament.players : state.players }} templates={betTemplates} editingBet={typeof betBuilderOpen === 'object' ? betBuilderOpen : null} onCreate={(bet) => { addCustomBet(bet); setBetBuilderOpen(false); }} onSave={(id, updates) => { editCustomBet(id, updates); setBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
       {tournamentBetBuilderOpen && isAdmin && <BetBuilderModal state={{ players: tournament.players, numHoles: 18, handicapsEnabled: tournament.handicapsEnabled }} templates={betTemplates} editingBet={typeof tournamentBetBuilderOpen === 'object' ? tournamentBetBuilderOpen : null} onCreate={(bet) => { addTournamentCustomBet(bet); setTournamentBetBuilderOpen(false); }} onSave={(id, updates) => { editTournamentCustomBet(id, updates); setTournamentBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setTournamentBetBuilderOpen(false)} scopeLabel="whole trip" />}
