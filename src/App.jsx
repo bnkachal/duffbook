@@ -2629,7 +2629,7 @@ function scoreContextLabel(diff) {
   return null;
 }
 
-function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview }) {
+function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer }) {
   const numHoles = state.numHoles;
   const initialHole = (() => {
     if (whoami) {
@@ -2783,6 +2783,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                 <Chip color={pc(p)} style={{ width: compact ? 22 : 26, height: compact ? 22 : 26, fontSize: 9, flexShrink: 0 }}>{initials(p.name)}</Chip>
                 <span style={{ fontSize: compact ? 12.5 : 14, fontWeight: 700, color: C.pineDark }}>{pgaName(p.name)}</span>
                 {label && !compact && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, letterSpacing: 0.4, color: draft < par ? '#0C6B45' : draft > par ? '#8A2A1F' : '#6B6455' }}>{label}</span>}
+                {!compact && !viewAsAdmin && whoami && p.id === whoami.id && onSwitchPlayer && (
+                  <button onClick={onSwitchPlayer} style={{ marginLeft: label ? 8 : 'auto', background: 'transparent', border: 'none', color: '#6B6455', fontSize: 10, textDecoration: 'underline', cursor: 'pointer', flexShrink: 0 }}>Not you?</button>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 14 : 22 }}>
@@ -6383,7 +6386,7 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundFlow, onOpenProxy, onOpenReset, onOpenLayout, onOpenRules }) {
+function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundFlow, onOpenProxy, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -6392,6 +6395,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px' }}>
         <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>Round code <strong style={{ color: C.goldBright, letterSpacing: 1 }}>{roundCode}</strong> <Copy size={13} /> {copied && 'copied!'}</button>
         {isAdmin && <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 12 }}>You're an admin · PIN {adminPin}</div>}
+        {whoami && item(User, `Not ${pgaName(whoami.name)}? Switch player`, onSwitchPlayer)}
         {item(FileText, 'Tournament Rules', onOpenRules)}
         {isAdmin && !previewMode && item(User, 'Preview as Player', onEnterPreview)}
         {previewMode && item(LogOut, 'Exit player preview', onExitPreview)}
@@ -7598,6 +7602,12 @@ export default function RoGreen() {
   setActiveFlightsForRender(tournament.flights);
   const [chat, setChat] = useState([]);
   const [whoamiId, setWhoamiId] = useState(null);
+  const [justPickedIdentity, setJustPickedIdentity] = useState(false);
+  useEffect(() => {
+    if (!justPickedIdentity) return;
+    const t = setTimeout(() => setJustPickedIdentity(false), 6000);
+    return () => clearTimeout(t);
+  }, [justPickedIdentity]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTabRaw] = useState('home');
   const setActiveTab = (tab) => { setActiveTabRaw(tab); };
@@ -8052,7 +8062,8 @@ export default function RoGreen() {
   const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
   const saveDeviceProfile = (name) => { setDeviceName(name); try { localStorage.setItem('db:device-profile', JSON.stringify({ name })); } catch(e) {} };
 
-  const setIdentity = (playerId) => { setWhoamiId(playerId); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {} };
+  const setIdentity = (playerId) => { setWhoamiId(playerId); setJustPickedIdentity(true); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {} };
+  const clearIdentity = () => { setWhoamiId(null); setJustPickedIdentity(false); try { localStorage.removeItem('db:whoami-' + roundCode); } catch(e) {} };
   const addSelf = (name) => {
     if (!deviceName) saveDeviceProfile(name);
     const color = CHIP_COLORS[tournament.players.length % CHIP_COLORS.length];
@@ -8328,6 +8339,12 @@ export default function RoGreen() {
       <FontLoader />
       <LibraryLoader />
       {chatFlash && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,117,74,0.25)', zIndex: 198, pointerEvents: 'none', animation: 'birdieFlash 0.6s ease-out forwards' }} />}
+      {justPickedIdentity && whoami && (
+        <div style={{ position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 10px)', left: 12, right: 12, zIndex: 199, background: C.turf, border: `1px solid ${C.gold}`, borderRadius: 12, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
+          <span style={{ fontSize: 12.5, color: C.ivory, flex: 1 }}>You're set as <strong>{pgaName(whoami.name)}</strong></span>
+          <button onClick={clearIdentity} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.goldBright, borderRadius: 8, padding: '6px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Not you?</button>
+        </div>
+      )}
       {showTips === 'show' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowTips('done')}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
@@ -8462,11 +8479,11 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
-      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
+      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} onSwitchPlayer={clearIdentity} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
         if (!adminAccount) {
           let dismissed = false;
           try { dismissed = localStorage.getItem('db:profile-prompt-dismissed') === 'true'; } catch (e) {}
