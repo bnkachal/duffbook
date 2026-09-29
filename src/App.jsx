@@ -460,6 +460,7 @@ function defaultTournament() {
     name: '', adminPin: null,
     players: [], flights: [], handicapsEnabled: false, bettingEnabled: true,
     spectatorsEnabled: false, spectatorShowBetting: false, rules: '',
+    entryFee: 0, payoutSplit: [50, 30, 20],
     rounds: [r0], activeRoundId: r0.id,
     tournamentCustomBets: [],
     ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
@@ -3526,6 +3527,48 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
   const customBets = Array.isArray(state.customBets) ? state.customBets : [];
   const tBets = tournamentCustomBets || [];
   if (!pm.enabled && matches.length === 0 && customBets.length === 0 && tBets.length === 0 && !state.games?.skins?.enabled && !state.games?.nassau?.enabled && !isAdmin) return <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 40 }}>Nothing set up yet — ask the admin to turn on a game in Round setup.</div>;
+  const prizePoolBlock = tournament.entryFee > 0 ? (() => {
+    const useNetHere = state.handicapsEnabled && state.handicapMode !== 'none';
+    const split = tournament.payoutSplit || [50, 30, 20];
+    const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
+    const groupsToShow = flights.length >= 2
+      ? flights.map(f => ({ label: f.name, color: f.color, players: stats.filter(s => s.flightId === f.id) }))
+      : [{ label: null, color: null, players: stats }];
+    return (
+      <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, padding: 14, marginBottom: 16 }}>
+        <SectionHeader title="Prize Pool" sub={`$${tournament.entryFee}/player · if standings held today`} icon={Trophy} iconColor={C.gold} />
+        {groupsToShow.map((grp, gi) => {
+          if (grp.players.length === 0) return null;
+          const pool = tournament.entryFee * grp.players.length;
+          const ranked = [...grp.players].sort((a, b) => (useNetHere ? a.netToPar - b.netToPar : a.toPar - b.toPar));
+          return (
+            <div key={gi} style={{ marginTop: gi > 0 ? 12 : 4 }}>
+              {grp.label && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: grp.color }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: grp.color }}>{grp.label}</span>
+                  <span style={{ fontSize: 10, color: C.bunker, marginLeft: 'auto' }}>Pool: {fmtMoney(pool)}</span>
+                </div>
+              )}
+              {!grp.label && <div style={{ fontSize: 11, color: C.bunker, marginBottom: 6 }}>Pool: {fmtMoney(pool)}</div>}
+              {split.map((pct, i) => {
+                const player = ranked[i];
+                if (!player) return null;
+                const amt = pool * (pct / 100);
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12.5 }}>
+                    <span style={{ color: C.ivoryDim }}>{i + 1}. {pgaName(player.name)}</span>
+                    <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, color: C.goldBright }}>{fmtMoney(amt)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  })() : null;
+
   const pmData = pm.enabled ? computeParimutuel(state) : null;
   const bettingOpen = pm.enabled && !pm.resolved && !(Array.isArray(stats) ? stats : []).some(s => s.thru > (pm.lockAfterHole ?? 18));
   const g = state.games;
@@ -3542,6 +3585,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
   return (
     <div>
       {!isAdmin && !whoami && <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />}
+      {prizePoolBlock}
       {groups.length > 1 && (
         <div style={{ display: 'flex', gap: 18, borderBottom: `1px solid ${C.hairline}`, marginBottom: 18, overflowX: 'auto' }}>
           {groups.map(gr => (
@@ -5780,6 +5824,34 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
               enabled={!!tournament.spectatorShowBetting}
               onToggle={() => updateTournament(p => ({ ...p, spectatorShowBetting: !p.spectatorShowBetting }))}
             />
+          )}
+        </Accordion>
+        <Accordion title="Entry Fee & Prize Pool" badge={tournament.entryFee > 0 ? `$${tournament.entryFee}/player` : 'off'}>
+          <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 10, lineHeight: 1.5 }}>If flights are on, each flight's own entry fees form that flight's own prize pool — fees don't pool across flights.</div>
+          <Field label="Entry fee per player">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: C.ivoryDim, fontSize: 16 }}>$</span>
+              <input type="number" min="0" step="5" value={tournament.entryFee || ''} onChange={e => updateTournament(p => ({ ...p, entryFee: Math.max(0, parseFloat(e.target.value) || 0) }))} placeholder="0" style={{ ...inputStyle, width: 100 }} />
+            </div>
+          </Field>
+          {tournament.entryFee > 0 && (
+            <Field label="Payout split (1st / 2nd / 3rd)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <input type="number" min="0" max="100" value={tournament.payoutSplit[i]} onChange={e => {
+                      const next = [...tournament.payoutSplit];
+                      next[i] = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+                      updateTournament(p => ({ ...p, payoutSplit: next }));
+                    }} style={{ ...inputStyle, width: 56, textAlign: 'center' }} />
+                    <span style={{ color: C.ivoryDim, fontSize: 12 }}>%</span>
+                  </div>
+                ))}
+              </div>
+              {tournament.payoutSplit.reduce((a, b) => a + b, 0) !== 100 && (
+                <div style={{ fontSize: 11, color: C.flagRed, marginTop: 6 }}>Adds up to {tournament.payoutSplit.reduce((a, b) => a + b, 0)}%, not 100% — payouts will use these percentages as entered.</div>
+              )}
+            </Field>
           )}
         </Accordion>
         <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
