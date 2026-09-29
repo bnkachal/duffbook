@@ -1633,7 +1633,7 @@ function buildPlayerLedger(players, bets) {
   bets.forEach(bet => {
     bet.participants.forEach(pid => {
       if (!ledger[pid]) return;
-      const amt = bet.calculatedPayout[pid] || 0;
+      const amt = bet.calculatedPayout?.[pid] || 0;
       ledger[pid].netPosition += amt;
       if (amt > 0) ledger[pid].totalWon += amt; else if (amt < 0) ledger[pid].totalLost += Math.abs(amt);
       if (bet.currentStatus === 'pending') ledger[pid].pendingBets += 1; else ledger[pid].settledBets += 1;
@@ -4619,9 +4619,9 @@ function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
         <SectionHeader title="Pay up" sub="opens the app on your phone, if it's installed" />
         <div style={{ display: 'flex', gap: 10 }}>
           {PAYMENT_APPS.map(app => (
-            <a key={appgaName(p.name)} href={app.href} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textDecoration: 'none', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '12px 8px', color: C.ivory }}>
+            <a key={app.name} href={app.href} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textDecoration: 'none', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '12px 8px', color: C.ivory }}>
               <span style={{ width: 34, height: 34, borderRadius: 999, background: app.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{app.name[0]}</span>
-              <span style={{ fontSize: 11 }}>{appgaName(p.name)}</span>
+              <span style={{ fontSize: 11 }}>{app.name}</span>
             </a>
           ))}
         </div>
