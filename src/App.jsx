@@ -2618,7 +2618,17 @@ function distributeStrokes(count, strokeIndexArr, numHoles) {
   return result;
 }
 
-function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed }) {
+function scoreContextLabel(diff) {
+  if (diff == null) return null;
+  if (diff <= -2) return 'EAGLE';
+  if (diff === -1) return 'BIRDIE';
+  if (diff === 0) return 'PAR';
+  if (diff === 1) return 'BOGEY';
+  if (diff === 2) return 'DOUBLE BOGEY';
+  return null;
+}
+
+function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview }) {
   const numHoles = state.numHoles;
   const initialHole = (() => {
     if (whoami) {
@@ -2627,12 +2637,16 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     return 0;
   })();
   const [viewHole, setViewHole] = useState(initialHole);
-  const [fullMode, setFullMode] = useState(false);
+  const [reviewMode, setReviewMode] = useState(!!initialReview);
   const [draftScores, setDraftScores] = useState({});
 
   const par = state.pars[viewHole] ?? 4;
   const si = state.strokeIndex[viewHole] ?? (viewHole + 1);
+  const yards = state.yardage?.[viewHole];
   const playersToShow = viewAsAdmin ? state.players : (whoami ? [whoami] : []);
+  const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
+  const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
+  const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
 
   // Local draft only — nothing here touches Firebase. Reset whenever the
   // viewed hole changes, so leaving a hole without confirming discards
@@ -2661,9 +2675,11 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   };
 
   const bump = (playerId, delta) => {
+    if (!viewAsAdmin && isSubmitted) return;
     setDraftScores(prev => ({ ...prev, [playerId]: Math.max(1, (prev[playerId] ?? par) + delta) }));
   };
   const confirm = (playerId) => {
+    if (!viewAsAdmin && isSubmitted) return;
     setScoreVal(playerId, viewHole, getDraft(playerId));
     if (viewHole === numHoles - 1 && whoami && playerId === whoami.id) onFinalHoleConfirmed?.(playerId);
   };
@@ -2671,20 +2687,29 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     const saved = state.scores[playerId]?.[viewHole];
     return saved != null && draftScores[playerId] === saved;
   };
+  const netInfoFor = (playerId) => {
+    if (!useNet) return null;
+    const player = state.players.find(pl => pl.id === playerId);
+    if (!player) return null;
+    const ch = getCourseHandicap(player, state);
+    const strokesHere = strokesOnHole(ch, state.strokeIndex, viewHole);
+    return { strokes: strokesHere, net: getDraft(playerId) - strokesHere };
+  };
 
-  const bubbleBtn = { width: 40, height: 40, borderRadius: '50%', background: C.gold, border: 'none', color: C.pineDark, fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
-  const bubbleBtnSm = { ...bubbleBtn, width: 30, height: 30, fontSize: 16 };
+  const goHole = (delta) => setViewHole(v => Math.max(0, Math.min(numHoles - 1, v + delta)));
 
-  if (fullMode) {
+  // ===== Review / submit screen (Hole 18 → Review, or reopening after submission) =====
+  if (reviewMode) {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
-        <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto' }}>
-          <div style={{ width: 36, height: 4, background: C.turfBorder, borderRadius: 999, margin: '4px auto 14px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <span style={{ fontSize: 18, fontWeight: 700, color: C.ivory }}>Full Scorecard</span>
-            <button onClick={() => setFullMode(false)} style={{ fontSize: 12, color: C.goldBright, background: `${C.gold}1A`, border: `1px solid ${C.gold}4D`, borderRadius: 999, padding: '6px 11px', cursor: 'pointer' }}>◂ Back to hole {viewHole + 1}</button>
+        <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: C.ivory, textTransform: 'uppercase' }}>{isSubmitted ? 'Your Scorecard' : 'Review Scorecard'}</span>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
           </div>
+          <div style={{ fontSize: 11.5, color: C.bunker, marginBottom: 14 }}>{isSubmitted ? 'Submitted — read only. Tap Edit to make changes.' : 'Check everything before submitting your final card.'}</div>
+
           {[[0, Math.ceil(numHoles / 2), 'Front nine'], [Math.ceil(numHoles / 2), numHoles, 'Back nine']].map(([from, to, label]) => (
             <div key={label}>
               <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 4px' }}>{label}</div>
@@ -2695,7 +2720,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                   const p = state.pars[hIdx] ?? 4;
                   const cls = s == null ? C.bunker : s < p ? C.emerald : s > p ? C.flagRed : C.ivory;
                   return (
-                    <div key={hIdx} onClick={() => { setViewHole(hIdx); setFullMode(false); }} style={{ background: C.turf, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: 'pointer' }}>
+                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: C.turf, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
                       <div style={{ fontSize: 9, color: C.bunker }}>{hIdx + 1}</div>
                       <div style={{ fontSize: 8, color: C.bunker }}>Par {p}</div>
                       <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
@@ -2705,6 +2730,17 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
               </div>
             </div>
           ))}
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            {isSubmitted ? (
+              <GhostButton onClick={() => whoami && unlockScorecard?.(whoami.id)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Edit Scorecard</GhostButton>
+            ) : (
+              <>
+                <GhostButton onClick={() => setReviewMode(false)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Keep Editing</GhostButton>
+                <GoldButton onClick={() => { if (whoami) submitScorecard?.(whoami.id); onClose(); }} style={{ flex: 1, padding: '13px 0' }}>Submit Final Scorecard</GoldButton>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2713,13 +2749,14 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto' }}>
-        <div style={{ width: 36, height: 4, background: C.turfBorder, borderRadius: 999, margin: '4px auto 14px' }} />
+      <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+        </div>
 
-        <div style={{ textAlign: 'center', marginBottom: 18 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, color: C.ivory, fontFamily: 'Inter, sans-serif' }}>{viewHole + 1}</div>
-          <div style={{ fontSize: 12, color: C.bunker, marginTop: 2, marginBottom: 10 }}>Par {par} · SI {si}</div>
-          <button onClick={() => setFullMode(true)} style={{ fontSize: 11.5, color: C.goldBright, background: `${C.gold}1A`, border: `1px solid ${C.gold}4D`, borderRadius: 999, padding: '6px 11px', cursor: 'pointer' }}>▤ Full scorecard</button>
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: C.goldBright, fontWeight: 700, letterSpacing: 0.5 }}>HOLE {viewHole + 1}</div>
+          <div style={{ fontSize: 13, color: C.ivoryDim, marginTop: 3 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
         </div>
 
         {playersToShow.length === 0 && (
@@ -2732,43 +2769,52 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         {playersToShow.map(p => {
           const draft = getDraft(p.id);
           const confirmed = isConfirmed(p.id);
-          const numStyle = { fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, cursor: 'pointer', borderRadius: 12, transition: 'background 0.2s, color 0.2s' };
-          if (viewAsAdmin) {
-            return (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: `1px solid ${C.hairline}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <Chip color={pc(p)} style={{ width: 28, height: 28, fontSize: 10.5, flexShrink: 0 }}>{initials(p.name)}</Chip>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 999, padding: 4, flexShrink: 0 }}>
-                  <button onClick={() => bump(p.id, -1)} style={bubbleBtnSm}>−</button>
-                  <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 18, width: 22, textAlign: 'center', padding: 0, background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
-                  <button onClick={() => bump(p.id, 1)} style={bubbleBtnSm}>+</button>
-                </div>
-              </div>
-            );
-          }
+          const label = scoreContextLabel(draft - par);
+          const netInfo = netInfoFor(p.id);
+          const compact = viewAsAdmin;
           return (
-            <div key={p.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, justifyContent: 'center' }}>
-                <Chip color={pc(p)} style={{ width: 28, height: 28, fontSize: 10.5 }}>{initials(p.name)}</Chip>
-                <span style={{ fontSize: 14, fontWeight: 600, color: C.ivory }}>{pgaName(p.name)}</span>
+            <div key={p.id} style={{
+              background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, borderRadius: compact ? 12 : 16,
+              padding: compact ? '10px 12px' : '16px 16px 14px', marginBottom: 10,
+              boxShadow: '0 3px 14px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.5)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: compact ? 6 : 12 }}>
+                <Chip color={pc(p)} style={{ width: compact ? 22 : 26, height: compact ? 22 : 26, fontSize: 9, flexShrink: 0 }}>{initials(p.name)}</Chip>
+                <span style={{ fontSize: compact ? 12.5 : 14, fontWeight: 700, color: C.pineDark }}>{pgaName(p.name)}</span>
+                {label && !compact && <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, letterSpacing: 0.4, color: draft < par ? '#0C6B45' : draft > par ? '#8A2A1F' : '#6B6455' }}>{label}</span>}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-                <div style={{ width: 88, flexShrink: 0, background: C.turfLight, border: `1px solid ${C.turfBorder}`, borderRadius: 44, padding: '10px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                  <button onClick={() => bump(p.id, 1)} style={bubbleBtn}>+</button>
-                  <div onClick={() => confirm(p.id)} style={{ ...numStyle, fontSize: 34, padding: '14px 0', width: 64, textAlign: 'center', background: confirmed ? C.emerald : 'transparent', color: confirmed ? '#06251a' : C.ivory }}>{draft}</div>
-                  <button onClick={() => bump(p.id, -1)} style={bubbleBtn}>−</button>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 14 : 22 }}>
+                <button onClick={() => bump(p.id, -1)} style={{ width: compact ? 34 : 46, height: compact ? 34 : 46, borderRadius: '50%', background: C.pineDark, border: 'none', color: C.ivory, fontSize: compact ? 16 : 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>−</button>
+                <div onClick={() => confirm(p.id)} style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: compact ? 28 : 44, color: confirmed ? '#0C6B45' : C.pineDark, cursor: 'pointer', minWidth: compact ? 44 : 64, textAlign: 'center', borderRadius: 12, transition: 'color 0.2s' }}>{draft}</div>
+                <button onClick={() => bump(p.id, 1)} style={{ width: compact ? 34 : 46, height: compact ? 34 : 46, borderRadius: '50%', background: C.pineDark, border: 'none', color: C.ivory, fontSize: compact ? 16 : 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>+</button>
+              </div>
+
+              <div style={{ textAlign: 'center', marginTop: compact ? 4 : 8, fontSize: compact ? 10 : 11.5, color: confirmed ? '#0C6B45' : '#6B6455', fontWeight: 600 }}>
+                {confirmed ? 'Saved ✓' : 'Tap # to save'}
+              </div>
+
+              {(useNet && netInfo) || (label && compact) ? (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 6, fontSize: 10, color: '#6B6455', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700 }}>
+                  {useNet && netInfo && <span>GROSS {draft} · NET {netInfo.net} · {netInfo.strokes} STROKE{netInfo.strokes === 1 ? '' : 'S'}</span>}
+                  {label && compact && <span style={{ fontFamily: 'Inter, sans-serif' }}>{label}</span>}
                 </div>
-                <div style={{ fontSize: 10.5, color: confirmed ? C.emerald : C.bunker, maxWidth: 70, lineHeight: 1.4 }}>{confirmed ? 'Saved ✓' : 'Tap # to save'}</div>
-              </div>
+              ) : null}
             </div>
           );
         })}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-          <GhostButton onClick={onClose} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Done for now</GhostButton>
-          {viewHole < numHoles - 1 && <GoldButton onClick={() => setViewHole(v => Math.min(numHoles - 1, v + 1))} style={{ flex: 1, padding: '13px 0' }}>Hole {viewHole + 2} ▸</GoldButton>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          {viewHole === 0 ? (
+            <GhostButton onClick={onClose} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Close</GhostButton>
+          ) : (
+            <GhostButton onClick={() => goHole(-1)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>‹ Hole {viewHole}</GhostButton>
+          )}
+          {viewHole === numHoles - 1 ? (
+            <GoldButton onClick={() => setReviewMode(true)} style={{ flex: 1, padding: '13px 0' }}>Review Scorecard</GoldButton>
+          ) : (
+            <GoldButton onClick={() => goHole(1)} style={{ flex: 1, padding: '13px 0' }}>Hole {viewHole + 2} ›</GoldButton>
+          )}
         </div>
       </div>
     </div>
@@ -3817,7 +3863,7 @@ function KoSModal({ tournament, updateTournament, onClose }) {
   );
 }
 
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview }) {
   const now = useNow(5000);
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
   const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
@@ -3920,40 +3966,34 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             )}
 
             {(() => {
-              const ringR = 33, circ = 2 * Math.PI * ringR;
-              const pct = whoami ? Math.min(1, thru / state.numHoles) : 0;
-              const offset = circ * (1 - pct);
-              const displayNum = whoami ? (nextHole != null ? nextHole + 1 : null) : null;
+              const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
+              const badgeState = !whoami ? 'start' : isSubmitted ? 'done' : thru === 0 ? 'start' : nextHole == null ? 'review' : 'progress';
+              const handleTap = badgeState === 'review' || badgeState === 'done' ? onOpenDrawerReview : onOpenDrawer;
+              const shouldPulse = badgeState !== 'done';
               return (
-                <div onClick={onOpenDrawer} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
-                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite' }} />
-                  <div style={{ position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite', animationDelay: '0.8s' }} />
-                  <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
-                    <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
-                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={C.blue} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
-                  </svg>
-                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, border: `2.5px solid ${C.blue}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                    <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-                      <line x1="4" y1="14" x2="54" y2="14" stroke={C.flagRed} strokeWidth="1.2" opacity="0.6" />
-                      <line x1="4" y1="24" x2="54" y2="24" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="4" y1="34" x2="54" y2="34" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="4" y1="44" x2="54" y2="44" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="14" y1="4" x2="14" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="24" y1="4" x2="24" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="34" y1="4" x2="34" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                      <line x1="44" y1="4" x2="44" y2="54" stroke={C.gold} strokeWidth="1.3" opacity="0.5" />
-                    </svg>
-                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
-                      {displayNum != null ? (
-                        <>
-                          <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: 0.6, color: C.gold, marginBottom: 1 }}>HOLE</span>
-                          <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: 20, color: C.pineDark }}>{displayNum}</span>
-                        </>
-                      ) : (
-                        <Check size={22} color={C.pineDark} strokeWidth={3} />
-                      )}
-                    </div>
-                  </div>
+                <div onClick={handleTap} style={{
+                  position: 'fixed', bottom: 78, right: 16, zIndex: 30, cursor: 'pointer',
+                  minWidth: 64, height: 64, borderRadius: '50%',
+                  background: badgeState === 'done' ? C.emerald : C.gold,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)', border: `2px solid ${C.pineDark}`,
+                  animation: shouldPulse ? 'beaconPulse2 2.2s ease-in-out infinite' : 'none',
+                }}>
+                  {badgeState === 'done' ? (
+                    <Check size={26} color="#06251a" strokeWidth={3} />
+                  ) : badgeState === 'review' ? (
+                    <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: C.pineDark, letterSpacing: 0.4 }}>REVIEW</span>
+                  ) : badgeState === 'start' ? (
+                    <>
+                      <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 10, color: C.pineDark, lineHeight: 1.2 }}>ENTER</span>
+                      <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 10, color: C.pineDark, lineHeight: 1.2 }}>SCORE</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 8, fontWeight: 800, color: C.pineDark, letterSpacing: 0.4 }}>HOLE</span>
+                      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: 22, color: C.pineDark }}>{nextHole + 1}</span>
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -6978,6 +7018,7 @@ function FontLoader() {
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
+      @keyframes beaconPulse2 { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
       @keyframes birdFly {
@@ -7501,6 +7542,7 @@ export default function RoGreen() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerInitialReview, setDrawerInitialReview] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
@@ -8302,7 +8344,7 @@ export default function RoGreen() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => prev === false ? 'show' : prev); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => prev === false ? 'show' : prev); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
@@ -8352,7 +8394,7 @@ export default function RoGreen() {
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
-      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} onClose={() => setDrawerOpen(false)} onPick={setIdentity} onAddSelf={addSelf} onFinalHoleConfirmed={() => {
+      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
         if (!adminAccount) {
           let dismissed = false;
           try { dismissed = localStorage.getItem('db:profile-prompt-dismissed') === 'true'; } catch (e) {}
