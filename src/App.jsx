@@ -2104,10 +2104,89 @@ function ProfilePage({ adminAccount, cloudTournaments, onCreateTournament, onQui
   );
 }
 
+// ==== Owner Console: centralized analytics definitions ====
+// Every metric in the console reads through these, never recomputed
+// independently per-component - the spec's own explicit requirement.
+function isExcludedFromAnalytics(raw) { return !!raw.excludedFromAnalytics; }
+function tournamentHasEnabledGame(raw) {
+  return (raw.rounds || []).some(r => Object.values(r.games || {}).some(g => g && g.enabled));
+}
+function tournamentHasLegitimateScore(raw) {
+  return (raw.rounds || []).some(r => Object.values(r.scores || {}).some(arr => Array.isArray(arr) && arr.some(s => s != null)));
+}
+// Activated: ≥2 players, ≥1 configured game, ≥1 real hole score. Matches the
+// spec's initial definition exactly - not a proxy for it.
+function isActivatedTournament(raw) {
+  if (isExcludedFromAnalytics(raw)) return false;
+  if ((raw.players || []).length < 2) return false;
+  if (!tournamentHasEnabledGame(raw)) return false;
+  if (!tournamentHasLegitimateScore(raw)) return false;
+  return true;
+}
+// Completed: activated, and at least one round has someone who actually
+// submitted a final scorecard - a real, meaningful signal that now exists
+// thanks to the submittedPlayers mechanism built for the score-entry redesign,
+// rather than an inferred/guessed completion state.
+function isCompletedTournament(raw) {
+  if (!isActivatedTournament(raw)) return false;
+  return (raw.rounds || []).some(r => Array.isArray(r.submittedPlayers) && r.submittedPlayers.length > 0);
+}
+// Organizer: an account with ≥1 activated tournament they created.
+function isOrganizer(activatedCountForUid) { return activatedCountForUid >= 1; }
+function isRepeatOrganizer(activatedCountForUid) { return activatedCountForUid >= 2; }
+// Meaningful activity: creating an activated tournament, or having a real
+// hole score recorded as a participant - not merely opening the app or
+// being listed as a player with no scores.
+function tournamentActivityTimestamps(raw) {
+  const stamps = [];
+  (raw.rounds || []).forEach(r => {
+    Object.values(r.scoreUpdatedAt || {}).forEach(ts => { if (ts) stamps.push(ts); });
+  });
+  return stamps;
+}
+
+function resolveDateRange(preset, customStart, customEnd) {
+  const now = Date.now();
+  const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const endOfDay = (ts) => { const d = new Date(ts); d.setHours(23, 59, 59, 999); return d.getTime(); };
+  if (preset === '7d') return { start: now - 7 * 86400000, end: now };
+  if (preset === '30d') return { start: now - 30 * 86400000, end: now };
+  if (preset === '90d') return { start: now - 90 * 86400000, end: now };
+  if (preset === 'thisMonth') { const d = new Date(); d.setDate(1); return { start: startOfDay(d.getTime()), end: now }; }
+  if (preset === 'lastMonth') {
+    const d = new Date(); d.setDate(1);
+    const endD = new Date(d.getTime() - 1);
+    const startD = new Date(endD.getFullYear(), endD.getMonth(), 1);
+    return { start: startOfDay(startD.getTime()), end: endOfDay(endD.getTime()) };
+  }
+  if (preset === 'thisYear') { const d = new Date(); d.setMonth(0, 1); return { start: startOfDay(d.getTime()), end: now }; }
+  if (preset === 'custom') return { start: customStart ?? 0, end: customEnd ?? now };
+  return { start: 0, end: now }; // 'all'
+}
+function previousEquivalentRange({ start, end }) {
+  const span = Math.max(1, end - start);
+  return { start: start - span, end: start - 1 };
+}
+// Handles the zero-previous case explicitly per the spec - never an infinite
+// percentage. Returns either a percentage change or, when the previous
+// period was zero, a plain absolute-count description instead.
+function periodChange(current, previous) {
+  if (previous === 0) return current > 0 ? { kind: 'absolute', value: current } : { kind: 'flat' };
+  const pct = Math.round(((current - previous) / previous) * 100);
+  return { kind: 'pct', value: pct };
+}
+function fmtPeriodLabel(range) {
+  const f = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${f(range.start)} – ${f(range.end)}`;
+}
+
 function OwnerConsole({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [registry, setRegistry] = useState({});
   const [details, setDetails] = useState({});
+  const [datePreset, setDatePreset] = useState('30d');
+  const [customStart, setCustomStart] = useState(null);
+  const [customEnd, setCustomEnd] = useState(null);
   const now = useNow(15000);
 
   useEffect(() => {
@@ -2130,6 +2209,7 @@ function OwnerConsole({ onBack }) {
             presence: activeRound?.presence || {},
             bettingEnabled: raw.bettingEnabled !== false,
             gamesUsed: activeRound?.games ? Object.entries(activeRound.games).filter(([, v]) => v && v.enabled).map(([k]) => k) : [],
+            raw,
           };
         } catch (e) { /* skip tournaments that fail to load */ }
       }));
@@ -2149,41 +2229,60 @@ function OwnerConsole({ onBack }) {
     if (activeCount > 0) { liveTournaments++; liveNow += activeCount; }
   });
 
-  // Growth — last 14 days
-  const dayBuckets = {};
-  codes.forEach(code => {
-    const ts = registry[code]?.createdAt || registry[code]?.registeredAt;
-    if (!ts) return;
-    const day = new Date(ts).toISOString().slice(0, 10);
-    dayBuckets[day] = (dayBuckets[day] || 0) + 1;
-  });
-  const last14 = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(now - (13 - i) * 86400000).toISOString().slice(0, 10);
-    return { day: d, count: dayBuckets[d] || 0 };
-  });
-  const maxDay = Math.max(1, ...last14.map(d => d.count));
+  // One authoritative period drives every metric below, per the spec's
+  // explicit requirement - nothing here interprets the date range on its own.
+  const range = resolveDateRange(datePreset, customStart, customEnd);
+  const prevRange = previousEquivalentRange(range);
+  const inRange = (ts, r) => ts != null && ts >= r.start && ts <= r.end;
 
-  // Format & feature popularity
+  const codesWithData = codes.filter(c => details[c]?.raw);
+  const excludedCodes = new Set(codesWithData.filter(c => isExcludedFromAnalytics(details[c].raw)));
+  const activeCodes = codesWithData.filter(c => !excludedCodes.has(c));
+
+  const createdAtFor = (code) => registry[code]?.createdAt || registry[code]?.registeredAt || null;
+
+  const countForRange = (r) => {
+    const createdInRange = activeCodes.filter(c => inRange(createdAtFor(c), r));
+    const activatedInRange = createdInRange.filter(c => isActivatedTournament(details[c].raw));
+    const completedInRange = createdInRange.filter(c => isCompletedTournament(details[c].raw));
+    const organizerUids = new Set(activatedInRange.map(c => registry[c]?.creatorUid).filter(Boolean));
+    return { created: createdInRange.length, activated: activatedInRange.length, completed: completedInRange.length, organizers: organizerUids.size };
+  };
+  const current = countForRange(range);
+  const previous = countForRange(prevRange);
+
+  // Format & feature popularity — scoped to the selected period's activated tournaments
+  const activatedInRangeCodes = activeCodes.filter(c => inRange(createdAtFor(c), range) && isActivatedTournament(details[c].raw));
   const formatCounts = {};
   let bettingOn = 0;
-  codes.forEach(code => {
+  activatedInRangeCodes.forEach(code => {
     const d = details[code];
-    if (!d) return;
     if (d.bettingEnabled) bettingOn++;
     d.gamesUsed.forEach(g => { formatCounts[g] = (formatCounts[g] || 0) + 1; });
   });
   const formatList = Object.entries(formatCounts).sort((a, b) => b[1] - a[1]);
 
-  // Retention (based on who's actually hosted tournaments)
-  const byCreator = {};
-  codes.forEach(code => {
+  // Organizer retention — a lifetime concept, deliberately not scoped to the
+  // selected period, since "repeat" only makes sense across all of a
+  // creator's history.
+  const activatedByCreator = {};
+  activeCodes.forEach(code => {
+    if (!isActivatedTournament(details[code].raw)) return;
     const uid = registry[code]?.creatorUid;
     if (!uid) return;
-    byCreator[uid] = (byCreator[uid] || 0) + 1;
+    activatedByCreator[uid] = (activatedByCreator[uid] || 0) + 1;
   });
-  const hostingCreators = Object.values(byCreator);
-  const returning = hostingCreators.filter(n => n >= 2).length;
-  const oneTime = hostingCreators.filter(n => n === 1).length;
+  const organizerCounts = Object.values(activatedByCreator);
+  const totalOrganizers = organizerCounts.length;
+  const returning = organizerCounts.filter(n => isRepeatOrganizer(n)).length;
+  const oneTime = organizerCounts.filter(n => n === 1).length;
+
+  const ChangeTag = ({ change }) => {
+    if (change.kind === 'flat') return null;
+    if (change.kind === 'absolute') return <span style={{ fontSize: 10.5, color: C.emerald, marginLeft: 6 }}>+{change.value} this period</span>;
+    const up = change.value >= 0;
+    return <span style={{ fontSize: 10.5, color: up ? C.emerald : C.flagRed, marginLeft: 6 }}>{up ? '↑' : '↓'} {Math.abs(change.value)}% vs previous</span>;
+  };
 
   const StatCard = ({ label, value, sub }) => (
     <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
@@ -2205,34 +2304,37 @@ function OwnerConsole({ onBack }) {
         <div style={{ textAlign: 'center', color: C.ivoryDim, marginTop: 60 }}>Loading every tournament — this reads each one individually, give it a moment…</div>
       ) : (
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 6, paddingBottom: 2 }}>
+            {[['7d', '7 Days'], ['30d', '30 Days'], ['90d', '90 Days'], ['thisMonth', 'This Month'], ['lastMonth', 'Last Month'], ['thisYear', 'This Year'], ['all', 'All Time']].map(([key, label]) => (
+              <button key={key} onClick={() => setDatePreset(key)} style={{ flexShrink: 0, background: datePreset === key ? C.gold : C.turf, color: datePreset === key ? C.pineDark : C.ivoryDim, border: `1px solid ${datePreset === key ? C.gold : C.turfBorder}`, borderRadius: 999, padding: '6px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: C.bunker, marginBottom: 20 }}>Analytics Period: {fmtPeriodLabel(range)}</div>
+
           <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Live right now</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
             <StatCard label="Concurrent users" value={liveNow} />
             <StatCard label="Live tournaments" value={liveTournaments} />
           </div>
 
-          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Growth</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-            <StatCard label="Total tournaments" value={total} />
-            <StatCard label="Total accounts" value={hostingCreators.length} />
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Tournaments</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <StatCard label="Created" value={current.created} sub={<ChangeTag change={periodChange(current.created, previous.created)} />} />
+            <StatCard label="Activated" value={current.activated} sub={<ChangeTag change={periodChange(current.activated, previous.activated)} />} />
           </div>
-          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', marginBottom: 24 }}>
-            <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 8 }}>New tournaments, last 14 days</div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 50 }}>
-              {last14.map(d => (
-                <div key={d.day} title={`${d.day}: ${d.count}`} style={{ flex: 1, height: `${Math.max(4, (d.count / maxDay) * 50)}px`, background: d.count > 0 ? C.gold : C.turfBorder, borderRadius: 2 }} />
-              ))}
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
+            <StatCard label="Completed" value={current.completed} sub={<ChangeTag change={periodChange(current.completed, previous.completed)} />} />
+            <StatCard label="Organizers active" value={current.organizers} sub={<ChangeTag change={periodChange(current.organizers, previous.organizers)} />} />
           </div>
 
-          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>What people use</div>
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>What people use — activated tournaments this period</div>
           <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
               <span style={{ color: C.ivoryDim }}>Betting turned on</span>
-              <span style={{ fontWeight: 700 }}>{total > 0 ? Math.round((bettingOn / total) * 100) : 0}%</span>
+              <span style={{ fontWeight: 700 }}>{activatedInRangeCodes.length > 0 ? Math.round((bettingOn / activatedInRangeCodes.length) * 100) : 0}%</span>
             </div>
             {formatList.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.bunker }}>No format data yet.</div>
+              <div style={{ fontSize: 12, color: C.bunker }}>No format data in this period.</div>
             ) : formatList.map(([key, count]) => (
               <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                 <span style={{ color: C.ivoryDim, textTransform: 'capitalize' }}>{key}</span>
@@ -2241,10 +2343,30 @@ function OwnerConsole({ onBack }) {
             ))}
           </div>
 
-          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Retention</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <StatCard label="Returning creators" value={returning} sub="2+ tournaments" />
-            <StatCard label="One-and-done" value={oneTime} sub="just 1 tournament" />
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Organizer retention — lifetime, not period-scoped</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 24 }}>
+            <StatCard label="Total organizers" value={totalOrganizers} />
+            <StatCard label="Repeat" value={returning} sub="2+ activated" />
+            <StatCard label="One-and-done" value={oneTime} sub="just 1 activated" />
+          </div>
+
+          <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Tournaments — exclude your own testing from the numbers above</div>
+          <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+            {codesWithData.slice(0, 40).map(code => {
+              const excluded = isExcludedFromAnalytics(details[code].raw);
+              return (
+                <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, opacity: excluded ? 0.5 : 1 }}>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.ivoryDim }}>{details[code].name}</span>
+                  {excluded && <span style={{ fontSize: 9, color: C.flagRed, fontWeight: 700 }}>EXCLUDED</span>}
+                  <button onClick={async () => {
+                    const next = { ...details[code].raw, excludedFromAnalytics: !excluded };
+                    try { await storage.set(tournamentKey(code), JSON.stringify(next), true); } catch (e) {}
+                    setDetails(prev => ({ ...prev, [code]: { ...prev[code], raw: next } }));
+                  }} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.goldBright, borderRadius: 6, padding: '3px 8px', fontSize: 10.5, cursor: 'pointer', flexShrink: 0 }}>{excluded ? 'Include' : 'Exclude'}</button>
+                </div>
+              );
+            })}
+            {codesWithData.length > 40 && <div style={{ fontSize: 10.5, color: C.bunker, marginTop: 4 }}>Showing first 40 of {codesWithData.length} — a searchable list is planned for a future pass.</div>}
           </div>
         </div>
       )}
