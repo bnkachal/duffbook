@@ -329,20 +329,67 @@ function singlesStrokeHoles(chA, chB, strokeIndexArr, numHoles) {
     holesForB: strokesToB > 0 ? strokeHoleIndices : [],
   };
 }
-// 2v2 Best Ball off low man: low man = lowest individual CH among all 4 in the match.
-// Each other player's strokes = their CH - low man CH. Team combined = sum of teammates' adjusted strokes.
-function lowManStrokes(match, state) {
+// ==== G21: Scoring Display + Stroke Allocation engine ====
+// Backward compatible by design: every tournament created before this feature
+// has handicapMode ('none'|'full'|'low-man') and nothing else. Rather than
+// migrating existing data, these resolvers derive the new, richer settings
+// from the old field whenever the new fields haven't been explicitly set —
+// so an existing tournament's behavior is byte-for-byte unchanged unless an
+// admin actively opens the new settings and changes something.
+function getScoringDisplay(tournament) {
+  if (tournament.scoringDisplay) return tournament.scoringDisplay;
+  if (!tournament.handicapsEnabled || tournament.handicapMode === 'none' || !tournament.handicapMode) return 'gross';
+  return 'net';
+}
+function getAllocationConfig(tournament) {
+  if (tournament.handicapAllowanceType) {
+    return { type: tournament.handicapAllowanceType, percent: tournament.handicapAllowancePercent ?? 100 };
+  }
+  if (tournament.handicapMode === 'low-man') return { type: 'offLow', percent: 100 };
+  return { type: 'full', percent: 100 };
+}
+// Playing handicap: course handicap with the allowance percentage applied.
+// Percentage is applied here, before any relative (off-low) adjustment —
+// matching the spec's example (85% applied first, then zeroed against the
+// group's lowest resulting value), not the other way around.
+function getPlayingHandicap(player, state, allocConfig) {
+  const ch = getCourseHandicap(player, state);
+  if (!allocConfig || allocConfig.type === 'full' || allocConfig.type === 'offLow') return ch;
+  const pct = allocConfig.percent ?? 100;
+  return Math.round(ch * (pct / 100));
+}
+// Generalized off-low: works on any group of player IDs (a match's two sides,
+// a stroke-play field, a flight, a Stableford group) rather than being coupled
+// to match play's sideA/sideB shape. Returns each player's adjusted strokes
+// (their playing handicap minus the group's lowest playing handicap, floored
+// at 0) plus the group's low value for reference.
+function getRelativeStrokes(playerIds, state, allocConfig) {
+  const phById = {};
+  playerIds.forEach(id => {
+    const p = state.players.find(pl => pl.id === id);
+    phById[id] = p ? getPlayingHandicap(p, state, allocConfig) : null;
+  });
+  const validPhs = playerIds.map(id => phById[id]).filter(ph => ph != null);
+  if (validPhs.length === 0) return { byId: {}, low: null };
+  const low = Math.min(...validPhs);
+  const byId = {};
+  playerIds.forEach(id => { byId[id] = phById[id] != null ? Math.max(0, phById[id] - low) : 0; });
+  return { byId, low };
+}
+// 2v2 Best Ball off low man: low man = lowest individual playing handicap among
+// all 4 in the match. Each other player's strokes = their PH - low man PH.
+// Team combined = sum of teammates' adjusted strokes. Implemented on top of
+// getRelativeStrokes so match play and every other format share one engine —
+// this function's own return shape is unchanged for its existing callers.
+function lowManStrokes(match, state, allocConfig) {
   const allIds = [...(match.sideA || []), ...(match.sideB || [])];
+  const { byId: adjById, low: lowMan } = getRelativeStrokes(allIds, state, allocConfig || { type: 'offLow', percent: 100 });
+  if (lowMan == null) return null;
   const chById = {};
   allIds.forEach(id => {
     const p = state.players.find(pl => pl.id === id);
     chById[id] = p ? getCourseHandicap(p, state) : null;
   });
-  const validChs = allIds.map(id => chById[id]).filter(ch => ch != null);
-  if (validChs.length === 0) return null;
-  const lowMan = Math.min(...validChs);
-  const adjById = {};
-  allIds.forEach(id => { adjById[id] = chById[id] != null ? Math.max(0, chById[id] - lowMan) : 0; });
   const teamARaw = (match.sideA || []).reduce((s, id) => s + (chById[id] || 0), 0);
   const teamBRaw = (match.sideB || []).reduce((s, id) => s + (chById[id] || 0), 0);
   const teamAAdj = (match.sideA || []).reduce((s, id) => s + (adjById[id] || 0), 0);
@@ -2279,7 +2326,7 @@ function SpectatorScreen({ roundCode, onExit }) {
   const state = getRoundView(tournament, tournament.activeRoundId);
   setActiveFlightsForRender(tournament.flights);
   const stats = computeStats(state);
-  const useNet = state.handicapsEnabled && state.handicapMode !== 'none' && state.matchFormat !== 'captain-choice' && !state.games?.scramble?.enabled;
+  const useNet = getScoringDisplay(state) !== 'gross' && state.matchFormat !== 'captain-choice' && !state.games?.scramble?.enabled;
   const sorted = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   const showBetting = tournament.spectatorShowBetting === true;
   const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
@@ -2650,7 +2697,8 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     ? state.players
     : (groupScoreEntry && myFlowGroup && myGroupPlayers.length > 0 ? myGroupPlayers : (whoami ? [whoami] : []));
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-  const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
+  const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
+  const allocConfig = getAllocationConfig(state);
   const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
 
   // Local draft only — nothing here touches Firebase. Reset whenever the
@@ -2692,12 +2740,14 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     const saved = state.scores[playerId]?.[viewHole];
     return saved != null && draftScores[playerId] === saved;
   };
+  const isOffLow = allocConfig.type === 'offLow' || allocConfig.type === 'percentageOffLow';
+  const groupRelative = isOffLow ? getRelativeStrokes(playersToShow.map(p => p.id), state, allocConfig) : null;
   const netInfoFor = (playerId) => {
     if (!useNet) return null;
     const player = state.players.find(pl => pl.id === playerId);
     if (!player) return null;
-    const ch = getCourseHandicap(player, state);
-    const strokesHere = strokesOnHole(ch, state.strokeIndex, viewHole);
+    const allocatedHandicap = isOffLow ? (groupRelative?.byId?.[playerId] ?? 0) : getPlayingHandicap(player, state, allocConfig);
+    const strokesHere = strokesOnHole(allocatedHandicap, state.strokeIndex, viewHole);
     return { strokes: strokesHere, net: getDraft(playerId) - strokesHere };
   };
 
@@ -3387,7 +3437,7 @@ function GamesTab({ state }) {
 
 function LeaderboardTab({ state, stats }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-  const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
+  const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const leaderboard = stats.slice().sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -3551,7 +3601,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
   const tBets = tournamentCustomBets || [];
   if (!pm.enabled && matches.length === 0 && customBets.length === 0 && tBets.length === 0 && !state.games?.skins?.enabled && !state.games?.nassau?.enabled && !isAdmin) return <div style={{ color: C.ivoryDim, fontSize: 14, textAlign: 'center', marginTop: 40 }}>Nothing set up yet — ask the admin to turn on a game in Round setup.</div>;
   const prizePoolBlock = tournament.entryFee > 0 ? (() => {
-    const useNetHere = state.handicapsEnabled && state.handicapMode !== 'none';
+    const useNetHere = getScoringDisplay(state) !== 'gross';
     const split = tournament.payoutSplit || [50, 30, 20];
     const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
     const groupsToShow = flights.length >= 2
@@ -3958,7 +4008,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
     };
   })();
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-  const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
+  const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const leaderboard = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   const top = leaderboard.slice(0, 6);
   const minThru = stats.length ? Math.min(...stats.map(s => s.thru)) : 0;
@@ -5804,13 +5854,49 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
         <Accordion title="Course" badge={state.courseName || null}>
           <CourseSection state={state} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} />
         </Accordion>
-        <Field label="Handicap mode">
-          <select value={state.handicapMode || 'none'} onChange={e => updateRound(p => ({ ...p, handicapMode: e.target.value }))} style={inputStyle}>
-            <option value="none">None — gross scores only</option>
-            <option value="full">Full course handicap</option>
-            <option value="low-man">Off low man — strokes vs lowest handicap in group</option>
-          </select>
-        </Field>
+        {(() => {
+          const scoringDisplay = getScoringDisplay(state);
+          const allocConfig = getAllocationConfig(state);
+          const setScoringDisplay = (v) => updateRound(p => ({ ...p, scoringDisplay: v, handicapsEnabled: v === 'gross' ? p.handicapsEnabled : true, handicapMode: v === 'gross' ? 'none' : (p.handicapMode === 'none' ? 'full' : p.handicapMode) }));
+          const setAllocType = (t) => updateRound(p => ({ ...p, handicapAllowanceType: t }));
+          const setAllocPercent = (pct) => updateRound(p => ({ ...p, handicapAllowancePercent: Math.max(1, Math.min(100, pct)) }));
+          const sampleCH = 17;
+          const samplePlaying = allocConfig.type === 'percentage' || allocConfig.type === 'percentageOffLow' ? Math.round(sampleCH * ((allocConfig.percent ?? 100) / 100)) : sampleCH;
+          return (
+            <>
+              <Field label="Scoring display">
+                <div style={{ display: 'flex', background: C.pineDark, borderRadius: 10, padding: 3, gap: 3 }}>
+                  {['gross', 'net', 'both'].map(v => (
+                    <button key={v} onClick={() => setScoringDisplay(v)} style={{ flex: 1, background: scoringDisplay === v ? C.gold : 'transparent', color: scoringDisplay === v ? C.pineDark : C.ivoryDim, border: 'none', borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 700, textTransform: 'capitalize', cursor: 'pointer' }}>{v}</button>
+                  ))}
+                </div>
+              </Field>
+              {scoringDisplay !== 'gross' && (
+                <Field label="Stroke allocation">
+                  <select value={allocConfig.type} onChange={e => setAllocType(e.target.value)} style={inputStyle}>
+                    <option value="full">Full Handicap (100%)</option>
+                    <option value="percentage">Percentage Allowance</option>
+                    <option value="offLow">Off Low Handicap</option>
+                    <option value="percentageOffLow">Percentage + Off Low</option>
+                  </select>
+                  {(allocConfig.type === 'percentage' || allocConfig.type === 'percentageOffLow') && (
+                    <div style={{ marginTop: 10, padding: 12, background: C.pineDark, borderRadius: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: C.ivoryDim }}>Allowance</span>
+                        <input type="number" min="1" max="100" value={allocConfig.percent} onChange={e => setAllocPercent(parseInt(e.target.value, 10) || 100)} style={{ ...inputStyle, width: 64, textAlign: 'center' }} />
+                        <span style={{ fontSize: 12, color: C.ivoryDim }}>%</span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.emerald, marginTop: 8, fontFamily: 'IBM Plex Mono, monospace' }}>Example: {sampleCH} HCP → {samplePlaying} playing handicap</div>
+                    </div>
+                  )}
+                  {(allocConfig.type === 'offLow' || allocConfig.type === 'percentageOffLow') && (
+                    <div style={{ fontSize: 11.5, color: C.bunker, marginTop: 8, lineHeight: 1.5 }}>The lowest playing handicap in each competitive group becomes 0. Other players receive the difference.</div>
+                  )}
+                </Field>
+              )}
+            </>
+          );
+        })()}
         <Field label="Match format">
           <select value={state.matchFormat || 'stroke-play'} onChange={e => updateRound(p => ({ ...p, matchFormat: e.target.value }))} style={inputStyle}>
             <option value="stroke-play">Stroke Play</option>
@@ -6971,7 +7057,7 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
 
 function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-  const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
+  const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const final = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   const champion = final[0];
   const ranked = [...state.players].sort((a, b) => (ledger[b.id]?.netPosition || 0) - (ledger[a.id]?.netPosition || 0));
@@ -8539,7 +8625,7 @@ export default function RoGreen() {
       {myPositionOpen && <MyPositionModal state={state} bets={bets} ledger={ledger} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onClose={() => setMyPositionOpen(false)} />}
       {standingsOpen && (() => {
         const standingsIsHandicapFree = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-        const standingsUseNet = !standingsIsHandicapFree && state.handicapsEnabled && state.handicapMode !== 'none';
+        const standingsUseNet = !standingsIsHandicapFree && getScoringDisplay(state) !== 'gross';
         const fullStandings = aggregateStatsAcrossRounds(tournament, tournament.players.map(p => p.id))
           .map(a => ({ ...tournament.players.find(p => p.id === a.id), ...a }))
           .sort((a, b) => (standingsUseNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
