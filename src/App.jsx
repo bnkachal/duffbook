@@ -7726,6 +7726,7 @@ export default function RoGreen() {
   setActiveFlightsForRender(tournament.flights);
   const [chat, setChat] = useState([]);
   const [whoamiId, setWhoamiId] = useState(null);
+  const recentlyRemovedPlayerIdsRef = useRef(new Map());
   const [justPickedIdentity, setJustPickedIdentity] = useState(false);
   useEffect(() => {
     if (!justPickedIdentity) return;
@@ -8023,9 +8024,25 @@ export default function RoGreen() {
           // Firebase yet when this incoming update arrives. Blindly taking
           // safe.players would silently erase that addition. Keep any local
           // player not yet present remotely, rather than discarding them.
-          const remoteIds = new Set((safe.players || []).map(p => p.id));
-          const localOnlyPlayers = (prev.players || []).filter(p => !remoteIds.has(p.id));
-          const mergedPlayers = [...(safe.players || []), ...localOnlyPlayers];
+          //
+          // The reverse case needs its own protection: a player removed
+          // locally may still appear in a stale incoming snapshot that
+          // hasn't caught up to the removal write yet. Unlike an addition,
+          // a removal can't be inferred from a snapshot diff alone, so it's
+          // tracked explicitly in recentlyRemovedPlayerIdsRef for a short
+          // window - long enough to outlast the debounced write - and
+          // excluded from the incoming data even if the remote snapshot
+          // still lists them.
+          const now2 = Date.now();
+          const recentlyRemoved = new Set(
+            Array.from(recentlyRemovedPlayerIdsRef.current.entries())
+              .filter(([, ts]) => now2 - ts < 15000)
+              .map(([id]) => id)
+          );
+          const safePlayersFiltered = (safe.players || []).filter(p => !recentlyRemoved.has(p.id));
+          const remoteIds = new Set(safePlayersFiltered.map(p => p.id));
+          const localOnlyPlayers = (prev.players || []).filter(p => !remoteIds.has(p.id) && !recentlyRemoved.has(p.id));
+          const mergedPlayers = [...safePlayersFiltered, ...localOnlyPlayers];
           const merged = { ...safe, players: mergedPlayers, rounds: mergedRounds };
           if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
           return merged;
@@ -8234,6 +8251,9 @@ export default function RoGreen() {
     setNewPlayerName('');
   };
   const removePlayer = (id) => {
+    recentlyRemovedPlayerIdsRef.current.set(id, Date.now());
+    const cutoff = Date.now() - 15000;
+    recentlyRemovedPlayerIdsRef.current.forEach((ts, pid) => { if (ts < cutoff) recentlyRemovedPlayerIdsRef.current.delete(pid); });
     updateTournament(prev => ({
       ...prev,
       players: prev.players.filter(p => p.id !== id),
