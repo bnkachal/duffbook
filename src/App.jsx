@@ -7894,7 +7894,15 @@ export default function RoGreen() {
             const localRound = prev.rounds?.find(r => r.id === remoteRound.id);
             return mergeRoundScores(localRound, remoteRound);
           });
-          const merged = { ...safe, rounds: mergedRounds };
+          // Players need the same protection scores already have: a player
+          // added locally (e.g. via "Add yourself") may not have reached
+          // Firebase yet when this incoming update arrives. Blindly taking
+          // safe.players would silently erase that addition. Keep any local
+          // player not yet present remotely, rather than discarding them.
+          const remoteIds = new Set((safe.players || []).map(p => p.id));
+          const localOnlyPlayers = (prev.players || []).filter(p => !remoteIds.has(p.id));
+          const mergedPlayers = [...(safe.players || []), ...localOnlyPlayers];
+          const merged = { ...safe, players: mergedPlayers, rounds: mergedRounds };
           if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
           return merged;
         } catch(e) { return prev; }
