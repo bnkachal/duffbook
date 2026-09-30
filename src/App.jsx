@@ -164,12 +164,19 @@ const MOCK_COURSES = [
       { teeName: 'Black',  totalYards: 6657, rating: 72.3, slope: 134 },
       { teeName: 'White',  totalYards: 6238, rating: 70.1, slope: 131 },
       { teeName: 'Gold',   totalYards: 5812, rating: 68.3, slope: 123 },
+      { teeName: 'Red',    totalYards: 5205, rating: 70.7, slope: 124 },
+      { teeName: 'Green',  totalYards: 4712, rating: 67.6, slope: 118 },
     ],
     _holeYardagesByTee: {
       Purple: [377,405,197,567,423,413,557,207,407, 444,191,390,558,376,437,551,197,370],
       Black:  [359,397,175,539,394,389,535,195,382, 386,169,378,552,359,392,522,188,346],
       White:  [359,377,147,525,377,381,499,171,358, 358,135,356,505,347,361,505,161,316],
       Gold:   [306,353,147,499,342,345,488,171,335, 352,128,356,473,308,324,473,136,276],
+      Red:    [279,317,123,435,307,295,449,97,329, 325,107,336,434,275,298,441,101,257],
+      // Front-nine hole 1 unconfirmed - see note: 8 of 9 front-nine values read
+      // cleanly off the card and match its printed subtotal only with this
+      // value included; back nine is fully confirmed against the card.
+      Green:  [279,276,123,339,265,295,359,97,329, 280,107,249,434,275,298,349,101,257],
     },
   }),
   buildMockCourse({
