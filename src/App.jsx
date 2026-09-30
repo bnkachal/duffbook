@@ -460,7 +460,7 @@ function defaultTournament() {
     name: '', adminPin: null,
     players: [], flights: [], handicapsEnabled: false, bettingEnabled: true,
     spectatorsEnabled: false, spectatorShowBetting: false, rules: '',
-    entryFee: 0, payoutSplit: [50, 30, 20],
+    entryFee: 0, payoutSplit: [50, 30, 20], groupScoreEntry: false,
     rounds: [r0], activeRoundId: r0.id,
     tournamentCustomBets: [],
     ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
@@ -2629,7 +2629,7 @@ function scoreContextLabel(diff) {
   return null;
 }
 
-function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer }) {
+function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
   const initialHole = (() => {
     if (whoami) {
@@ -2644,7 +2644,11 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   const par = state.pars[viewHole] ?? 4;
   const si = state.strokeIndex[viewHole] ?? (viewHole + 1);
   const yards = state.yardage?.[viewHole];
-  const playersToShow = viewAsAdmin ? state.players : (whoami ? [whoami] : []);
+  const myFlowGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
+  const myGroupPlayers = myFlowGroup ? (myFlowGroup.playerIds || []).map(id => state.players.find(p => p.id === id)).filter(Boolean) : [];
+  const playersToShow = viewAsAdmin
+    ? state.players
+    : (groupScoreEntry && myFlowGroup && myGroupPlayers.length > 0 ? myGroupPlayers : (whoami ? [whoami] : []));
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && state.handicapsEnabled && state.handicapMode !== 'none';
   const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
@@ -2698,6 +2702,14 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   };
 
   const goHole = (delta) => setViewHole(v => Math.max(0, Math.min(numHoles - 1, v + delta)));
+  const missingPlayers = groupScoreEntry && !viewAsAdmin ? playersToShow.filter(p => !isConfirmed(p.id)) : [];
+  const [confirmAdvanceAnyway, setConfirmAdvanceAnyway] = useState(false);
+  useEffect(() => { setConfirmAdvanceAnyway(false); }, [viewHole]);
+  const tryAdvance = (action) => {
+    if (missingPlayers.length > 0 && !confirmAdvanceAnyway) { setConfirmAdvanceAnyway(true); return; }
+    setConfirmAdvanceAnyway(false);
+    action();
+  };
 
   // ===== Review / submit screen (Hole 18 → Review, or reopening after submission) =====
   if (reviewMode) {
@@ -2758,6 +2770,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
           <div style={{ fontSize: 12, color: C.goldBright, fontWeight: 700, letterSpacing: 0.5 }}>HOLE {viewHole + 1}</div>
           <div style={{ fontSize: 13, color: C.ivoryDim, marginTop: 3 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
+          {groupScoreEntry && !viewAsAdmin && playersToShow.length > 1 && (
+            <div style={{ fontSize: 10.5, color: C.goldBright, marginTop: 4, fontWeight: 600 }}>Scoring for {playersToShow.length} players</div>
+          )}
         </div>
 
         {playersToShow.length === 0 && (
@@ -2808,6 +2823,11 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
           );
         })}
 
+        {confirmAdvanceAnyway && missingPlayers.length > 0 && (
+          <div style={{ fontSize: 11.5, color: C.flagRed, textAlign: 'center', marginBottom: 8 }}>
+            {missingPlayers.map(p => pgaName(p.name)).join(', ')} {missingPlayers.length === 1 ? 'needs' : 'need'} a score for Hole {viewHole + 1}. Tap again to continue anyway.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
           {viewHole === 0 ? (
             <GhostButton onClick={onClose} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Close</GhostButton>
@@ -2815,9 +2835,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
             <GhostButton onClick={() => goHole(-1)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>‹ Hole {viewHole}</GhostButton>
           )}
           {viewHole === numHoles - 1 ? (
-            <GoldButton onClick={() => setReviewMode(true)} style={{ flex: 1, padding: '13px 0' }}>Review Scorecard</GoldButton>
+            <GoldButton onClick={() => tryAdvance(() => setReviewMode(true))} style={{ flex: 1, padding: '13px 0' }}>Review Scorecard</GoldButton>
           ) : (
-            <GoldButton onClick={() => goHole(1)} style={{ flex: 1, padding: '13px 0' }}>Hole {viewHole + 2} ›</GoldButton>
+            <GoldButton onClick={() => tryAdvance(() => goHole(1))} style={{ flex: 1, padding: '13px 0' }}>Hole {viewHole + 2} ›</GoldButton>
           )}
         </div>
       </div>
@@ -5857,6 +5877,17 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
             </Field>
           )}
         </Accordion>
+        <Accordion title="Score Entry" badge={tournament.groupScoreEntry ? 'group' : 'individual'}>
+          <ToggleRow
+            label="Group Score Entry"
+            sub="Group scoring allows one golfer to enter scores for everyone in their playing group."
+            enabled={!!tournament.groupScoreEntry}
+            onToggle={() => updateTournament(p => ({ ...p, groupScoreEntry: !p.groupScoreEntry }))}
+          />
+          {tournament.groupScoreEntry && (
+            <div style={{ fontSize: 11, color: C.bunker, marginTop: 8, lineHeight: 1.5 }}>Uses your existing tee-time groups — any player can enter scores for others in their own group, not the whole field. Set up groups in Round Flow if you haven't already.</div>
+          )}
+        </Accordion>
         <GamesSection state={state} updateRound={updateRound} tournament={tournament} updateTournament={updateTournament} />
         <AwardsSetupSection state={state} tournament={tournament} updateRound={updateRound} />
         <Accordion title="Round Roster" badge={state.roundPlayers?.length > 0 ? state.roundPlayers.length + ' overrides' : null}>
@@ -8194,14 +8225,17 @@ export default function RoGreen() {
       }
     }
     const scoreUpdatedAt = { ...(prev.scoreUpdatedAt || {}) };
+    const scoreEnteredBy = { ...(prev.scoreEnteredBy || {}) };
     const newScores = { ...prev.scores };
     mirrorIds.forEach(id => {
       const arr = Array.isArray(prev.scores[id]) ? prev.scores[id].slice() : [];
       arr[holeIndex] = val;
       newScores[id] = arr;
-      if (val != null) { scoreUpdatedAt[`${id}-${holeIndex}`] = Date.now(); } else delete scoreUpdatedAt[`${id}-${holeIndex}`];
+      const key = `${id}-${holeIndex}`;
+      if (val != null) { scoreUpdatedAt[key] = Date.now(); scoreEnteredBy[key] = whoamiId || (isAdmin ? 'admin' : null); }
+      else { delete scoreUpdatedAt[key]; delete scoreEnteredBy[key]; }
     });
-    return { ...prev, scores: newScores, scoreUpdatedAt };
+    return { ...prev, scores: newScores, scoreUpdatedAt, scoreEnteredBy };
   });
   const stateNow = getRoundView(tournament, tournament.activeRoundId);
   const isPlayerSubmitted = (playerId) => Array.isArray(stateNow.submittedPlayers) && stateNow.submittedPlayers.includes(playerId);
@@ -8491,7 +8525,7 @@ export default function RoGreen() {
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
-      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} onSwitchPlayer={clearIdentity} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
+      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} groupScoreEntry={!!tournament.groupScoreEntry} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} onSwitchPlayer={clearIdentity} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
         if (!adminAccount) {
           let dismissed = false;
           try { dismissed = localStorage.getItem('db:profile-prompt-dismissed') === 'true'; } catch (e) {}
