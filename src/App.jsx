@@ -2187,6 +2187,11 @@ function OwnerConsole({ onBack }) {
   const [datePreset, setDatePreset] = useState('30d');
   const [customStart, setCustomStart] = useState(null);
   const [customEnd, setCustomEnd] = useState(null);
+  const [consoleTab, setConsoleTab] = useState('overview');
+  const [userSearch, setUserSearch] = useState('');
+  const [userSort, setUserSort] = useState('lastActivity');
+  const [userFilter, setUserFilter] = useState('all');
+  const [selectedUid, setSelectedUid] = useState(null);
   const now = useNow(15000);
 
   useEffect(() => {
@@ -2277,6 +2282,59 @@ function OwnerConsole({ onBack }) {
   const returning = organizerCounts.filter(n => isRepeatOrganizer(n)).length;
   const oneTime = organizerCounts.filter(n => n === 1).length;
 
+  // Users CRM — scoped to organizers (admin accounts), the only population
+  // with real account/email data. Regular players join anonymously with no
+  // persistent cross-tournament identity, so they can't be represented here.
+  const usersByUid = {};
+  activeCodes.forEach(code => {
+    const uid = registry[code]?.creatorUid;
+    if (!uid) return;
+    if (!usersByUid[uid]) usersByUid[uid] = { uid, email: registry[code]?.creatorEmail || '(no email on file)', codes: [] };
+    usersByUid[uid].codes.push(code);
+  });
+  const userList = Object.values(usersByUid).map(u => {
+    const raws = u.codes.map(c => details[c].raw);
+    const activatedCodes = u.codes.filter(c => isActivatedTournament(details[c].raw));
+    const completedCodes = u.codes.filter(c => isCompletedTournament(details[c].raw));
+    const createdTimestamps = u.codes.map(c => createdAtFor(c)).filter(Boolean);
+    const firstCreated = createdTimestamps.length ? Math.min(...createdTimestamps) : null;
+    const activityTimestamps = raws.flatMap(tournamentActivityTimestamps);
+    const lastActivity = activityTimestamps.length ? Math.max(...activityTimestamps) : firstCreated;
+    const holesScored = raws.reduce((sum, r) => sum + (r.rounds || []).reduce((s2, rd) => s2 + Object.values(rd.scores || {}).reduce((s3, arr) => s3 + (Array.isArray(arr) ? arr.filter(v => v != null).length : 0), 0), 0), 0);
+    const gamesCount = raws.reduce((sum, r) => sum + (r.rounds || []).reduce((s2, rd) => s2 + Object.values(rd.games || {}).filter(g => g && g.enabled).length, 0), 0);
+    const daysSinceActivity = lastActivity ? Math.floor((now - lastActivity) / 86400000) : null;
+    const daysSinceCreated = firstCreated ? Math.floor((now - firstCreated) / 86400000) : null;
+    let status = 'never';
+    if (activatedCodes.length >= 2) status = 'repeat';
+    else if (activatedCodes.length === 1) status = 'organizer';
+    else if (u.codes.length > 0) status = 'created-not-activated';
+    if (status !== 'never' && daysSinceCreated != null && daysSinceCreated <= 30) status = 'new';
+    if (daysSinceActivity != null && daysSinceActivity >= 90) status = 'inactive';
+    return {
+      uid: u.uid, email: u.email, tournamentsCreated: u.codes.length, activatedCount: activatedCodes.length,
+      completedCount: completedCodes.length, holesScored, gamesCount, firstCreated, lastActivity, status,
+      codes: u.codes, activatedCodes, completedCodes,
+    };
+  });
+
+  const filteredUsers = userList.filter(u => {
+    if (userSearch && !u.email.toLowerCase().includes(userSearch.toLowerCase())) return false;
+    if (userFilter === 'new') return u.status === 'new';
+    if (userFilter === 'organizer') return u.activatedCount >= 1;
+    if (userFilter === 'repeat') return u.activatedCount >= 2;
+    if (userFilter === 'neverActivated') return u.activatedCount === 0;
+    if (userFilter === 'inactive') return u.status === 'inactive';
+    return true;
+  });
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    if (userSort === 'created') return (b.firstCreated || 0) - (a.firstCreated || 0);
+    if (userSort === 'tournamentsCreated') return b.tournamentsCreated - a.tournamentsCreated;
+    if (userSort === 'activated') return b.activatedCount - a.activatedCount;
+    if (userSort === 'holesScored') return b.holesScored - a.holesScored;
+    return (b.lastActivity || 0) - (a.lastActivity || 0); // lastActivity default
+  });
+  const selectedUser = selectedUid ? userList.find(u => u.uid === selectedUid) : null;
+
   const ChangeTag = ({ change }) => {
     if (change.kind === 'flat') return null;
     if (change.kind === 'absolute') return <span style={{ fontSize: 10.5, color: C.emerald, marginLeft: 6 }}>+{change.value} this period</span>;
@@ -2300,9 +2358,17 @@ function OwnerConsole({ onBack }) {
         <span style={{ width: 40 }} />
       </div>
 
+      {!loading && (
+        <div style={{ display: 'flex', gap: 8, maxWidth: 560, margin: '0 auto 16px', borderBottom: `1px solid ${C.turfBorder}` }}>
+          {[['overview', 'Overview'], ['users', 'Users']].map(([key, label]) => (
+            <button key={key} onClick={() => setConsoleTab(key)} style={{ background: 'transparent', border: 'none', borderBottom: consoleTab === key ? `2px solid ${C.gold}` : '2px solid transparent', color: consoleTab === key ? C.ivory : C.bunker, padding: '8px 4px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{label}</button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div style={{ textAlign: 'center', color: C.ivoryDim, marginTop: 60 }}>Loading every tournament — this reads each one individually, give it a moment…</div>
-      ) : (
+      ) : consoleTab === 'overview' ? (
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 6, paddingBottom: 2 }}>
             {[['7d', '7 Days'], ['30d', '30 Days'], ['90d', '90 Days'], ['thisMonth', 'This Month'], ['lastMonth', 'Last Month'], ['thisYear', 'This Year'], ['all', 'All Time']].map(([key, label]) => (
@@ -2368,6 +2434,80 @@ function OwnerConsole({ onBack }) {
             })}
             {codesWithData.length > 40 && <div style={{ fontSize: 10.5, color: C.bunker, marginTop: 4 }}>Showing first 40 of {codesWithData.length} — a searchable list is planned for a future pass.</div>}
           </div>
+        </div>
+      ) : (
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <div style={{ fontSize: 11, color: C.bunker, lineHeight: 1.5, marginBottom: 14, background: C.turf, borderRadius: 10, padding: '10px 12px' }}>
+            Scoped to organizer accounts (people who've created a tournament). Regular players join anonymously with no account, so they can't be listed here individually.
+          </div>
+
+          {selectedUser ? (
+            <div>
+              <button onClick={() => setSelectedUid(null)} style={{ background: 'transparent', border: 'none', color: C.goldBright, fontSize: 12, cursor: 'pointer', padding: 0, marginBottom: 14 }}>‹ All Users</button>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{selectedUser.email}</div>
+              <div style={{ fontSize: 11, color: C.bunker, marginBottom: 18, textTransform: 'capitalize' }}>{selectedUser.status.replace('-', ' ')}</div>
+
+              <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Account</div>
+              <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6, marginBottom: 18, fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: C.ivoryDim }}>First tournament created</span><span>{selectedUser.firstCreated ? new Date(selectedUser.firstCreated).toLocaleDateString() : '—'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: C.ivoryDim }}>Last meaningful activity</span><span>{selectedUser.lastActivity ? new Date(selectedUser.lastActivity).toLocaleDateString() : '—'}</span></div>
+              </div>
+
+              <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Usage — lifetime</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                <StatCard label="Tournaments created" value={selectedUser.tournamentsCreated} />
+                <StatCard label="Activated" value={selectedUser.activatedCount} />
+                <StatCard label="Completed" value={selectedUser.completedCount} />
+                <StatCard label="Holes scored (hosted)" value={selectedUser.holesScored} />
+              </div>
+
+              <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Tournament History</div>
+              <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                {selectedUser.codes.map(code => {
+                  const raw = details[code].raw;
+                  const activated = isActivatedTournament(raw);
+                  const completed = isCompletedTournament(raw);
+                  return (
+                    <div key={code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, borderBottom: `1px solid ${C.hairline}`, paddingBottom: 6 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{details[code].name}</div>
+                      <div style={{ fontSize: 10, color: completed ? C.emerald : activated ? C.goldBright : C.bunker, flexShrink: 0, marginLeft: 8 }}>{completed ? 'Completed' : activated ? 'Activated' : 'Not activated'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+              <input value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search by email…" style={{ ...inputStyle, width: '100%', marginBottom: 10, boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 10, paddingBottom: 2 }}>
+                {[['all', 'All'], ['new', 'New'], ['organizer', 'Organizers'], ['repeat', 'Repeat'], ['neverActivated', 'Never Activated'], ['inactive', 'Inactive']].map(([key, label]) => (
+                  <button key={key} onClick={() => setUserFilter(key)} style={{ flexShrink: 0, background: userFilter === key ? C.gold : C.turf, color: userFilter === key ? C.pineDark : C.ivoryDim, border: `1px solid ${userFilter === key ? C.gold : C.turfBorder}`, borderRadius: 999, padding: '6px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+                <span style={{ fontSize: 11, color: C.bunker }}>Sort</span>
+                <select value={userSort} onChange={e => setUserSort(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px' }}>
+                  <option value="lastActivity">Last activity</option>
+                  <option value="created">Account creation</option>
+                  <option value="tournamentsCreated">Tournaments created</option>
+                  <option value="activated">Activated tournaments</option>
+                  <option value="holesScored">Holes scored</option>
+                </select>
+              </div>
+
+              {sortedUsers.length === 0 ? (
+                <div style={{ textAlign: 'center', color: C.bunker, fontSize: 13, marginTop: 30 }}>No organizers match this filter.</div>
+              ) : sortedUsers.map(u => (
+                <div key={u.uid} onClick={() => setSelectedUid(u.uid)} style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 6, cursor: 'pointer' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
+                    <div style={{ fontSize: 10.5, color: C.bunker, textTransform: 'capitalize' }}>{u.status.replace('-', ' ')} · {u.tournamentsCreated} created</div>
+                  </div>
+                  <ChevronRight size={16} color={C.bunker} style={{ flexShrink: 0 }} />
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
