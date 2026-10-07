@@ -4249,8 +4249,51 @@ function KoSModal({ tournament, updateTournament, onClose }) {
   );
 }
 
+/* ============================== FIRST-TIME GUIDES ==============================
+   Small, dismissible cards shown once per device (per role). Remembered in localStorage;
+   "Replay welcome tips" in Settings clears the flags. Never blocks the screen. */
+function useSeenFlag(key) {
+  const read = () => { try { return localStorage.getItem('db:seen-' + key) === '1'; } catch (e) { return false; } };
+  const [seen, setSeen] = useState(read);
+  useEffect(() => {
+    const h = () => setSeen(read());
+    window.addEventListener('db:replay-tips', h);
+    return () => window.removeEventListener('db:replay-tips', h);
+  }, []);
+  const mark = () => { setSeen(true); try { localStorage.setItem('db:seen-' + key, '1'); } catch (e) {} };
+  return [seen, mark];
+}
+function replayWelcomeTips() {
+  try { ['guide-admin', 'guide-player', 'player-intro'].forEach(k => localStorage.removeItem('db:seen-' + k)); } catch (e) {}
+  try { window.dispatchEvent(new Event('db:replay-tips')); } catch (e) {}
+}
+function GuideCard({ title, steps, onDismiss, cta }) {
+  return (
+    <div style={{ background: `linear-gradient(160deg, ${C.gold}26, ${C.gold}0A)`, border: `1.5px solid ${C.gold}73`, borderRadius: 18, padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, color: C.goldBright, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</div>
+        <button onClick={onDismiss} aria-label="Dismiss tips" style={{ background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', padding: 2 }}><X size={16} /></button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {steps.map((t, i) => (
+          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', background: C.gold, color: C.pineDark, fontWeight: 800, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+            <div style={{ fontSize: 13, color: C.ivory, lineHeight: 1.4 }}>{t}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        {cta && <GhostButton onClick={cta.onClick} style={{ flex: 1, textAlign: 'center', color: C.goldBright, borderColor: `${C.gold}66` }}>{cta.label}</GhostButton>}
+        <GoldButton onClick={onDismiss} style={{ flex: 1, padding: '9px 0', fontSize: 13 }}>Got it</GoldButton>
+      </div>
+    </div>
+  );
+}
+
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview }) {
   const now = useNow(5000);
+  const [adminGuideSeen, markAdminGuide] = useSeenFlag('guide-admin');
+  const [playerGuideSeen, markPlayerGuide] = useSeenFlag('guide-player');
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
   const shambleResultsEarly = state.games?.shamble?.enabled ? computeShamble(state) : [];
   const bestBallPositionChanges = usePositionChanges(bbResultsEarly.map(p => p.pairId));
@@ -4417,6 +4460,22 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </div>
         );
       })()}
+      {guidanceEnabled && isAdmin && !adminGuideSeen && (
+        <GuideCard title="Your round is live" onDismiss={markAdminGuide}
+          steps={[
+            'Share the round code or QR so players can join from their phones.',
+            'Anyone can score — tap the round badge at the bottom right. In a group, one person can enter scores for everyone.',
+            'Handicaps, groups and side games can be changed any time in Settings (the gear at the top).',
+          ]} />
+      )}
+      {guidanceEnabled && !isAdmin && whoami && !playerGuideSeen && (
+        <GuideCard title="Welcome — here's how it works" onDismiss={markPlayerGuide}
+          steps={[
+            'Tap the round badge at the bottom right to enter your score after each hole.',
+            'Use + and − to set the score, then Save & Next. Made a mistake? Tap Review to fix it.',
+            'The Leaderboard and Games tabs update live as everyone scores.',
+          ]} />
+      )}
       {nextStep && (
         <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: C.turfLight, border: `1.5px solid ${C.gold}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={C.goldBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>{nextStep.text}</span></div>
@@ -4596,7 +4655,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 <div key={row.p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
                   <span style={{ fontSize: 11, color: i === 0 && row.pts > 0 ? C.gold : C.bunker, width: 14 }}>{i + 1}</span>
                   <Chip color={pc(row.p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(row.p.name)}</Chip>
-                  <span style={{ flex: 1, fontSize: 12 }}>{row.pgaName(p.name)}</span>
+                  <span style={{ flex: 1, fontSize: 12 }}>{pgaName(row.p.name)}</span>
                   <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, color: C.gold, fontWeight: 700 }}>{row.pts}</span>
                 </div>
               ))}
@@ -6324,28 +6383,65 @@ function WizardNextButton({ onClick, disabled, label }) {
 }
 
 function SetupWizard({ tournament, state, updateTournament, updateRound, onClose, onOpenSetup, roundCode, selectProviderCourse, selectCustomCourse, setNumHoles, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, setCourseField, startRound, isNewRound, quickMode, onFinish }) {
+  // New tournaments/quick rounds use a 3-screen fast path: setup -> players -> live.
+  // Handicaps, Groups, Format and Side Games are optional "make it yours" sub-screens reachable from the live screen.
+  const simple = !isNewRound;
   const baseSteps = isNewRound
     ? ['course', 'holes', 'format', 'handicaps', 'games', 'review']
-    : quickMode
-      ? ['quick-basics', 'players', 'handicaps', 'format', 'games']
-      : ['basics', 'course', 'holes', 'format', 'players', 'handicaps', 'groups', 'games', 'review'];
+    : ['setup', 'players', 'live'];
   const [step, setStep] = useState(0);
+  const [subKey, setSubKey] = useState(null);
+  const [extrasTouched, setExtrasTouched] = useState(false);
+  const [shareMsg, setShareMsg] = useState('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const [wizardImportOpen, setWizardImportOpen] = useState(false);
-  const stepKey = baseSteps[step];
+  const stepKey = subKey || baseSteps[step];
   const nameInputRef = useRef(null);
   const playerInputRef = useRef(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
-      if (stepKey === 'basics' || stepKey === 'quick-basics') nameInputRef.current?.focus();
+      if (stepKey === 'basics' || stepKey === 'quick-basics' || stepKey === 'setup') nameInputRef.current?.focus();
       else if (stepKey === 'players') playerInputRef.current?.focus();
     }, 120);
     return () => clearTimeout(t);
   }, [stepKey]);
-  const goNext = () => setStep(s => Math.min(baseSteps.length - 1, s + 1));
-  const goPrev = () => setStep(s => Math.max(0, s - 1));
+  const goLive = () => { if (!state.started) startRound(); setSubKey(null); setStep(baseSteps.length - 1); };
+  const goNext = () => {
+    if (subKey) { setSubKey(null); return; }
+    if (simple && stepKey === 'players') { goLive(); return; }
+    setStep(s => Math.min(baseSteps.length - 1, s + 1));
+  };
+  const goPrev = () => { if (subKey) { setSubKey(null); return; } setStep(s => Math.max(0, s - 1)); };
+  const jumpTo = (i) => {
+    if (simple && i === baseSteps.length - 1) { if (tournament.players.length === 0) return; goLive(); return; }
+    setSubKey(null); setStep(i);
+  };
+  const openExtra = (key) => { setExtrasTouched(true); setSubKey(key); };
+  const joinUrl = `${window.location.origin}?code=${roundCode}`;
+  const shareWithPlayers = async () => {
+    const title = `Join ${tournament.name || 'my round'} on MatchBook`;
+    try {
+      if (navigator.share) { await navigator.share({ title, text: `Tap to join: ${joinUrl}`, url: joinUrl }); setShareMsg('Shared'); }
+      else { await navigator.clipboard.writeText(joinUrl); setShareMsg('Link copied'); }
+    } catch (e) { /* user cancelled share sheet */ }
+    setTimeout(() => setShareMsg(''), 2200);
+  };
+  const applyImportedPlayers = (players) => {
+    const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null }));
+    updateTournament(prev => ({ ...prev, players: newPlayers, rounds: prev.rounds.map(r => ({ ...r, scores: Object.fromEntries(newPlayers.map(p => [p.id, Array(r.numHoles).fill(null)])) })) }));
+    const groups = pairsFromImportGroups(newPlayers, players);
+    if (groups.length > 0) {
+      updateRound(r => {
+        const nextGames = { ...r.games };
+        ['scramble', 'bestBall', 'shamble'].forEach(key => {
+          if (nextGames[key]?.enabled) nextGames[key] = { ...nextGames[key], pairs: groups };
+        });
+        return { ...r, games: nextGames };
+      });
+    }
+  };
 
   const addPlayerLocal = () => {
     const name = newPlayerName.trim(); if (!name) return;
@@ -6371,10 +6467,10 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
   const finish = () => { startRound(); onFinish(); };
 
   return (
-    <WizardShell step={step} total={baseSteps.length} onJump={setStep} onClose={onClose} onOpenSetup={onOpenSetup} title={
-      { basics: 'The basics', 'quick-basics': 'Name & course', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", handicaps: 'Handicaps & tees', games: 'What are we betting on?', review: 'Ready to go' }[stepKey]
+    <WizardShell step={subKey ? baseSteps.length - 1 : step} total={baseSteps.length} onJump={jumpTo} onClose={onClose} onOpenSetup={onOpenSetup} title={
+      { setup: 'Set up your round', live: "You're live", basics: 'The basics', 'quick-basics': 'Name & course', course: 'Pick a course', holes: '9 or 18?', format: 'How are you playing?', players: "Who's playing?", handicaps: 'Handicaps & tees', groups: 'Groups & tee times', games: 'Side games', review: 'Ready to go' }[stepKey]
     }>
-      {stepKey === 'quick-basics' && (
+      {stepKey === 'setup' && (
         <div>
           <Field label="Round name"><input ref={nameInputRef} value={tournament.name} onChange={e => updateTournament(p => ({ ...p, name: e.target.value }))} style={inputStyle} placeholder="Name your round" /></Field>
           <Field label="Course">
@@ -6398,6 +6494,16 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               ))}
             </div>
           </Field>
+          {!quickMode && (
+            <Field label="How many rounds?">
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[1, 2, 3, 4].map(n => {
+                  const on = tournament.rounds.length === n || (n === 4 && tournament.rounds.length >= 4);
+                  return <button key={n} onClick={() => setRoundCount(n)} style={{ flex: 1, padding: '11px 0', borderRadius: 12, fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, background: on ? C.gold : 'transparent', color: on ? C.pineDark : C.ivory, border: `1px solid ${on ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>{n === 4 ? '4+' : n}</button>;
+                })}
+              </div>
+            </Field>
+          )}
           <WizardNextButton onClick={goNext} disabled={!tournament.name.trim()} />
         </div>
       )}
@@ -6464,21 +6570,25 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         </div>
       )}
 
-      {stepKey === 'players' && quickMode && (
+      {stepKey === 'players' && simple && (
         <div>
-          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Just type a name and hit add — repeat for everyone playing.</div>
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Type a name, tap +, repeat. You can add handicaps in a moment.</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
             {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <input ref={playerInputRef} value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayerLocal(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
             <button onClick={addPlayerLocal} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer' }}><UserPlus size={18} /></button>
           </div>
-          <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} />
+          <button onClick={() => setWizardImportOpen(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', background: 'transparent', border: `1px dashed ${C.turfBorder}`, color: C.goldBright, borderRadius: 10, padding: '10px 0', cursor: 'pointer', fontSize: 12, marginBottom: 6 }}>
+            <UserPlus size={14} /> Have a roster? Import from CSV or Excel
+          </button>
+          <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} label="Next" />
+          {wizardImportOpen && <RosterImportModal flights={tournament.flights} existingPlayerCount={tournament.players.length} hasScores={false} onApply={applyImportedPlayers} onClose={() => setWizardImportOpen(false)} />}
         </div>
       )}
 
-      {stepKey === 'players' && !quickMode && (
+      {stepKey === 'players' && !simple && (
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
             {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
@@ -6527,7 +6637,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         <div>
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14 }}>Optional — turn on handicaps and/or flights now, or skip and set it up later from Settings.</div>
           <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} defaultOpen />
-          <WizardNextButton onClick={goNext} />
+          <WizardNextButton onClick={goNext} label={subKey ? 'Done' : undefined} />
         </div>
       )}
 
@@ -6598,13 +6708,53 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               </div>
             </div>
           ))}
-          {quickMode && (
+          {quickMode && !simple && (
             <div style={{ display: 'flex', gap: 14, margin: '4px 0 16px', flexWrap: 'wrap' }}>
               <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Round code</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.goldBright, letterSpacing: 1 }}>{roundCode}</div></div>
               {tournament.adminPin && <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Admin PIN</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: C.goldBright, letterSpacing: 1 }}>{tournament.adminPin}</div></div>}
             </div>
           )}
-          <WizardNextButton onClick={quickMode ? finish : goNext} label={quickMode ? 'Start Round' : undefined} />
+          <WizardNextButton onClick={simple ? goNext : quickMode ? finish : goNext} label={simple ? 'Done' : quickMode ? 'Start Round' : undefined} />
+        </div>
+      )}
+
+      {stepKey === 'live' && (
+        <div>
+          <div style={{ textAlign: 'center', marginBottom: 14 }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: `${C.emerald}26`, border: `2px solid ${C.emerald}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}><Check size={28} color={C.emerald} strokeWidth={3} /></div>
+            <div style={{ fontSize: 13, color: C.ivoryDim }}>{tournament.name || 'Your round'} is ready for scores.</div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 22, marginTop: 10 }}>
+              <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Round code</div><div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 22, color: C.goldBright, letterSpacing: 2 }}>{roundCode}</div></div>
+              {tournament.adminPin && <div><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Admin PIN</div><div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 22, color: C.goldBright, letterSpacing: 2 }}>{tournament.adminPin}</div></div>}
+            </div>
+          </div>
+
+          <div style={{ background: `linear-gradient(160deg, ${C.gold}2E, ${C.gold}0F)`, border: `1.5px solid ${C.gold}80`, borderRadius: 16, padding: 14 }}>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, color: C.goldBright, textTransform: 'uppercase', letterSpacing: 0.5 }}>Before you share — make it yours</div>
+            <div style={{ fontSize: 11, color: C.ivoryDim, margin: '2px 0 10px' }}>Optional, but this is where handicaps and games get set. Takes a minute.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { key: 'handicaps', Icon: TrendingUp, label: 'Handicaps', sub: 'Fair net scores for everyone' },
+                { key: 'groups', Icon: Calendar, label: 'Groups & tee times', sub: 'Who plays together, and when' },
+                { key: 'format', Icon: Flag, label: 'Format', sub: 'Stroke play, best ball, match play…' },
+                { key: 'games', Icon: Coins, label: 'Side games', sub: 'Skins, Nassau and more' },
+              ].map(({ key, Icon, label, sub }, i) => (
+                <button key={key} onClick={() => openExtra(key)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: C.turf, border: `1px solid ${C.gold}59`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', color: C.ivory, animation: extrasTouched ? 'none' : `wizItemPulse 6s ease-in-out ${i * 1.5}s infinite` }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 9, background: `${C.gold}26`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon size={18} color={C.goldBright} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{label}</div>
+                    <div style={{ fontSize: 11, color: C.ivoryDim }}>{sub}</div>
+                  </div>
+                  <ChevronRight size={16} color={C.ivoryDim} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <GhostButton onClick={shareWithPlayers} style={{ width: '100%', marginTop: 14, padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, color: C.ivoryDim }}>
+            <Share2 size={15} /> {shareMsg || 'Share with players'}
+          </GhostButton>
+          <button onClick={() => onFinish()} style={{ display: 'block', margin: '12px auto 0', background: 'transparent', border: 'none', color: C.ivoryDim, fontSize: 12, textDecoration: 'underline', cursor: 'pointer' }}>Done — take me to the round</button>
         </div>
       )}
 
@@ -6624,7 +6774,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
         </div>
       )}
 
-      {step > 0 && stepKey !== 'review' && <GhostButton onClick={goPrev} style={{ marginTop: 10, width: '100%', textAlign: 'center' }}>Back</GhostButton>}
+      {(step > 0 || subKey) && stepKey !== 'review' && stepKey !== 'live' && <GhostButton onClick={goPrev} style={{ marginTop: 10, width: '100%', textAlign: 'center' }}>{subKey ? 'Back to options' : 'Back'}</GhostButton>}
     </WizardShell>
   );
 }
@@ -6806,6 +6956,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
         {item(User, 'Your name on this device', onOpenProfile)}
         {item(ChevronsUpDown, 'Customize my home screen', onOpenLayout)}
         {!isAdmin && !previewMode && item(KeyRound, 'Become an admin', onBecomeAdmin)}
+        {item(Bell, 'Replay welcome tips', () => { replayWelcomeTips(); onClose(); })}
         <div style={{ padding: '10px 4px' }}><ToggleRow label="Show me what's next" sub="A small banner on Home suggesting your next step" enabled={guidanceEnabled} onToggle={onToggleGuidance} /></div>
         {item(LogOut, 'Leave this tournament', onLeave, true)}
         {isAdmin && item(Trash2, 'Reset scores & bets for this round', onOpenReset, true)}
@@ -7491,6 +7642,7 @@ function FontLoader() {
       button { transition: transform 0.08s ease; }
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201,162,39,0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(201,162,39,0.38); } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
@@ -8076,6 +8228,8 @@ export default function RoGreen() {
   const [proxyPlayerId, setProxyPlayerId] = useState(null); // admin-only, session-only, never persisted — does not touch the admin's own saved identity
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [showTips, setShowTips] = useState(false);
+  const dismissTips = () => { setShowTips('done'); try { localStorage.setItem('db:seen-player-intro', '1'); } catch (e) {} };
+  useEffect(() => { const h = () => setShowTips(false); window.addEventListener('db:replay-tips', h); return () => window.removeEventListener('db:replay-tips', h); }, []);
   const [notifPrefs, setNotifPrefs] = useState({ leadChange: true, skinsWon: true, matchDecided: true, allSquare: true, playerFinished: true, bettingClosingSoon: true, roundComplete: true, chat: true });
   const [newPlayerName, setNewPlayerName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -8279,9 +8433,7 @@ export default function RoGreen() {
                 if (s != null && oldScores[h] == null) {
                   const par = activeRound.pars?.[h] ?? 4;
                   if (s - par <= -1) {
-                    const ev = { id: `birdie_sync_${Date.now()}_${h}`, playerId: p.id, holeIndex: h, diff: s - par, ts: Date.now() };
-                    setBirdieEvents(prev2 => [...prev2, ev]);
-                    setTimeout(() => setBirdieEvents(prev2 => prev2.filter(e => e.id !== ev.id)), 4000);
+                    // birdie celebration state was removed earlier; this used to call an undefined setter and abort the sync
                   }
                 }
               });
@@ -8774,12 +8926,12 @@ export default function RoGreen() {
         </div>
       )}
       {showTips === 'show' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setShowTips('done')}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => dismissTips()}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
             <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to MatchBook</div>
             {[
-              [Flag, 'Card tab is your scorecard', 'Tap + or − to enter your score on each hole'],
-              [ChevronRight, 'Swipe to change holes', 'Swipe left or right anywhere on the card screen'],
+              [Flag, 'Tap the round badge to score', 'Use + or − for each hole, then Save & Next'],
+              [ChevronRight, 'Fix a score any time', 'Tap Review, pick the hole, and change it'],
               [Trophy, 'Check the Games tab for bets', 'See skins, Nassau, and all side games live'],
             ].map(([Icon, title, sub]) => (
               <div key={title} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
@@ -8792,7 +8944,7 @@ export default function RoGreen() {
                 </div>
               </div>
             ))}
-            <button onClick={() => setShowTips('done')} style={{ width: '100%', background: C.emerald, border: 'none', borderRadius: 14, padding: '16px 0', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, textTransform: 'uppercase', color: '#FFFFFF', cursor: 'pointer', marginTop: 4 }}>Got it, let's play</button>
+            <button onClick={() => dismissTips()} style={{ width: '100%', background: C.emerald, border: 'none', borderRadius: 14, padding: '16px 0', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, textTransform: 'uppercase', color: '#FFFFFF', cursor: 'pointer', marginTop: 4 }}>Got it, let's play</button>
           </div>
         </div>
       )}
@@ -8861,7 +9013,7 @@ export default function RoGreen() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => prev === false ? 'show' : prev); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
