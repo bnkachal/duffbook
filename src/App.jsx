@@ -2945,6 +2945,68 @@ function scoreContextLabel(diff) {
   return null;
 }
 
+/* Scorepad drawer shell: grows out of the round badge (bottom-right) into the middle of the screen.
+   Opening takes DRAWER_OPEN_MS; closing plays the same motion in reverse, a bit faster. */
+const DRAWER_OPEN_MS = 1800;
+const padGhost = { background: 'rgba(11,13,16,0.06)', color: '#0B0D10', border: '1px solid rgba(11,13,16,0.22)', fontWeight: 700 };
+function DrawerFrame({ onClose, paper = true, children }) {
+  const padRef = useRef(null), scrimRef = useRef(null), contentRef = useRef(null);
+  const animRef = useRef(null), closingRef = useRef(false);
+  const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const frames = (opening) => {
+    const pad = padRef.current; if (!pad) return null;
+    const r = pad.getBoundingClientRect();
+    const bx = window.innerWidth - 16 - 38, by = window.innerHeight - 78 - 38; // centre of the floating badge
+    const dx = bx - (r.left + r.width / 2), dy = by - (r.top + r.height / 2);
+    const sx = 76 / r.width, sy = 76 / r.height;
+    let f;
+    if (reduce) f = [{ opacity: 0 }, { opacity: 1 }];
+    else f = [
+      { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, borderRadius: '50%', opacity: 0, offset: 0 },
+      { opacity: 1, offset: 0.12 },
+      { transform: `translate(${dx * 0.25}px, ${dy * 0.25}px) scale(0.92, 0.9)`, borderRadius: '24px', opacity: 1, offset: 0.7 },
+      { transform: 'translate(0px, 0px) scale(1, 1)', borderRadius: '20px', opacity: 1, offset: 1 },
+    ];
+    return opening ? f : f.slice().reverse().map(({ offset, ...rest }) => rest);
+  };
+  React.useLayoutEffect(() => {
+    const D = reduce ? 150 : DRAWER_OPEN_MS;
+    const f = frames(true); if (!f || !padRef.current.animate) return;
+    animRef.current = padRef.current.animate(f, { duration: D, easing: 'cubic-bezier(.22,.75,.2,1)', fill: 'both' });
+    animRef.current.onfinish = () => { try { animRef.current.cancel(); } catch (e) {} };
+    scrimRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: D, easing: 'ease', fill: 'both' });
+    contentRef.current?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.45 }, { opacity: 1 }], { duration: D, easing: 'ease', fill: 'both' });
+    return () => { try { animRef.current?.cancel(); } catch (e) {} };
+  }, []);
+  const requestClose = () => {
+    if (closingRef.current) return; closingRef.current = true;
+    const pad = padRef.current;
+    if (!pad || !pad.animate) { onClose(); return; }
+    const D = reduce ? 120 : Math.round(DRAWER_OPEN_MS * 0.7);
+    try { animRef.current?.cancel(); } catch (e) {}
+    const f = frames(false); if (!f) { onClose(); return; }
+    contentRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.round(D * 0.3), fill: 'forwards' });
+    scrimRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: D, easing: 'ease', fill: 'forwards' });
+    const a = pad.animate(f, { duration: D, easing: 'cubic-bezier(.5,0,.8,.4)', fill: 'forwards' });
+    a.onfinish = () => onClose();
+  };
+  const paperStyle = paper ? {
+    backgroundColor: '#F3F0E6',
+    backgroundImage: 'linear-gradient(to right, rgba(201,162,39,0.30) 1px, transparent 1px), linear-gradient(to bottom, rgba(201,162,39,0.30) 1px, transparent 1px)',
+    backgroundSize: '24px 24px', backgroundPosition: '12px 0', backgroundAttachment: 'local',
+    border: `2.5px solid ${C.blue}`, color: C.pineDark,
+    boxShadow: '0 18px 50px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.7)',
+  } : { background: C.pine, border: `1px solid ${C.turfBorder}`, color: C.ivory, boxShadow: '0 18px 50px rgba(0,0,0,0.6)' };
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div ref={scrimRef} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.62)' }} onClick={requestClose} />
+      <div ref={padRef} style={{ position: 'relative', width: '100%', maxWidth: 380, maxHeight: '86vh', overflowY: 'auto', overflowX: 'hidden', borderRadius: 20, boxSizing: 'border-box', WebkitOverflowScrolling: 'touch', ...paperStyle }}>
+        <div ref={contentRef} style={{ padding: '10px 16px 16px' }}>{typeof children === 'function' ? children(requestClose) : children}</div>
+      </div>
+    </div>
+  );
+}
+
 function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
   const initialHole = (() => {
@@ -3033,28 +3095,27 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   // ===== Review / submit screen (Hole 18 → Review, or reopening after submission) =====
   if (reviewMode) {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
-        <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+      <DrawerFrame onClose={onClose}>{(close) => (
+        <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: C.ivory, textTransform: 'uppercase' }}>{isSubmitted ? 'Your Scorecard' : 'Review Scorecard'}</span>
-            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
+            <span style={{ fontSize: 18, fontWeight: 800, color: C.pineDark, textTransform: 'uppercase' }}>{isSubmitted ? 'Your Scorecard' : 'Review Scorecard'}</span>
+            <button onClick={close} style={{ background: 'transparent', border: 'none', color: C.pineDark, cursor: 'pointer' }}><X size={22} /></button>
           </div>
-          <div style={{ fontSize: 11.5, color: C.bunker, marginBottom: 14 }}>{isSubmitted ? 'Submitted — read only. Tap Edit to make changes.' : 'Check everything before submitting your final card.'}</div>
+          <div style={{ fontSize: 11.5, color: '#6B6455', marginBottom: 14 }}>{isSubmitted ? 'Submitted — read only. Tap Edit to make changes.' : 'Check everything before submitting your final card.'}</div>
 
           {[[0, Math.ceil(numHoles / 2), 'Front nine'], [Math.ceil(numHoles / 2), numHoles, 'Back nine']].map(([from, to, label]) => (
             <div key={label}>
-              <div style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 4px' }}>{label}</div>
+              <div style={{ fontSize: 10, color: '#6B6455', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 4px' }}>{label}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 6 }}>
                 {Array.from({ length: to - from }, (_, i) => {
                   const hIdx = from + i;
                   const s = whoami ? state.scores[whoami.id]?.[hIdx] : null;
                   const p = state.pars[hIdx] ?? 4;
-                  const cls = s == null ? C.bunker : s < p ? C.emerald : s > p ? C.flagRed : C.ivory;
+                  const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : C.pineDark;
                   return (
-                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: C.turf, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
-                      <div style={{ fontSize: 9, color: C.bunker }}>{hIdx + 1}</div>
-                      <div style={{ fontSize: 8, color: C.bunker }}>Par {p}</div>
+                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid rgba(201,162,39,0.45)', borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
+                      <div style={{ fontSize: 9, color: '#6B6455' }}>{hIdx + 1}</div>
+                      <div style={{ fontSize: 8, color: '#6B6455' }}>Par {p}</div>
                       <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
                     </div>
                   );
@@ -3065,32 +3126,32 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             {isSubmitted ? (
-              <GhostButton onClick={() => whoami && unlockScorecard?.(whoami.id)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Edit Scorecard</GhostButton>
+              <GhostButton onClick={() => whoami && unlockScorecard?.(whoami.id)} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Edit Scorecard</GhostButton>
             ) : (
               <>
-                <GhostButton onClick={() => setReviewMode(false)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Keep Editing</GhostButton>
-                <GoldButton onClick={() => { if (whoami) submitScorecard?.(whoami.id); onClose(); }} style={{ flex: 1, padding: '13px 0' }}>Submit Final Scorecard</GoldButton>
+                <GhostButton onClick={() => setReviewMode(false)} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Keep Editing</GhostButton>
+                <GoldButton onClick={() => { if (whoami) submitScorecard?.(whoami.id); close(); }} style={{ flex: 1, padding: '13px 0' }}>Submit Final Scorecard</GoldButton>
               </>
             )}
           </div>
-        </div>
-      </div>
+        </>
+      )}</DrawerFrame>
     );
   }
 
+  const paperOn = playersToShow.length > 0;
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} onClick={onClose} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 720, background: C.pine, borderRadius: '20px 20px 0 0', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 18px calc(20px + env(safe-area-inset-bottom, 0px))', maxHeight: '85vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+    <DrawerFrame onClose={onClose} paper={paperOn}>{(close) => (
+      <>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+          <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: paperOn ? C.pineDark : C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 12, color: C.goldBright, fontWeight: 700, letterSpacing: 0.5 }}>HOLE {viewHole + 1}</div>
-          <div style={{ fontSize: 13, color: C.ivoryDim, marginTop: 3 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
+        <div style={{ textAlign: 'center', marginBottom: 10, paddingBottom: 10, borderBottom: paperOn ? '2px solid #C0463A' : 'none' }}>
+          <div style={{ fontSize: 12, color: paperOn ? '#8D6B16' : C.goldBright, fontWeight: 800, letterSpacing: 1.2 }}>HOLE {viewHole + 1}</div>
+          <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : C.ivoryDim, marginTop: 3, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
           {groupScoreEntry && !viewAsAdmin && playersToShow.length > 1 && (
-            <div style={{ fontSize: 10.5, color: C.goldBright, marginTop: 4, fontWeight: 600 }}>Scoring for {playersToShow.length} players</div>
+            <div style={{ fontSize: 10.5, color: paperOn ? '#8D6B16' : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
           )}
         </div>
 
@@ -3109,9 +3170,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
           const compact = viewAsAdmin;
           return (
             <div key={p.id} style={{
-              background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, borderRadius: compact ? 12 : 16,
-              padding: compact ? '10px 12px' : '16px 16px 14px', marginBottom: 10,
-              boxShadow: '0 3px 14px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,255,255,0.5)',
+              background: 'transparent', borderRadius: 0,
+              padding: compact ? '8px 2px' : '14px 2px 12px', marginBottom: 0,
+              borderBottom: '1px solid rgba(201,162,39,0.5)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: compact ? 6 : 12 }}>
                 <Chip color={pc(p)} style={{ width: compact ? 22 : 26, height: compact ? 22 : 26, fontSize: 9, flexShrink: 0 }}>{initials(p.name)}</Chip>
@@ -3124,7 +3185,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 14 : 22 }}>
                 <button onClick={() => bump(p.id, -1)} style={{ width: compact ? 34 : 46, height: compact ? 34 : 46, borderRadius: '50%', background: C.pineDark, border: 'none', color: C.ivory, fontSize: compact ? 16 : 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>−</button>
-                <div onClick={() => confirm(p.id)} style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: compact ? 28 : 44, color: confirmed ? '#0C6B45' : C.pineDark, cursor: 'pointer', minWidth: compact ? 44 : 64, textAlign: 'center', borderRadius: 12, transition: 'color 0.2s' }}>{draft}</div>
+                <div onClick={() => confirm(p.id)} style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: compact ? 28 : 44, color: confirmed ? '#0C6B45' : C.pineDark, cursor: 'pointer', minWidth: compact ? 44 : 64, textAlign: 'center', borderRadius: 12, background: 'rgba(243,240,230,0.88)', transition: 'color 0.2s' }}>{draft}</div>
                 <button onClick={() => bump(p.id, 1)} style={{ width: compact ? 34 : 46, height: compact ? 34 : 46, borderRadius: '50%', background: C.pineDark, border: 'none', color: C.ivory, fontSize: compact ? 16 : 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>+</button>
               </div>
 
@@ -3143,15 +3204,15 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         })}
 
         {confirmAdvanceAnyway && missingPlayers.length > 0 && (
-          <div style={{ fontSize: 11.5, color: C.flagRed, textAlign: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 11.5, color: '#8A2A1F', fontWeight: 700, textAlign: 'center', margin: '10px 0 8px' }}>
             {missingPlayers.map(p => pgaName(p.name)).join(', ')} {missingPlayers.length === 1 ? 'needs' : 'need'} a score for Hole {viewHole + 1}. Tap again to continue anyway.
           </div>
         )}
-        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
           {viewHole === 0 ? (
-            <GhostButton onClick={onClose} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>Close</GhostButton>
+            <GhostButton onClick={close} style={{ ...(paperOn ? padGhost : {}), flex: 1, padding: '13px 0', textAlign: 'center' }}>Close</GhostButton>
           ) : (
-            <GhostButton onClick={() => goHole(-1)} style={{ flex: 1, padding: '13px 0', textAlign: 'center' }}>‹ Hole {viewHole}</GhostButton>
+            <GhostButton onClick={() => goHole(-1)} style={{ ...(paperOn ? padGhost : {}), flex: 1, padding: '13px 0', textAlign: 'center' }}>‹ Hole {viewHole}</GhostButton>
           )}
           {viewHole === numHoles - 1 ? (
             <GoldButton onClick={() => tryAdvance(() => setReviewMode(true))} style={{ flex: 1, padding: '13px 0' }}>Review Scorecard</GoldButton>
@@ -3159,8 +3220,8 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
             <GoldButton onClick={() => tryAdvance(() => goHole(1))} style={{ flex: 1, padding: '13px 0' }}>Hole {viewHole + 2} ›</GoldButton>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    )}</DrawerFrame>
   );
 }
 
