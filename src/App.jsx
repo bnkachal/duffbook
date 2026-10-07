@@ -1720,7 +1720,7 @@ function getRoundPhase(state, stats, bets) {
 function getNextStep(phase, state, whoami, isAdmin) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (phase === 'pre-round' || phase === 'in-progress') {
-    if (!isAdmin && !whoami) return { text: 'Pick your name on the Card tab so MatchBook knows whose score is whose.', action: 'card' };
+    if (!isAdmin && !whoami) return { text: 'Tap here and pick your name so MatchBook knows whose score is whose.', action: 'card' };
     if (pm.enabled && !pm.resolved) {
       const stats = computeStats(state);
       const bettingOpen = !stats.some(s => s.thru > pm.lockAfterHole);
@@ -4538,7 +4538,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           ]} />
       )}
       {nextStep && (
-        <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: C.turfLight, border: `1.5px solid ${C.gold}` }}>
+        <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else if (nextStep.action === 'card') onOpenDrawer(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: C.turfLight, border: `1.5px solid ${C.gold}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={C.goldBright} size={28} /><span style={{ fontSize: 13, color: C.ivory }}>{nextStep.text}</span></div>
           <ChevronRight size={16} color={C.goldBright} style={{ flexShrink: 0 }} />
         </button>
