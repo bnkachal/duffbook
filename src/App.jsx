@@ -4355,31 +4355,43 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
               const badgeState = !whoami ? 'start' : isSubmitted ? 'done' : thru === 0 ? 'start' : nextHole == null ? 'review' : 'progress';
               const handleTap = badgeState === 'review' || badgeState === 'done' ? onOpenDrawerReview : onOpenDrawer;
-              const shouldPulse = badgeState !== 'done';
+              const isDone = badgeState === 'done';
+              const accent = isDone ? C.emerald : C.blue;
+              const ringR = 33, circ = 2 * Math.PI * ringR;
+              const pct = isDone ? 1 : (whoami ? Math.min(1, thru / state.numHoles) : 0);
+              const offset = circ * (1 - pct);
+              const beacon = { position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite', pointerEvents: 'none' };
+              const lbl = { fontFamily: 'Inter, sans-serif', fontWeight: 800, color: C.pineDark, lineHeight: 1.15, letterSpacing: 0.3, position: 'relative' };
               return (
-                <div onClick={handleTap} style={{
-                  position: 'fixed', bottom: 78, right: 16, zIndex: 30, cursor: 'pointer',
-                  minWidth: 64, height: 64, borderRadius: '50%',
-                  background: badgeState === 'done' ? C.emerald : C.gold,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)', border: `2px solid ${C.pineDark}`,
-                  animation: shouldPulse ? 'beaconPulse2 2.2s ease-in-out infinite' : 'none',
-                }}>
-                  {badgeState === 'done' ? (
-                    <Check size={26} color="#06251a" strokeWidth={3} />
-                  ) : badgeState === 'review' ? (
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: C.pineDark, letterSpacing: 0.4 }}>REVIEW</span>
-                  ) : badgeState === 'start' ? (
-                    <>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 10, color: C.pineDark, lineHeight: 1.2 }}>ENTER</span>
-                      <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 10, color: C.pineDark, lineHeight: 1.2 }}>SCORE</span>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 8, fontWeight: 800, color: C.pineDark, letterSpacing: 0.4 }}>HOLE</span>
-                      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: 22, color: C.pineDark }}>{nextHole + 1}</span>
-                    </>
-                  )}
+                <div onClick={handleTap} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
+                  {!isDone && <div style={beacon} />}
+                  {!isDone && <div style={{ ...beacon, animationDelay: '0.8s' }} />}
+                  <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+                    <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={accent} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+                  </svg>
+                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${C.ivory}, #E4E1D8)`, border: `2.5px solid ${accent}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', overflow: 'hidden' }}>
+                    <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+                      <line x1="0" y1="14" x2="58" y2="14" stroke={C.flagRed} strokeWidth="1" opacity="0.6" />
+                      {[24, 34, 44].map(y => <line key={`h${y}`} x1="0" y1={y} x2="58" y2={y} stroke={C.gold} strokeWidth="0.8" opacity="0.5" />)}
+                      {[14, 24, 34, 44].map(x => <line key={`v${x}`} x1={x} y1="0" x2={x} y2="58" stroke={C.gold} strokeWidth="0.8" opacity="0.5" />)}
+                    </svg>
+                    {isDone ? (
+                      <Check size={26} color={C.emerald} strokeWidth={3.5} style={{ position: 'relative' }} />
+                    ) : badgeState === 'review' ? (
+                      <span style={{ ...lbl, fontSize: 9 }}>REVIEW</span>
+                    ) : badgeState === 'start' ? (
+                      <>
+                        <span style={{ ...lbl, fontSize: 9 }}>ENTER</span>
+                        <span style={{ ...lbl, fontSize: 9 }}>SCORE</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ ...lbl, fontSize: 7, color: C.gold }}>HOLE</span>
+                        <span style={{ ...lbl, fontFamily: 'IBM Plex Mono, monospace', fontSize: 20 }}>{nextHole + 1}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })()}
@@ -7480,7 +7492,6 @@ function FontLoader() {
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
-      @keyframes beaconPulse2 { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
       @keyframes birdFly {
