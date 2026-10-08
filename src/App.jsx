@@ -7642,17 +7642,38 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
   const scrollRef = useRef(null);
   const [paused, setPaused] = useState(false);
   const rafRef = useRef(null);
+  const posRef = useRef(0);
+  const holdRef = useRef(false);
+  const holdTimer = useRef(null);
+  const CREDITS_SPEED = 55; // pixels per second
 
+  // Time-based so it rolls at the same pace on every screen. The position is kept as a decimal here because the
+  // browser rounds scrollTop to whole pixels, which would swallow a slow per-frame nudge.
   useEffect(() => {
-    const step = () => {
-      if (!paused && scrollRef.current) {
-        scrollRef.current.scrollTop += 0.6;
+    let last = performance.now();
+    const step = (now) => {
+      const dt = Math.min(64, now - last) / 1000;
+      last = now;
+      const el = scrollRef.current;
+      if (el) {
+        if (!paused && !holdRef.current) {
+          posRef.current += CREDITS_SPEED * dt;
+          el.scrollTop = posRef.current;
+        } else {
+          posRef.current = el.scrollTop;
+        }
       }
       rafRef.current = requestAnimationFrame(step);
     };
     rafRef.current = requestAnimationFrame(step);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); clearTimeout(holdTimer.current); };
   }, [paused]);
+  // Touching or scrolling by hand holds the credits; they start rolling again a moment after you let go.
+  const holdCredits = (ms) => {
+    holdRef.current = true;
+    clearTimeout(holdTimer.current);
+    if (ms != null) holdTimer.current = setTimeout(() => { holdRef.current = false; }, ms);
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#050709', zIndex: 70, display: 'flex', flexDirection: 'column' }}>
@@ -7662,9 +7683,11 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
       </div>
       <div
         ref={scrollRef}
-        onTouchStart={() => setPaused(true)}
-        onMouseDown={() => setPaused(true)}
-        style={{ flex: 1, overflowY: 'auto', textAlign: 'center', padding: '0 24px' }}
+        onPointerDown={() => holdCredits(null)}
+        onPointerUp={() => holdCredits(1800)}
+        onPointerCancel={() => holdCredits(1800)}
+        onWheel={() => holdCredits(1800)}
+        style={{ flex: 1, overflowY: 'auto', textAlign: 'center', padding: '0 24px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
       >
         <div style={{ height: '40vh' }} />
         <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold, marginBottom: 10 }}>MatchBook Presents</div>
@@ -7692,6 +7715,8 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
         <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold }}>MatchBook</div>
         <div style={{ height: '50vh' }} />
       </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '18vh', background: 'linear-gradient(#050709, rgba(5,7,9,0))', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '18vh', background: 'linear-gradient(rgba(5,7,9,0), #050709)', pointerEvents: 'none' }} />
     </div>
   );
 }
