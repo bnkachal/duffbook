@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const { q, id } = req.query || {};
   let url;
   if (id !== undefined) {
-    if (!/^\d{1,9}$/.test(String(id))) {
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(id))) {
       res.status(400).json({ error: 'bad_id' });
       return;
     }
