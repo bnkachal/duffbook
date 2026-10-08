@@ -5885,12 +5885,13 @@ function CourseSection({ state, selectProviderCourse, selectCustomCourse, setNum
 /* Template columns: name (required), handicapIndex (optional), team (optional, must match a flight name).
    Both CSV and XLSX template downloads are generated entirely in-browser via Papa/SheetJS. */
 function downloadRosterTemplate(format, flights) {
-  const header = ['name', 'handicapIndex', 'team', 'group'];
+  const header = ['name', 'handicapIndex', 'flight', 'tee', 'partner', 'status'];
+  const f0 = flights[0]?.name || 'A', f1 = flights[1]?.name || 'B';
   const examples = [
-    ['Mike Johnson', '8.2', flights[0]?.name || 'Red', '1'],
-    ['Steve Smith', '14.5', flights[1]?.name || 'Blue', '1'],
-    ['Casey Williams', '5.0', flights[0]?.name || 'Red', '2'],
-    ['Jordan Taylor', '18.4', flights[1]?.name || 'Blue', '2'],
+    ['Mike Johnson', '8.2', f0, 'White', 'Steve Smith', 'Member'],
+    ['Steve Smith', '14.5', f0, 'White', 'Mike Johnson', 'Guest'],
+    ['Casey Williams', '5.0', f1, 'Blue', 'Jordan Taylor', 'Member'],
+    ['Jordan Taylor', '+1.2', f1, 'Blue', 'Casey Williams', 'Guest'],
   ];
   if (format === 'csv') {
     const Papa = window.Papa;
@@ -5901,10 +5902,40 @@ function downloadRosterTemplate(format, flights) {
     const XLSX = window.XLSX;
     if (!XLSX) { alert('XLSX library not available. Try CSV instead.'); return; }
     const ws = XLSX.utils.aoa_to_sheet([header, ...examples]);
-    ws['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 18 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 12 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Roster');
     XLSX.writeFile(wb, 'matchbook-roster.xlsx');
   }
+}
+/* Header matching ignores case, spaces and punctuation, so "Handicap Index", "HCP" and "hcp_index" all work. */
+const ROSTER_ALIASES = {
+  name: ['name', 'player', 'playername', 'fullname', 'member', 'membername', 'golfer'],
+  first: ['first', 'firstname', 'fname', 'givenname'],
+  last: ['last', 'lastname', 'lname', 'surname', 'familyname'],
+  hcp: ['handicapindex', 'handicap', 'hcp', 'hcpindex', 'hindex', 'index', 'hi', 'ghinindex', 'currenthandicap'],
+  team: ['team', 'flight', 'division', 'flightname'],
+  group: ['group', 'pair', 'pairing', 'pairid', 'groupnumber'],
+  partner: ['partner', 'partnername', 'teammate'],
+  tee: ['tee', 'tees', 'teebox', 'teename', 'teeplayed'],
+  status: ['status', 'type', 'membertype', 'membership', 'memberguest'],
+};
+const rosterKey = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function rosterTidyName(raw, first, last) {
+  let n = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!n && (first || last)) n = `${String(first || '').trim()} ${String(last || '').trim()}`.replace(/\s+/g, ' ').trim();
+  const m = n.match(/^([^,]+),\s*(.+)$/); // "Smith, John" -> "John Smith"
+  if (m) n = `${m[2].trim()} ${m[1].trim()}`;
+  return n;
+}
+function rosterParseHcp(raw) {
+  const t = String(raw ?? '').trim().replace(/\s+/g, '');
+  if (!t || /^(nh|n\/a|na|none|-|--)$/i.test(t)) return { value: '', note: '' };
+  const plus = /^\+/.test(t);
+  const num = parseFloat(t.replace(/^\+/, '').replace(',', '.'));
+  if (isNaN(num)) return { value: '', note: `handicap "${raw}" isn't a number, left blank` };
+  const v = plus ? -Math.abs(num) : num;
+  if (v < -10 || v > 54) return { value: '', note: `handicap ${v} is out of range, left blank` };
+  return { value: String(v), note: plus ? `"+${num}" is a plus handicap, stored as ${v}` : '' };
 }
 function parseRosterFile(file, flights) {
   return new Promise((resolve, reject) => {
@@ -5912,16 +5943,38 @@ function parseRosterFile(file, flights) {
     const normalize = (rows) => {
       const flightsByName = {}; flights.forEach(f => { flightsByName[f.name.trim().toLowerCase()] = f.id; });
       const results = [], errors = [];
+      const seen = {};
+      const get = (row, field) => {
+        for (const k of Object.keys(row)) { if (ROSTER_ALIASES[field].includes(rosterKey(k)) && String(row[k] ?? '').trim() !== '') return String(row[k]).trim(); }
+        return '';
+      };
+      let noHcp = 0;
       rows.forEach((row, i) => {
-        const name = (row.name || row.Name || row.NAME || '').toString().trim();
-        if (!name) { if (Object.values(row).some(v => v)) errors.push(`Row ${i + 2}: missing name`); return; }
-        const hcpRaw = (row.handicapIndex || row['Handicap Index'] || row.handicapIndex || row.hcp || row.HCP || '').toString().trim();
-        const hcp = hcpRaw && !isNaN(parseFloat(hcpRaw)) ? String(parseFloat(hcpRaw)) : '';
-        const teamRaw = (row.team || row.Team || row.TEAM || row.flight || row.Flight || '').toString().trim();
+        const n = i + 2;
+        const name = rosterTidyName(get(row, 'name'), get(row, 'first'), get(row, 'last'));
+        if (!name) { if (Object.values(row).some(v => String(v ?? '').trim())) errors.push(`Row ${n}: no name found, skipped`); return; }
+        const dupKey = name.toLowerCase();
+        if (seen[dupKey]) errors.push(`Row ${n}: "${name}" appears twice (also row ${seen[dupKey]}). Both were kept.`);
+        else seen[dupKey] = n;
+        const hc = rosterParseHcp(get(row, 'hcp'));
+        if (hc.note) errors.push(`Row ${n} (${name}): ${hc.note}`);
+        if (!hc.value && !hc.note) noHcp++;
+        const teamRaw = get(row, 'team');
         const flightId = teamRaw ? (flightsByName[teamRaw.toLowerCase()] || null) : null;
-        if (teamRaw && !flightId) errors.push(`Row ${i + 2}: team "${teamRaw}" doesn't match any flight — it'll be left unassigned`);
-        const groupRaw = (row.group || row.Group || row.GROUP || row.pair || row.Pair || '').toString().trim();
-        results.push({ name, handicapIndex: hcp, flightId, _teamRaw: teamRaw, _groupRaw: groupRaw });
+        if (teamRaw && !flightId) errors.push(`Row ${n} (${name}): flight "${teamRaw}" doesn't match any flight, left unassigned`);
+        const statusRaw = get(row, 'status').toLowerCase();
+        const status = /guest/.test(statusRaw) ? 'guest' : /member/.test(statusRaw) ? 'member' : '';
+        results.push({ name, handicapIndex: hc.value, flightId, _teamRaw: teamRaw, _groupRaw: get(row, 'group'), _partnerRaw: get(row, 'partner').replace(/\s+/g, ' '), teeName: get(row, 'tee'), status });
+      });
+      if (noHcp > 0 && noHcp < results.length) errors.push(`${noHcp} player${noHcp === 1 ? ' has' : 's have'} no handicap`);
+      // Partners are matched by name, in either "First Last" or "Last, First" form.
+      const byName = {}; results.forEach((r, idx) => { byName[r.name.toLowerCase()] = idx; });
+      results.forEach(r => {
+        if (!r._partnerRaw) return;
+        const pn = rosterTidyName(r._partnerRaw).toLowerCase();
+        const idx = byName[pn];
+        if (idx == null) { errors.push(`${r.name}: partner "${r._partnerRaw}" isn't on the roster`); r._partnerIdx = null; }
+        else r._partnerIdx = idx;
       });
       return { results, errors };
     };
@@ -5965,8 +6018,19 @@ function pairsFromImportGroups(newPlayers, parsedRows) {
     if (!byGroup[g]) byGroup[g] = [];
     byGroup[g].push(player.id);
   });
-  return Object.values(byGroup).filter(ids => ids.length > 0).map((playerIds, idx) => ({ id: `grp_${Date.now()}_${idx}`, playerIds }));
+  const out = Object.values(byGroup).filter(ids => ids.length > 0).map((playerIds, idx) => ({ id: `grp_${Date.now()}_${idx}`, playerIds }));
+  // Partner column: pair two players who name each other (or one names the other). Skipped for anyone already in a group.
+  const used = new Set(out.flatMap(g => g.playerIds));
+  parsedRows.forEach((row, i) => {
+    const a = newPlayers[i], b = row._partnerIdx != null ? newPlayers[row._partnerIdx] : null;
+    if (!a || !b || a.id === b.id || used.has(a.id) || used.has(b.id)) return;
+    used.add(a.id); used.add(b.id);
+    out.push({ id: `grp_${Date.now()}_p${out.length}`, playerIds: [a.id, b.id] });
+  });
+  return out;
 }
+/* Fields every import path copies onto a new player. */
+const importedPlayerExtras = (p) => ({ ...(p.teeName ? { teeName: p.teeName } : {}), ...(p.status ? { status: p.status } : {}) });
 function RosterImportModal({ flights, existingPlayerCount, hasScores, onApply, onClose }) {
   const [stage, setStage] = useState('upload'); // upload | preview | confirm-replace
   const [parsed, setParsed] = useState(null);
@@ -5980,7 +6044,7 @@ function RosterImportModal({ flights, existingPlayerCount, hasScores, onApply, o
     setLoading(true); setParseError('');
     try {
       const { results, errors } = await parseRosterFile(file, flights);
-      if (results.length === 0) { setParseError('No valid player rows found. Check that your file has a "name" column and at least one player row.'); setLoading(false); return; }
+      if (results.length === 0) { setParseError('No players found. Make sure the first row has column headings and one column holds player names.'); setLoading(false); return; }
       setParsed(results); setParseErrors(errors);
       setStage(existingPlayerCount > 0 ? 'confirm-replace' : 'preview');
     } catch (err) { setParseError(err.message || 'Something went wrong reading the file.'); }
@@ -6004,7 +6068,7 @@ function RosterImportModal({ flights, existingPlayerCount, hasScores, onApply, o
         {stage === 'upload' && (
           <>
             <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 16, lineHeight: 1.6 }}>
-              Fill in the template, then upload it here. Four columns: <strong>name</strong> (required), <strong>handicapIndex</strong>, <strong>team</strong> (must match a flight name exactly{flights.length ? `: ${flights.map(f => f.name).join(', ')}` : ' — no flights set up yet'}), and <strong>group</strong> (optional — give players the same group label to auto-build Scramble / Best Ball / Shamble pairs on import, e.g. "1", "2", "3"…).
+              Download the template, or just upload the spreadsheet your club already keeps. Column names don't have to match exactly, and "Last, First" names are fine. Only <strong>name</strong> is required. Optional: <strong>handicapIndex</strong>, <strong>flight</strong>{flights.length ? ` (${flights.map(f => f.name).join(', ')})` : ''}, <strong>tee</strong>, <strong>partner</strong> (pairs two players by name), <strong>group</strong> (same label = same pairing) and <strong>status</strong> (Member or Guest). You'll see a preview and any problems before anything is added.
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button onClick={() => downloadRosterTemplate('csv', flights)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, color: C.ivory, padding: '10px 0', cursor: 'pointer', fontSize: 13 }}>
@@ -6064,7 +6128,7 @@ function RosterImportModal({ flights, existingPlayerCount, hasScores, onApply, o
                     <Chip color={CHIP_COLORS[i % CHIP_COLORS.length]}>{initials(p.name)}</Chip>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{pgaName(p.name)}</div>
-                      <div style={{ fontSize: 11, color: C.ivoryDim }}>{p.handicapIndex ? `HCP ${p.handicapIndex}` : 'No handicap'}{p.flightId ? ` · ${flightName(p.flightId)}` : p._teamRaw ? ` · "${p._teamRaw}" unrecognized` : ''}</div>
+                      <div style={{ fontSize: 11, color: C.ivoryDim }}>{p.handicapIndex ? `HCP ${p.handicapIndex}` : 'No handicap'}{p.flightId ? ` · ${flightName(p.flightId)}` : p._teamRaw ? ` · "${p._teamRaw}" unrecognized` : ''}{p.teeName ? ` · ${p.teeName} tees` : ''}{p.status ? ` · ${p.status === 'guest' ? 'Guest' : 'Member'}` : ''}{p._partnerIdx != null ? ` · with ${parsed[p._partnerIdx]?.name}` : ''}</div>
                     </div>
                   </div>
                   {p.flightId && <span style={{ width: 10, height: 10, borderRadius: 999, background: flightColor(p.flightId), flexShrink: 0 }} />}
@@ -6742,7 +6806,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
     const newPlayers = players.map((p, i) => ({
       id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
       name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length],
-      handicapIndex: p.handicapIndex || '', flightId: p.flightId || null,
+      handicapIndex: p.handicapIndex || '', flightId: p.flightId || null, ...importedPlayerExtras(p),
     }));
     updateTournament(prev => {
       const emptyScores = (numHoles) => Object.fromEntries(newPlayers.map(p => [p.id, Array(numHoles).fill(null)]));
@@ -7027,7 +7091,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
     setTimeout(() => setShareMsg(''), 2200);
   };
   const applyImportedPlayers = (players) => {
-    const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null }));
+    const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null, ...importedPlayerExtras(p) }));
     updateTournament(prev => ({ ...prev, players: newPlayers, rounds: prev.rounds.map(r => ({ ...r, scores: Object.fromEntries(newPlayers.map(p => [p.id, Array(r.numHoles).fill(null)])) })) }));
     const groups = pairsFromImportGroups(newPlayers, players);
     if (groups.length > 0) {
@@ -7212,7 +7276,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
           <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} />
           {wizardImportOpen && <RosterImportModal flights={tournament.flights} existingPlayerCount={tournament.players.length} hasScores={false} onApply={(players) => {
-            const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null }));
+            const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null, ...importedPlayerExtras(p) }));
             updateTournament(prev => ({ ...prev, players: newPlayers, rounds: prev.rounds.map(r => ({ ...r, scores: Object.fromEntries(newPlayers.map(p => [p.id, Array(r.numHoles).fill(null)])) })) }));
             const groups = pairsFromImportGroups(newPlayers, players);
             if (groups.length > 0) {
