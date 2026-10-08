@@ -924,9 +924,10 @@ const AWARD_DEFS = {
   theAnchor:     { label: 'The Anchor', sub: "team's top performer", icon: AnchorIcon, requires: 'flights', perTeam: true },
 };
 
+const DEFAULT_AWARDS = ['medalist', 'netMedalist', 'birdieMachine'];
 function computeAwards(state, tournament, ledger) {
-  const selected = Array.isArray(state.awards) ? state.awards : [];
-  if (selected.length === 0) return [];
+  // Nothing picked in setup means "use the standard set", so the awards screen is never silently empty.
+  const selected = Array.isArray(state.awards) && state.awards.length > 0 ? state.awards : DEFAULT_AWARDS;
   const players = state.players.filter(p => (state.scores[p.id] || []).some(s => s != null));
   if (players.length === 0) return [];
   const numHoles = state.numHoles || 18;
@@ -5012,13 +5013,14 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const totalPlayers = state.players.length;
         const donePlayers = stats.filter(s => s.thru >= state.numHoles).length;
         const mostDone = totalPlayers > 0 && donePlayers >= Math.ceil(totalPlayers * 0.75);
-        if (!mostDone) return null;
+        const anyScored = stats.some(s => s.thru > 0);
+        if (!anyScored) return null;
         return (
-          <button onClick={onOpenRoundComplete} style={{ ...homeCard, background: C.emerald, border: `1.5px solid ${C.emerald}`, justifyContent: 'space-between', boxShadow: `0 4px 0 rgba(0,0,0,0.15), 0 0 16px ${C.emerald}40` }}>
+          <button onClick={onOpenRoundComplete} style={{ ...homeCard, background: mostDone ? C.emerald : C.turf, border: `1.5px solid ${mostDone ? C.emerald : C.turfBorder}`, justifyContent: 'space-between', boxShadow: mostDone ? `0 4px 0 rgba(0,0,0,0.15), 0 0 16px ${C.emerald}40` : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <IconBadge icon={Check} color="#FFFFFF" size={28} />
               <div>
-                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 15, textTransform: 'uppercase', letterSpacing: 0.4, color: '#FFFFFF' }}>Finish Round</div>
+                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 15, textTransform: 'uppercase', letterSpacing: 0.4, color: '#FFFFFF' }}>{mostDone ? 'Finish Round' : 'End Round & Awards'}</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>{donePlayers} of {totalPlayers} players finished</div>
               </div>
             </div>
@@ -7141,34 +7143,40 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundFlow, onOpenProxy, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer }) {
+function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
+  const section = (label) => <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.4, textTransform: 'uppercase', color: C.bunker, padding: '14px 4px 2px', borderBottom: `1px solid ${C.turfBorder}` }}>{label}</div>;
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px' }}>
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
+      <div style={{ position: 'sticky', top: 0, zIndex: 2, background: C.pine, margin: '-10px -16px 0', padding: '12px 16px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.turfBorder}` }}>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: 1 }}>Settings</div>
+        <button onClick={onClose} aria-label="Close settings" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={24} /></button>
+      </div>
         <button onClick={copyCode} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: C.ivoryDim, cursor: 'pointer', marginBottom: 6, fontSize: 12 }}>Round code <strong style={{ color: C.goldBright, letterSpacing: 1 }}>{roundCode}</strong> <Copy size={13} /> {copied && 'copied!'}</button>
-        {isAdmin && <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 12 }}>You're an admin · PIN {adminPin}</div>}
-        {whoami && item(User, `Not ${pgaName(whoami.name)}? Switch player`, onSwitchPlayer)}
+        {isAdmin && <div style={{ fontSize: 11, color: C.ivoryDim, marginBottom: 4 }}>You're an admin · PIN {adminPin}</div>}
+        {section('Round')}
         {item(FileText, 'Tournament Rules', onOpenRules)}
-        {isAdmin && !previewMode && item(User, 'Preview as Player', onEnterPreview)}
-        {previewMode && item(LogOut, 'Exit player preview', onExitPreview)}
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
-        {hasPlayers && item(Flag, 'Round Flow', onOpenRoundFlow)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
-        {isAdmin && hasPlayers && item(User, 'Proxy as a player', onOpenProxy)}
-        {item(Bell, 'Notifications', onOpenNotifications)}
+        {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
+        {section('Me')}
+        {whoami && item(User, `Not ${pgaName(whoami.name)}? Switch player`, onSwitchPlayer)}
         {item(User, 'Your name on this device', onOpenProfile)}
+        {item(Bell, 'Notifications', onOpenNotifications)}
         {item(ChevronsUpDown, 'Customize my home screen', onOpenLayout)}
-        {!isAdmin && !previewMode && item(KeyRound, 'Become an admin', onBecomeAdmin)}
         {item(Bell, 'Replay welcome tips', () => { replayWelcomeTips(); onClose(); })}
         <div style={{ padding: '10px 4px' }}><ToggleRow label="Show me what's next" sub="A small banner on Home suggesting your next step" enabled={guidanceEnabled} onToggle={onToggleGuidance} /></div>
+        {section('Admin')}
+        {isAdmin && !previewMode && item(User, 'Preview as Player', onEnterPreview)}
+        {previewMode && item(LogOut, 'Exit player preview', onExitPreview)}
+        {!isAdmin && !previewMode && item(KeyRound, 'Become an admin', onBecomeAdmin)}
+        {section('Leave')}
         {item(LogOut, 'Leave this tournament', onLeave, true)}
         {isAdmin && item(Trash2, 'Reset scores & bets for this round', onOpenReset, true)}
-      </div>
-    </div>
+    </>)}</DrawerSheet>
   );
 }
 
@@ -7688,7 +7696,7 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
   );
 }
 
-function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards }) {
+function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards, isAdmin }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const final = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
@@ -7756,7 +7764,7 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
         </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 18 }}>${totalSettled.toFixed(totalSettled % 1 ? 2 : 0)} settled across the group so far — check Settle for who pays whom.</div>
 
-        {isLastRound && hasAwards && (
+        {isAdmin && isLastRound && hasAwards && (
           <GoldButton onClick={onOpenAwards} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>🎬 Show Awards</GoldButton>
         )}
         {state.handicapsEnabled && (
@@ -9261,7 +9269,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundFlow={() => { setSettingsOpen(false); setRoundFlowOpen(true); }} onOpenProxy={() => { setSettingsOpen(false); setProxyOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -9290,7 +9298,7 @@ export default function RoGreen() {
       {roundCompleteOpen && (() => {
         const awardResults = computeAwards(state, tournament, ledger);
         return (
-          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} onOpenAwards={() => { setRoundCompleteOpen(false); updateRound(r => ({ ...r, awardsPresentationActive: true })); }} />
+          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} isAdmin={viewAsAdmin} onOpenAwards={() => { setRoundCompleteOpen(false); updateRound(r => ({ ...r, awardsPresentationActive: true })); }} />
         );
       })()}
       {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => { setAwardsOpen(false); if (viewAsAdmin) updateRound(r => ({ ...r, awardsPresentationActive: false })); }} />}
