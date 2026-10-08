@@ -2947,18 +2947,27 @@ function scoreContextLabel(diff) {
 
 /* Scorepad drawer shell: grows out of the round badge (bottom-right) into the middle of the screen.
    Opening takes DRAWER_OPEN_MS; closing plays the same motion in reverse, a bit faster. */
-const DRAWER_OPEN_MS = 1800;
+const DRAWER_OPEN_MS = 1400;
+// Remember where the user last tapped so non-scorecard drawers can grow out of the button they pressed.
+let __lastTap = null;
+if (typeof window !== 'undefined' && !window.__dbTapTracker) {
+  window.__dbTapTracker = true;
+  window.addEventListener('pointerdown', (e) => { __lastTap = { x: e.clientX, y: e.clientY, t: Date.now() }; }, true);
+}
 const padGhost = { background: 'rgba(11,13,16,0.06)', color: '#0B0D10', border: '1px solid rgba(11,13,16,0.22)', fontWeight: 700 };
-function DrawerFrame({ onClose, paper = true, children }) {
+function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wide = 380, children }) {
   const padRef = useRef(null), scrimRef = useRef(null), contentRef = useRef(null);
   const animRef = useRef(null), closingRef = useRef(false);
   const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const frames = (opening) => {
     const pad = padRef.current; if (!pad) return null;
     const r = pad.getBoundingClientRect();
-    const bx = window.innerWidth - 16 - 38, by = window.innerHeight - 78 - 38; // centre of the floating badge
+    const useTap = origin === 'tap' && __lastTap && (Date.now() - __lastTap.t) < 4000;
+    const bx = useTap ? __lastTap.x : window.innerWidth - 16 - 38;   // badge centre unless we grew from a tapped button
+    const by = useTap ? __lastTap.y : window.innerHeight - 78 - 38;
+    const start = useTap ? 44 : 76;
     const dx = bx - (r.left + r.width / 2), dy = by - (r.top + r.height / 2);
-    const sx = 76 / r.width, sy = 76 / r.height;
+    const sx = start / r.width, sy = start / r.height;
     let f;
     if (reduce) f = [{ opacity: 0 }, { opacity: 1 }];
     else f = [
@@ -2996,12 +3005,12 @@ function DrawerFrame({ onClose, paper = true, children }) {
     backgroundSize: '24px 24px', backgroundPosition: '12px 0', backgroundAttachment: 'local',
     border: `2.5px solid ${C.blue}`, color: C.pineDark,
     boxShadow: '0 18px 50px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.7)',
-  } : { background: C.pine, border: `1px solid ${C.turfBorder}`, color: C.ivory, boxShadow: '0 18px 50px rgba(0,0,0,0.6)' };
+  } : { background: C.pine, border: `2.5px solid ${C.blue}`, color: C.ivory, boxShadow: '0 18px 50px rgba(0,0,0,0.6)' };
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div ref={scrimRef} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.62)' }} onClick={requestClose} />
-      <div ref={padRef} style={{ position: 'relative', width: '100%', maxWidth: 380, maxHeight: '86vh', overflowY: 'auto', overflowX: 'hidden', borderRadius: 20, boxSizing: 'border-box', WebkitOverflowScrolling: 'touch', ...paperStyle }}>
-        <div ref={contentRef} style={{ padding: '10px 16px 16px' }}>{typeof children === 'function' ? children(requestClose) : children}</div>
+      <div ref={padRef} style={{ position: 'relative', width: '100%', maxWidth: wide, ...(fill ? { height: '86vh', overflow: 'hidden' } : { maxHeight: '86vh', overflowY: 'auto', overflowX: 'hidden' }), borderRadius: 20, boxSizing: 'border-box', WebkitOverflowScrolling: 'touch', ...paperStyle }}>
+        <div ref={contentRef} style={fill ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : { padding: '10px 16px 16px' }}>{typeof children === 'function' ? children(requestClose) : children}</div>
       </div>
     </div>
   );
@@ -3009,11 +3018,14 @@ function DrawerFrame({ onClose, paper = true, children }) {
 
 function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
+  // Open on the hole the player is actually up to: one past the furthest hole anyone being scored has a score for.
   const initialHole = (() => {
-    if (whoami) {
-      for (let i = 0; i < numHoles; i++) { if (state.scores[whoami.id]?.[i] == null) return i; }
-    }
-    return 0;
+    const myGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
+    const ids = viewAsAdmin ? state.players.map(p => p.id)
+      : (groupScoreEntry && myGroup && (myGroup.playerIds || []).length > 0 ? myGroup.playerIds : (whoami ? [whoami.id] : []));
+    let last = -1;
+    ids.forEach(id => { for (let i = numHoles - 1; i >= 0; i--) { if (state.scores[id]?.[i] != null) { if (i > last) last = i; break; } } });
+    return Math.max(0, Math.min(numHoles - 1, last + 1));
   })();
   const [viewHole, setViewHole] = useState(initialHole);
   const [reviewMode, setReviewMode] = useState(!!initialReview);
@@ -3058,9 +3070,13 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
     return saved != null ? saved : par;
   };
 
+  // Every hole starts at par. Tapping the number saves par as-is; moving the score up or down saves it right away.
   const bump = (playerId, delta) => {
     if (!viewAsAdmin && isSubmitted) return;
-    setDraftScores(prev => ({ ...prev, [playerId]: Math.max(1, (prev[playerId] ?? par) + delta) }));
+    const next = Math.max(1, getDraft(playerId) + delta);
+    setDraftScores(prev => ({ ...prev, [playerId]: next }));
+    setScoreVal(playerId, viewHole, next);
+    if (viewHole === numHoles - 1 && whoami && playerId === whoami.id) onFinalHoleConfirmed?.(playerId);
   };
   const confirm = (playerId) => {
     if (!viewAsAdmin && isSubmitted) return;
@@ -3148,8 +3164,8 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         </div>
 
         <div style={{ textAlign: 'center', marginBottom: 10, paddingBottom: 10, borderBottom: paperOn ? '2px solid #C0463A' : 'none' }}>
-          <div style={{ fontSize: 12, color: paperOn ? '#8D6B16' : C.goldBright, fontWeight: 800, letterSpacing: 1.2 }}>HOLE {viewHole + 1}</div>
-          <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : C.ivoryDim, marginTop: 3, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
+          <div style={{ fontSize: 34, lineHeight: 1.1, color: paperOn ? C.pineDark : C.ivory, fontWeight: 800, letterSpacing: 1.5, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>HOLE {viewHole + 1}</div>
+          <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : C.ivoryDim, marginTop: 8, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
           {groupScoreEntry && !viewAsAdmin && playersToShow.length > 1 && (
             <div style={{ fontSize: 10.5, color: paperOn ? '#8D6B16' : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
           )}
@@ -3765,13 +3781,13 @@ function GamesTab({ state }) {
   );
 }
 
-function LeaderboardTab({ state, stats }) {
+function LeaderboardTab({ state, stats, compact }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const leaderboard = stats.slice().sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <HeaderBanner src={matchbookCourse} title="Leaderboard" sub={state.courseName || undefined} height={200} />
+      {!compact && <HeaderBanner src={matchbookCourse} title="Leaderboard" sub={state.courseName || undefined} height={200} />}
       <SectionHeader title="Full Leaderboard" sub={`${stats.length} players · sorted by ${useNet ? 'net' : 'gross'}`} icon={Trophy} iconColor={C.gold} />
       <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 50px 50px 46px', gap: 4, padding: '0 12px 4px', fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.4 }}>
         <span></span><span></span><span style={{ textAlign: 'center' }}>Gross</span><span style={{ textAlign: 'center' }}>Net</span><span style={{ textAlign: 'center' }}>Strokes</span>
@@ -3864,23 +3880,20 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
 
   const positionChanges = usePositionChanges(leaderboard.map(p => p.id));
 
-  const handleTap = () => {
-    if (!shouldScroll) return;
-    clearInterval(timerRef.current);
-    clearTimeout(pauseRef.current);
-    setPaused(p => { if (!p) { pauseRef.current = setTimeout(() => setPaused(false), 5000); return true; } return false; });
-  };
+  // Tapping the card opens the full leaderboard, so pausing is press-and-hold: the list stops while a finger is down and resumes shortly after.
+  const holdStart = () => { if (!shouldScroll) return; clearTimeout(pauseRef.current); setPaused(true); };
+  const holdEnd = () => { if (!shouldScroll) return; clearTimeout(pauseRef.current); pauseRef.current = setTimeout(() => setPaused(false), 2500); };
 
   const rows = shouldScroll ? [...leaderboard, ...leaderboard].slice(offset, offset + VISIBLE + 1) : leaderboard;
 
   return (
-    <div onClick={e => { handleTap(); onTap && onTap(e); }} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
+    <div onClick={e => { onTap && onTap(e); }} onMouseDown={holdStart} onMouseUp={holdEnd} onMouseLeave={holdEnd} onTouchStart={holdStart} onTouchEnd={holdEnd} onTouchCancel={holdEnd} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 8px', borderBottom: `1px solid ${C.turfBorder}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <IconBadge icon={Trophy} color={C.gold} size={26} />
           <div>
             <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>This Round</div>
-            <div style={{ fontSize: 10, color: C.bunker }}>{paused ? 'tap to resume' : 'tap to pause'}</div>
+            <div style={{ fontSize: 10, color: C.bunker }}>{shouldScroll ? (paused ? 'paused' : 'live · hold to pause') : 'live'} · tap for full leaderboard</div>
           </div>
         </div>
         {shouldScroll && <div style={{ display: 'flex', gap: 2 }}>{[0,1,2].map(i => <div key={i} style={{ width: 3, height: paused ? 6 : 10, borderRadius: 999, background: paused ? C.bunker : C.gold, animation: paused ? 'none' : `scrollDot 1s ease-in-out ${i*0.2}s infinite alternate` }} />)}</div>}
@@ -3889,14 +3902,14 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
         <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '4px 14px', background: C.pineDark }}>
           {['#','Player','Thru', useNet ? 'Net (Gr)' : 'Score'].map(h => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Inter, sans-serif', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: h === 'Score' || h === 'Net (Gr)' ? 'right' : 'left' }}>{h}</div>)}
         </div>
-        <div style={{ height: ITEM_HEIGHT * VISIBLE, overflow: 'hidden' }}>
+        <div style={{ height: ITEM_HEIGHT * Math.min(VISIBLE, Math.max(total, 1)), overflow: 'hidden' }}>
           {rows.map((p, idx) => {
             const rank = leaderboard.findIndex(r => r.id === p.id) + 1;
             const score = useNet ? p.netToPar : p.toPar;
             const scoreStr = p.thru === 0 ? '–' : fmtToPar(score);
             const scoreColor = score < 0 ? C.emerald : score > 0 ? C.flagRed : C.bunker;
             return (
-              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent' }}>
+              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent', animation: `lbRowGlow 4.4s ease-in-out ${idx * 0.55}s infinite`, animationPlayState: paused ? 'paused' : 'running' }}>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400, display: 'flex', alignItems: 'center', gap: 1 }}>
                   {rank}
                   {positionChanges[p.id] === 'up' && <ChevronUp size={11} color={C.emerald} style={{ flexShrink: 0 }} />}
@@ -3916,9 +3929,6 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
             );
           })}
         </div>
-      </div>
-      <div style={{ padding: '6px 14px', borderTop: `1px solid ${C.turfBorder}`, display: 'flex', justifyContent: 'flex-end' }}>
-        <span style={{ fontSize: 10, color: C.gold, fontWeight: 600 }}>Full board →</span>
       </div>
     </div>
   );
@@ -4238,8 +4248,8 @@ function KoSModal({ tournament, updateTournament, onClose }) {
   const champion = ks.champion ? players.find(p => p.id === ks.champion) : null;
   const rounds = Array.isArray(ks.rounds) ? ks.rounds : [];
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-      <div style={{ background: C.pine, color: C.ivory, minHeight: '100vh', padding: 16, fontFamily: 'Inter, sans-serif', maxWidth: 600, margin: '0 auto', width: '100%' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ background: C.pine, color: C.ivory, minHeight: '100%', padding: 16, fontFamily: 'Inter, sans-serif', maxWidth: 600, margin: '0 auto', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
             <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24, textTransform: 'uppercase', letterSpacing: 0.5 }}>King of Swing</div>
@@ -4484,15 +4494,10 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                       <Check size={26} color={C.emerald} strokeWidth={3.5} style={{ position: 'relative' }} />
                     ) : badgeState === 'review' ? (
                       <span style={{ ...lbl, fontSize: 9 }}>REVIEW</span>
-                    ) : badgeState === 'start' ? (
+                    ) : (
                       <>
                         <span style={{ ...lbl, fontSize: 9 }}>ENTER</span>
                         <span style={{ ...lbl, fontSize: 9 }}>SCORE</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ ...lbl, fontSize: 7, color: C.gold }}>HOLE</span>
-                        <span style={{ ...lbl, fontFamily: 'IBM Plex Mono, monospace', fontSize: 20 }}>{nextHole + 1}</span>
                       </>
                     )}
                   </div>
@@ -4544,7 +4549,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </button>
       )}
 
-      <div style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'default', gap: 10 }}>
+      <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <IconBadge icon={Flag} color={C.gold} />
@@ -5300,16 +5305,17 @@ function CoursePickerModal({ onSelect, onCustom, onClose }) {
             </div>
           )}
         </div>
-        <button onClick={() => { onCustom(); onClose(); }} style={{ flexShrink: 0, background: 'transparent', border: 'none', borderTop: `1px solid ${C.turfBorder}`, color: C.goldBright, fontSize: 13, textDecoration: 'underline', cursor: 'pointer', padding: '12px 0' }}>Can't find it? Create a custom course</button>
       </div>
     </div>
   );
 }
 function CourseSection({ state, selectProviderCourse, selectCustomCourse, setNumHoles, setPar, setSI, setYardage, setCourseField }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Hand-entered courses are no longer created. Rounds that already have one keep their editor so nothing gets stranded.
+  const legacyCustom = !state.providerId && !!state.courseName;
   return (
-    <Accordion title="Course" badge={state.courseName || 'custom'} defaultOpen>
-      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 12, lineHeight: 1.5 }}>Search runs against a mock course database for now — a real provider can be swapped in later without changing this screen. Pick your tees once you've found the course, or enter one by hand below.</div>
+    <Accordion title="Course" badge={state.courseName || 'none yet'} defaultOpen>
+      <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 12, lineHeight: 1.5 }}>Search for your course, then pick your tees.</div>
       {state.providerId && (
         <div style={{ ...rowCard, marginBottom: 10, justifyContent: 'space-between' }}>
           <div><div style={{ fontWeight: 600, fontSize: 14 }}>{state.courseName}</div><div style={{ fontSize: 11, color: C.ivoryDim }}>{state.teeName} tees · {state.courseRating}/{state.courseSlope}</div></div>
@@ -5318,29 +5324,34 @@ function CourseSection({ state, selectProviderCourse, selectCustomCourse, setNum
       )}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <GoldButton onClick={() => setPickerOpen(true)} style={{ flex: 1 }}>Search for a course</GoldButton>
-        <GhostButton onClick={selectCustomCourse} style={{ flex: 1, textAlign: 'center', borderColor: !state.providerId ? C.gold : C.turfBorder }}>Custom course</GhostButton>
       </div>
       {pickerOpen && <CoursePickerModal onSelect={(course, teeName) => { selectProviderCourse(course, teeName); setPickerOpen(false); }} onCustom={() => { selectCustomCourse(); setPickerOpen(false); }} onClose={() => setPickerOpen(false)} />}
 
-      <Field label="Course name"><input value={state.courseName} onChange={e => setCourseField('courseName', e.target.value)} style={inputStyle} placeholder="e.g. your home course" /></Field>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Field label="Rating"><input type="number" step="0.1" value={state.courseRating} onChange={e => setCourseField('courseRating', parseFloat(e.target.value || '0'))} style={inputStyle} /></Field>
-        <Field label="Slope"><input type="number" value={state.courseSlope} onChange={e => setCourseField('courseSlope', parseInt(e.target.value || '113', 10))} style={inputStyle} /></Field>
-      </div>
-      <Field label="Holes"><div style={{ display: 'flex', gap: 8 }}>{[9, 18].map(n => <button key={n} onClick={() => setNumHoles(n)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, fontFamily: 'Inter, sans-serif', fontWeight: 600, background: state.numHoles === n ? C.gold : 'transparent', color: state.numHoles === n ? C.pineDark : C.ivory, border: `1px solid ${state.numHoles === n ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>{n} holes</button>)}</div></Field>
-      <Field label="Par, handicap & yardage per hole">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4 }}>
-          {state.pars.map((par, i) => (
-            <div key={i} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 9, color: C.ivoryDim }}>{i + 1}</div>
-              <input type="number" value={par} min={3} max={6} onChange={e => setPar(i, parseInt(e.target.value || '4', 10))} style={{ ...inputStyle, padding: '6px 0', textAlign: 'center', fontSize: 13, marginBottom: 2 }} />
-              <input type="number" value={state.strokeIndex[i] ?? i + 1} min={1} max={18} onChange={e => setSI(i, parseInt(e.target.value || '1', 10))} style={{ ...inputStyle, padding: '4px 0', textAlign: 'center', fontSize: 10, color: C.ivoryDim, marginBottom: 2 }} />
-              <input type="number" value={state.yardage?.[i] ?? ''} placeholder="yds" onChange={e => setYardage(i, e.target.value ? parseInt(e.target.value, 10) : null)} style={{ ...inputStyle, padding: '4px 0', textAlign: 'center', fontSize: 10, color: C.ivoryDim }} />
-            </div>
-          ))}
+      {legacyCustom && (
+        <>
+        <Field label="Course name"><input value={state.courseName} onChange={e => setCourseField('courseName', e.target.value)} style={inputStyle} placeholder="e.g. your home course" /></Field>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Field label="Rating"><input type="number" step="0.1" value={state.courseRating} onChange={e => setCourseField('courseRating', parseFloat(e.target.value || '0'))} style={inputStyle} /></Field>
+          <Field label="Slope"><input type="number" value={state.courseSlope} onChange={e => setCourseField('courseSlope', parseInt(e.target.value || '113', 10))} style={inputStyle} /></Field>
         </div>
-        <div style={{ fontSize: 10, color: C.ivoryDim, marginTop: 4 }}>Top: par. Middle: handicap (1 = hardest hole). Bottom: yardage (optional).</div>
-      </Field>
+        </>
+      )}
+      <Field label="Holes"><div style={{ display: 'flex', gap: 8 }}>{[9, 18].map(n => <button key={n} onClick={() => setNumHoles(n)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, fontFamily: 'Inter, sans-serif', fontWeight: 600, background: state.numHoles === n ? C.gold : 'transparent', color: state.numHoles === n ? C.pineDark : C.ivory, border: `1px solid ${state.numHoles === n ? C.gold : C.turfBorder}`, cursor: 'pointer' }}>{n} holes</button>)}</div></Field>
+      {legacyCustom && (
+        <Field label="Par, handicap & yardage per hole">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4 }}>
+            {state.pars.map((par, i) => (
+              <div key={i} style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: C.ivoryDim }}>{i + 1}</div>
+                <input type="number" value={par} min={3} max={6} onChange={e => setPar(i, parseInt(e.target.value || '4', 10))} style={{ ...inputStyle, padding: '6px 0', textAlign: 'center', fontSize: 13, marginBottom: 2 }} />
+                <input type="number" value={state.strokeIndex[i] ?? i + 1} min={1} max={18} onChange={e => setSI(i, parseInt(e.target.value || '1', 10))} style={{ ...inputStyle, padding: '4px 0', textAlign: 'center', fontSize: 10, color: C.ivoryDim, marginBottom: 2 }} />
+                <input type="number" value={state.yardage?.[i] ?? ''} placeholder="yds" onChange={e => setYardage(i, e.target.value ? parseInt(e.target.value, 10) : null)} style={{ ...inputStyle, padding: '4px 0', textAlign: 'center', fontSize: 10, color: C.ivoryDim }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: C.ivoryDim, marginTop: 4 }}>Top: par. Middle: handicap (1 = hardest hole). Bottom: yardage (optional).</div>
+        </Field>
+      )}
     </Accordion>
   );
 }
@@ -6541,10 +6552,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
                 <Check size={16} color={C.gold} />
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ flex: 1, padding: '12px 0' }}>Search for a course</GoldButton>
-                <GhostButton onClick={() => selectCustomCourse()} style={{ flex: 1, textAlign: 'center' }}>Enter manually</GhostButton>
-              </div>
+              <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ width: '100%', padding: '12px 0' }}>Search for a course</GoldButton>
             )}
             {coursePickerOpen && <CoursePickerModal onSelect={(course, teeName) => { selectProviderCourse(course, teeName); setCoursePickerOpen(false); }} onCustom={() => { selectCustomCourse(); setCoursePickerOpen(false); }} onClose={() => setCoursePickerOpen(false)} />}
           </Field>
@@ -6593,7 +6601,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
             </div>
           )}
           <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>Search for a course</GoldButton>
-          <GhostButton onClick={() => { selectCustomCourse(); goNext(); }} style={{ width: '100%', textAlign: 'center' }}>Enter manually instead</GhostButton>
+          <GhostButton onClick={() => goNext()} style={{ width: '100%', textAlign: 'center' }}>Skip for now</GhostButton>
           {coursePickerOpen && <CoursePickerModal onSelect={(course, teeName) => { selectProviderCourse(course, teeName); setCoursePickerOpen(false); goNext(); }} onCustom={() => { selectCustomCourse(); setCoursePickerOpen(false); goNext(); }} onClose={() => setCoursePickerOpen(false)} />}
         </div>
       )}
@@ -7316,7 +7324,7 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: C.pine, color: C.ivory, zIndex: 48, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', background: C.pine, color: C.ivory, display: 'flex', flexDirection: 'column' }}>
       <div style={{ flexShrink: 0, background: C.pineDark, color: C.ivory, borderBottom: `1px solid ${C.turfBorder}`, padding: '14px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -7703,6 +7711,7 @@ function FontLoader() {
       button { transition: transform 0.08s ease; }
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes lbRowGlow { 0%, 30%, 100% { box-shadow: inset 0 0 0 0 rgba(201,162,39,0); } 12% { box-shadow: inset 0 0 0 1.5px rgba(201,162,39,0.6), inset 0 0 22px rgba(201,162,39,0.20); } }
       @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201,162,39,0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(201,162,39,0.38); } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -8221,7 +8230,9 @@ export default function RoGreen() {
   }, [justPickedIdentity]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTabRaw] = useState('home');
-  const setActiveTab = (tab) => { setActiveTabRaw(tab); };
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  // The leaderboard opens as a drawer over whatever you are on instead of switching pages.
+  const setActiveTab = (tab) => { if (tab === 'leaderboard') { setLeaderboardOpen(true); return; } setActiveTabRaw(tab); };
   const [viewHole, setViewHole] = useState(0);
   useEffect(() => {
     if (tournament.bettingEnabled === false && (activeTab === 'bets' || activeTab === 'settle')) setActiveTabRaw('home');
@@ -9154,8 +9165,29 @@ export default function RoGreen() {
       })()}
       {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => { setAwardsOpen(false); if (viewAsAdmin) updateRound(r => ({ ...r, awardsPresentationActive: false })); }} />}
       {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={addRound} />}
-      {roundFlowOpen && <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={() => setRoundFlowOpen(false)} />}
-      {kosOpen && <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={() => setKosOpen(false)} />}
+      {leaderboardOpen && (
+        <DrawerFrame origin="tap" paper={false} fill wide={420} onClose={() => setLeaderboardOpen(false)}>{(close) => (
+          <>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 8px' }}>
+              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 30, lineHeight: 1.1, textTransform: 'uppercase', letterSpacing: 1, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>Leaderboard</div>
+              <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 14px 18px' }}>
+              <LeaderboardTab state={state} stats={stats} compact />
+            </div>
+          </>
+        )}</DrawerFrame>
+      )}
+      {roundFlowOpen && (
+        <DrawerFrame origin="tap" paper={false} fill wide={560} onClose={() => setRoundFlowOpen(false)}>{(close) => (
+          <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={close} />
+        )}</DrawerFrame>
+      )}
+      {kosOpen && (
+        <DrawerFrame origin="tap" paper={false} fill wide={560} onClose={() => setKosOpen(false)}>{(close) => (
+          <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={close} />
+        )}</DrawerFrame>
+      )}
       {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} spectatorsEnabled={tournament.spectatorsEnabled} onToggleSpectators={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))} onClose={() => setQrOpen(false)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
       {proxyOpen && <ProxyPickerModal tournament={tournament} activeProxyId={proxyPlayerId} onPick={(id) => { setProxyPlayerId(id); setProxyOpen(false); }} onStop={() => { setProxyPlayerId(null); setProxyOpen(false); }} onClose={() => setProxyOpen(false)} />}
