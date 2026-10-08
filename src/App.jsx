@@ -3070,6 +3070,11 @@ if (typeof window !== 'undefined' && !window.__dbTapTracker) {
   window.addEventListener('pointerdown', (e) => { __lastTap = { x: e.clientX, y: e.clientY, t: Date.now() }; }, true);
 }
 const padGhost = { background: 'rgba(11,13,16,0.06)', color: '#0B0D10', border: '1px solid rgba(11,13,16,0.22)', fontWeight: 700 };
+/* Wraps a sheet's contents in the curved drawer. The render-prop receives the animated close function. */
+function DrawerSheet({ onClose, wide = 420, children }) {
+  return <DrawerFrame origin="tap" paper={false} wide={wide} onClose={onClose}>{(close) => children(close)}</DrawerFrame>;
+}
+
 function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wide = 380, children }) {
   const padRef = useRef(null), scrimRef = useRef(null), contentRef = useRef(null);
   const animRef = useRef(null), closingRef = useRef(false);
@@ -6981,8 +6986,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 /* ============================== ROUND SWITCHER ============================== */
 function RoundSwitcherModal({ tournament, onSwitch, onClose, isAdmin, onAddRound }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '80vh', overflowY: 'auto', padding: '18px 18px 28px' }}>
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>{tournament.name}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
@@ -6996,8 +7000,7 @@ function RoundSwitcherModal({ tournament, onSwitch, onClose, isAdmin, onAddRound
           ))}
         </div>
         {isAdmin && <GoldButton onClick={() => { onAddRound(); onClose(); }} style={{ width: '100%', padding: '12px 0' }}>+ Add another round</GoldButton>}
-      </div>
-    </div>
+      </>)}</DrawerSheet>
   );
 }
 
@@ -7521,8 +7524,7 @@ function RoundFlowScreen({ tournament, state, isAdmin, whoami, sendChat, updateR
 
 function FullStandingsModal({ tournament, tournamentStandings, useNet, ryderCup, onClose }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px', maxHeight: '82vh', overflowY: 'auto' }}>
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Overall Standings</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
@@ -7548,8 +7550,7 @@ function FullStandingsModal({ tournament, tournamentStandings, useNet, ryderCup,
             );
           })}
         </div>
-      </div>
-    </div>
+      </>)}</DrawerSheet>
   );
 }
 
@@ -7558,16 +7559,14 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
 
   if (!whoami) {
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px' }}>
+      <DrawerSheet onClose={onClose}>{(onClose) => (<>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>My Position</div>
             <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
           </div>
           <div style={{ fontSize: 13, color: C.ivoryDim, marginBottom: 12 }}>Pick your name to see your tournament position.</div>
           <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />
-        </div>
-      </div>
+        </>)}</DrawerSheet>
     );
   }
   const myLedger = ledger[whoami.id] || { netPosition: 0, totalWon: 0, totalLost: 0, pendingBets: 0, settledBets: 0 };
@@ -7584,8 +7583,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
     </div>
   );
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '88vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>My Position</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
@@ -7622,8 +7620,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
           </div>
         )}
         {myBets.length === 0 && <div style={{ color: C.ivoryDim, fontSize: 13, textAlign: 'center', marginTop: 20 }}>No bets involve you yet.</div>}
-      </div>
-    </div>
+      </>)}</DrawerSheet>
   );
 }
 
@@ -7952,8 +7949,7 @@ function RulesModal({ rules, isAdmin, onSave, onClose, adminAccount }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, padding: '18px 18px 28px', maxHeight: '82vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4 }}>Tournament Rules</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
@@ -8018,8 +8014,7 @@ function RulesModal({ rules, isAdmin, onSave, onClose, adminAccount }) {
         {mode === 'view' && !rules && (
           <div style={{ textAlign: 'center', padding: '20px 0', color: C.ivoryDim, fontSize: 13 }}>No rules posted for this tournament yet.</div>
         )}
-      </div>
-    </div>
+      </>)}</DrawerSheet>
   );
 }
 
