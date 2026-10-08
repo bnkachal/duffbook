@@ -634,6 +634,7 @@ function defaultTournament() {
     tournamentCustomBets: [],
     ryderCup: { enabled: false, teamAName: 'USA', teamBName: 'Europe', totalPlayers: null, captainA: null, captainB: null },
     kingsOfSwing: { enabled: false, seededPlayers: [], rounds: [], champion: null },
+    auction: null,
   };
 }
 // Two devices can edit different players' scores within the same ~500ms
@@ -3075,6 +3076,343 @@ const padGhost = { background: 'rgba(11,13,16,0.06)', color: '#0B0D10', border: 
 function DrawerSheet({ onClose, wide = 420, children }) {
   return <DrawerFrame origin="tap" paper={false} wide={wide} onClose={onClose}>{(close) => children(close)}</DrawerFrame>;
 }
+/* ============================== CALCUTTA AUCTION ==============================
+   The auction itself happens in the room. The admin keys in who bought each team and for how much; from then on every
+   player can look it up. Payouts are set per flight (up to 3 places). Default is a separate pot per flight. */
+const AUCTION_PLACES = ['1st', '2nd', '3rd'];
+const money0 = (n) => '$' + Math.round(n || 0).toLocaleString('en-US');
+function auctionFlights(tournament) {
+  const f = Array.isArray(tournament?.flights) ? tournament.flights : [];
+  return f.length ? f : [{ id: '_all', name: 'Overall' }];
+}
+function auctionTeamFlightId(tournament, team) {
+  const f = auctionFlights(tournament);
+  return f.some(x => x.id === team.flightId) ? team.flightId : f[0].id;
+}
+const auctionMode = (a) => (a && a.mode === 'one' ? 'one' : 'per');
+function auctionPctFor(a, flightId) {
+  const mode = auctionMode(a);
+  const row = a?.pct?.[mode]?.[flightId];
+  if (!Array.isArray(row)) return mode === 'per' ? [50, 30, 20] : [0, 0, 0];
+  return [0, 1, 2].map(i => Number(row[i]) || 0);
+}
+function auctionPots(a, tournament) {
+  const teams = Array.isArray(a?.teams) ? a.teams : [];
+  const byFlight = {};
+  auctionFlights(tournament).forEach(f => { byFlight[f.id] = 0; });
+  let total = 0;
+  teams.forEach(t => { const p = Number(t.price) || 0; total += p; byFlight[auctionTeamFlightId(tournament, t)] += p; });
+  return { total, byFlight };
+}
+function auctionAmount(a, tournament, flightId, idx) {
+  const pots = auctionPots(a, tournament);
+  const base = auctionMode(a) === 'one' ? pots.total : (pots.byFlight[flightId] || 0);
+  return base * (auctionPctFor(a, flightId)[idx] || 0) / 100;
+}
+function auctionCheck(a, tournament) {
+  const flights = auctionFlights(tournament);
+  if (auctionMode(a) === 'one') {
+    const sum = flights.reduce((s, f) => s + auctionPctFor(a, f.id).reduce((x, y) => x + y, 0), 0);
+    return { ok: sum === 100, msg: sum === 100 ? 'All flights add up to 100% of the pot' : `Adds up to ${sum}% of the pot, not 100%` };
+  }
+  const pots = auctionPots(a, tournament);
+  const bad = flights.filter(f => pots.byFlight[f.id] > 0 && auctionPctFor(a, f.id).reduce((x, y) => x + y, 0) !== 100).map(f => f.name);
+  return { ok: bad.length === 0, msg: bad.length ? `${bad.join(', ')} must add up to 100%` : 'Every flight adds up to 100%' };
+}
+const auctionIsMine = (team, whoami) => !!whoami && !!team.buyer && team.buyer.trim().toLowerCase() === (whoami.name || '').trim().toLowerCase();
+/* Team score comes from whichever team game is switched on (Best Ball, Scramble or Shamble), matched by the two players. */
+function auctionTeamScores(state, teams) {
+  const g = state.games || {};
+  const key = ['bestBall', 'scramble', 'shamble'].find(k => g[k]?.enabled && Array.isArray(g[k].pairs) && g[k].pairs.length > 0);
+  if (!key) return {};
+  const results = key === 'bestBall' ? computeBestBall(state) : key === 'scramble' ? computeScramble(state) : computeShamble(state);
+  const sig = (ids) => [...ids].sort().join('|');
+  const bySig = {};
+  results.forEach(r => { bySig[sig(r.playerIds || [])] = r; });
+  const out = {};
+  teams.forEach(t => { const ids = t.playerIds || []; const r = ids.length ? bySig[sig(ids)] : null; if (r) out[t.id] = { toPar: r.toPar, thru: r.thru }; });
+  return out;
+}
+function auctionStandings(a, tournament, state) {
+  const teams = Array.isArray(a?.teams) ? a.teams : [];
+  const scores = auctionTeamScores(state, teams);
+  return auctionFlights(tournament).map(f => {
+    const rows = teams.filter(t => auctionTeamFlightId(tournament, t) === f.id).map(t => ({ team: t, score: scores[t.id] || null }));
+    const ranked = rows.filter(r => r.score && r.score.thru > 0).sort((x, y) => x.score.toPar - y.score.toPar || y.score.thru - x.score.thru);
+    const rest = rows.filter(r => !(r.score && r.score.thru > 0)).sort((x, y) => (Number(y.team.price) || 0) - (Number(x.team.price) || 0));
+    return { flight: f, ranked, rest };
+  });
+}
+function auctionMyNet(a, tournament, state, whoami) {
+  const teams = Array.isArray(a?.teams) ? a.teams : [];
+  const mine = teams.filter(t => auctionIsMine(t, whoami));
+  const paid = mine.reduce((s, t) => s + (Number(t.price) || 0), 0);
+  let won = 0, anyRanked = false;
+  auctionStandings(a, tournament, state).forEach(s => {
+    if (s.ranked.length) anyRanked = true;
+    s.ranked.forEach((r, i) => { if (i < 3 && auctionIsMine(r.team, whoami)) won += auctionAmount(a, tournament, s.flight.id, i); });
+  });
+  return { count: mine.length, paid, won, net: won - paid, anyRanked };
+}
+
+function AuctionDrawer({ auction, tournament, state, whoami, onClose }) {
+  const [tab, setTab] = useState('teams');
+  const [onlyMine, setOnlyMine] = useState(false);
+  const teams = Array.isArray(auction?.teams) ? auction.teams : [];
+  const flights = auctionFlights(tournament);
+  const pots = auctionPots(auction, tournament);
+  const standings = auctionStandings(auction, tournament, state);
+  const my = auctionMyNet(auction, tournament, state, whoami);
+  const mode = auctionMode(auction);
+  const sectionHead = (f, extra) => {
+    const st = standings.find(s => s.flight.id === f.id);
+    const lead = st && st.ranked[0];
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: C.turfLight, borderTop: `1px solid ${C.turfBorder}` }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.gold }}>{f.name}{extra || ''}</span>
+        {lead && <span style={{ fontSize: 11, color: C.ivoryDim, textAlign: 'right' }}>Leading · <b style={{ color: C.ivory }}>{lead.team.name}</b>{auctionIsMine(lead.team, whoami) ? ' (yours)' : ''}</span>}
+      </div>
+    );
+  };
+  const box = { background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden' };
+  const tabBtn = (key, label) => <button key={key} onClick={() => setTab(key)} role="tab" aria-selected={tab === key} style={{ flex: 1, background: tab === key ? C.turfLight : 'transparent', color: tab === key ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '9px 4px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>{label}</button>;
+  return (
+    <DrawerSheet onClose={onClose}>{(close) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 24, textTransform: 'uppercase', letterSpacing: 1 }}>Calcutta</div>
+          <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+        </div>
+        <div role="tablist" style={{ display: 'flex', gap: 3, background: C.pineDark, borderRadius: 10, padding: 3 }}>{tabBtn('teams', 'Teams')}{tabBtn('pay', 'Payouts')}{tabBtn('live', 'Live')}</div>
+
+        {tab === 'teams' && (
+          <>
+            <div style={{ ...box, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.bunker }}>Total pot · {teams.length} teams</span>
+              <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 24, color: C.goldBright }}>{money0(pots.total)}</span>
+            </div>
+            {whoami && (
+              <div style={{ display: 'flex', gap: 3, background: C.pineDark, borderRadius: 10, padding: 3 }}>
+                <button onClick={() => setOnlyMine(false)} aria-pressed={!onlyMine} style={{ flex: 1, background: !onlyMine ? C.turfLight : 'transparent', color: !onlyMine ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 4px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>All teams</button>
+                <button onClick={() => setOnlyMine(true)} aria-pressed={onlyMine} style={{ flex: 1, background: onlyMine ? C.turfLight : 'transparent', color: onlyMine ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 4px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>My teams ({my.count})</button>
+              </div>
+            )}
+            <div style={box}>
+              {flights.map(f => {
+                const rows = teams.filter(t => auctionTeamFlightId(tournament, t) === f.id && (!onlyMine || auctionIsMine(t, whoami))).sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
+                if (!rows.length) return null;
+                return (
+                  <div key={f.id}>
+                    {flights.length > 1 && sectionHead(f)}
+                    {rows.map(t => (
+                      <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', padding: '10px 12px', borderTop: `1px solid ${C.turfBorder}`, background: auctionIsMine(t, whoami) ? `${C.gold}1F` : 'transparent', boxShadow: auctionIsMine(t, whoami) ? `inset 3px 0 0 ${C.gold}` : 'none' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: C.ivory }}>{t.name || 'Team'}</div>
+                          <div style={{ fontSize: 11.5, color: C.ivoryDim }}>Owner · {t.buyer ? (auctionIsMine(t, whoami) ? 'You' : t.buyer) : 'Unsold'}</div>
+                        </div>
+                        <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, fontSize: 14, color: C.ivory }}>{t.buyer ? money0(t.price) : '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              {onlyMine && my.count === 0 && <div style={{ padding: 14, fontSize: 12.5, color: C.ivoryDim }}>You did not buy a team.</div>}
+            </div>
+          </>
+        )}
+
+        {tab === 'pay' && (
+          <>
+            <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.45 }}>{mode === 'one' ? `One pot of ${money0(pots.total)}, shared between flights.` : 'Each flight pays out of its own pot.'}</div>
+            {flights.map(f => {
+              const places = [0, 1, 2].filter(i => auctionPctFor(auction, f.id)[i] > 0);
+              return (
+                <div key={f.id} style={box}>
+                  {sectionHead(f, mode === 'per' ? ` · pot ${money0(pots.byFlight[f.id])}` : '')}
+                  {places.length === 0 && <div style={{ padding: 12, fontSize: 12.5, color: C.ivoryDim }}>No payout set.</div>}
+                  {places.map(i => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', fontSize: 13, borderTop: `1px solid ${C.turfBorder}` }}>
+                      <span style={{ color: C.ivory }}>{AUCTION_PLACES[i]} place <span style={{ color: C.ivoryDim, fontSize: 11 }}>({auctionPctFor(auction, f.id)[i]}%)</span></span>
+                      <b style={{ fontFamily: 'IBM Plex Mono, monospace', color: C.ivory }}>{money0(auctionAmount(auction, tournament, f.id, i))}</b>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {tab === 'live' && (
+          <>
+            {!Object.keys(auctionTeamScores(state, teams)).length && (
+              <div style={{ ...box, padding: 12, fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45 }}>Live standings use the team game (Best Ball, Scramble or Shamble). It needs to be switched on with pairs set, and each team needs its two players.</div>
+            )}
+            <div style={box}>
+              {standings.map(({ flight: f, ranked, rest }) => (
+                <div key={f.id}>
+                  {sectionHead(f)}
+                  {[...ranked.map((r, i) => ({ ...r, rank: i + 1 })), ...rest.map(r => ({ ...r, rank: null }))].map(r => {
+                    const pays = r.rank && r.rank <= 3 && auctionPctFor(auction, f.id)[r.rank - 1] > 0 ? auctionAmount(auction, tournament, f.id, r.rank - 1) : 0;
+                    const sc = r.score && r.score.thru > 0 ? r.score.toPar : null;
+                    return (
+                      <div key={r.team.id} style={{ display: 'grid', gridTemplateColumns: '20px 1fr auto', gap: 8, alignItems: 'center', padding: '10px 12px', borderTop: `1px solid ${C.turfBorder}` }}>
+                        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.rank === 1 ? C.gold : C.bunker }}>{r.rank || '–'}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: C.ivory }}>{r.team.name || 'Team'}</div>
+                          <div style={{ fontSize: 11.5, color: C.ivoryDim }}>{r.team.buyer ? (auctionIsMine(r.team, whoami) ? 'You' : r.team.buyer) : 'Unsold'} · {r.team.buyer ? money0(r.team.price) : '—'}</div>
+                          {pays > 0 && <span style={{ display: 'inline-block', marginTop: 3, fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: C.goldBright, background: `${C.gold}26`, borderRadius: 6, padding: '2px 6px' }}>Pays {money0(pays)}</span>}
+                        </div>
+                        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 17, textAlign: 'right', color: sc == null ? C.bunker : sc < 0 ? C.emerald : sc > 0 ? C.flagRed : C.ivory }}>{sc == null ? '–' : fmtToPar(sc)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            {my.count > 0 && my.anyRanked && (
+              <div style={{ ...box, padding: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.bunker }}>Your Calcutta, if the round ended now</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: C.ivoryDim }}>Paid {money0(my.paid)} · collect {money0(my.won)}</span>
+                  <b style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 20, color: my.net >= 0 ? C.emerald : C.flagRed }}>{my.net >= 0 ? '+' : '−'}{money0(Math.abs(my.net))}</b>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )}</DrawerSheet>
+  );
+}
+
+function AuctionSetupDrawer({ auction, tournament, state, onSave, onClose }) {
+  const flights = auctionFlights(tournament);
+  const [draft, setDraft] = useState(() => ({ mode: 'per', pct: { one: {}, per: {} }, teams: [], buyers: [], ...(auction || {}) }));
+  const [newBuyer, setNewBuyer] = useState('');
+  const [importMsg, setImportMsg] = useState('');
+  const mode = auctionMode(draft);
+  const teams = draft.teams || [];
+  const pots = auctionPots(draft, tournament);
+  const check = auctionCheck(draft, tournament);
+  const buyerNames = [...new Set([...(tournament.players || []).map(p => p.name), ...(draft.buyers || [])].filter(Boolean))];
+  const setTeam = (id, patch) => setDraft(d => ({ ...d, teams: d.teams.map(t => t.id === id ? { ...t, ...patch } : t) }));
+  const setPct = (fid, i, v) => setDraft(d => {
+    const m = auctionMode(d);
+    const cur = auctionPctFor(d, fid).slice();
+    cur[i] = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
+    return { ...d, pct: { ...(d.pct || {}), [m]: { ...(d.pct?.[m] || {}), [fid]: cur } } };
+  });
+  const addTeam = (flightId) => setDraft(d => ({ ...d, teams: [...d.teams, { id: 'at_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5), name: '', flightId, playerIds: [], buyer: '', price: 0 }] }));
+  const importPairs = () => {
+    const g = state.games || {};
+    const key = ['bestBall', 'scramble', 'shamble'].find(k => g[k]?.enabled && Array.isArray(g[k].pairs) && g[k].pairs.length > 0);
+    if (!key) { setImportMsg('Turn on Best Ball, Scramble or Shamble and set the pairs first, or add teams by hand.'); return; }
+    const res = key === 'bestBall' ? computeBestBall(state) : key === 'scramble' ? computeScramble(state) : computeShamble(state);
+    const sig = (ids) => [...ids].sort().join('|');
+    const have = new Set(teams.map(t => sig(t.playerIds || [])));
+    const fresh = res.filter(r => (r.playerIds || []).length && !have.has(sig(r.playerIds))).map((r, i) => {
+      const first = (tournament.players || []).find(p => p.id === r.playerIds[0]);
+      return { id: 'at_' + Date.now() + '_' + i, name: r.pairName, flightId: first?.flightId || flights[0].id, playerIds: r.playerIds, buyer: '', price: 0 };
+    });
+    setImportMsg(fresh.length ? `Added ${fresh.length} team${fresh.length === 1 ? '' : 's'} from your pairs.` : 'All your pairs are already in the list.');
+    if (fresh.length) setDraft(d => ({ ...d, teams: [...d.teams, ...fresh] }));
+  };
+  const card = { background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, padding: 12 };
+  const lab = { fontSize: 10, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.bunker };
+  const modeBtn = (key, label) => <button key={key} onClick={() => setDraft(d => ({ ...d, mode: key }))} aria-pressed={mode === key} style={{ flex: 1, background: mode === key ? C.turfLight : 'transparent', color: mode === key ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '9px 4px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>{label}</button>;
+  return (
+    <DrawerSheet onClose={onClose}>{(close) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: 1 }}>Auction results</div>
+          <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+        </div>
+        <div style={{ display: 'flex', gap: 3, background: C.pineDark, borderRadius: 10, padding: 3 }}>{modeBtn('per', 'Pot per flight')}{modeBtn('one', 'One pot for all flights')}</div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.45 }}>{mode === 'one' ? 'Every bid goes into one pot and each flight is paid a share of it.' : 'Each flight keeps only the bids made on its own teams.'} Winners are decided inside their own flight, and anyone can buy teams in any flight.</div>
+
+        <div style={card}>
+          <div style={{ ...lab, marginBottom: 8 }}>1 · What each flight pays (% of the pot)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '84px repeat(3, 1fr)', gap: 6, alignItems: 'center' }}>
+            <span />{AUCTION_PLACES.map(p => <span key={p} style={{ ...lab, textAlign: 'center' }}>{p}</span>)}
+            {flights.map(f => (
+              <React.Fragment key={f.id}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                {[0, 1, 2].map(i => <input key={i} inputMode="numeric" aria-label={`${f.name} ${AUCTION_PLACES[i]} place percent`} value={auctionPctFor(draft, f.id)[i] || ''} placeholder="–" onChange={e => setPct(f.id, i, e.target.value)} style={{ ...inputStyle, textAlign: 'right', padding: '8px 8px', fontFamily: 'IBM Plex Mono, monospace' }} />)}
+                <span style={{ gridColumn: '2 / -1', textAlign: 'right', fontSize: 10.5, color: C.bunker, marginTop: -2, paddingBottom: 4 }}>{[0, 1, 2].map(i => auctionPctFor(draft, f.id)[i] ? money0(auctionAmount(draft, tournament, f.id, i)) : '–').join('  ·  ')}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          <div role="status" style={{ marginTop: 8, fontSize: 11.5, color: check.ok ? C.emerald : C.flagRed }}>{check.ok ? '✓ ' : ''}{check.msg}</div>
+        </div>
+
+        <div style={card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <div style={lab}>2 · Who bought each team</div>
+            <button onClick={importPairs} style={{ background: 'transparent', border: `1px solid ${C.turfBorder}`, color: C.gold, borderRadius: 8, padding: '5px 9px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Import from pairs</button>
+          </div>
+          {importMsg && <div role="status" style={{ fontSize: 11.5, color: C.ivoryDim, marginBottom: 4 }}>{importMsg}</div>}
+          {flights.map(f => {
+            const rows = teams.filter(t => auctionTeamFlightId(tournament, t) === f.id);
+            return (
+              <div key={f.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '10px 0 6px' }}>
+                  <b style={{ fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', color: C.gold }}>{f.name}</b>
+                  <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5, color: C.ivoryDim }}>{money0(pots.byFlight[f.id])} bid</span>
+                </div>
+                {rows.map(t => (
+                  <div key={t.id} style={{ display: 'grid', gap: 6, padding: '8px 0', borderTop: `1px solid ${C.turfBorder}` }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                      <input value={t.name} placeholder="Team name, e.g. Smith / Jones" aria-label="Team name" onChange={e => setTeam(t.id, { name: e.target.value })} style={{ ...inputStyle, fontWeight: 700 }} />
+                      <button onClick={() => setDraft(d => ({ ...d, teams: d.teams.filter(x => x.id !== t.id) }))} aria-label={`Remove ${t.name || 'team'}`} style={{ background: 'transparent', border: 'none', color: C.flagRed, cursor: 'pointer', padding: 6 }}><Trash2 size={16} /></button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 8 }}>
+                      <select value={t.buyer || ''} aria-label={`Buyer for ${t.name || 'team'}`} onChange={e => setTeam(t.id, { buyer: e.target.value })} style={inputStyle}>
+                        <option value="">Unsold / the field</option>
+                        {buyerNames.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                      <input inputMode="numeric" value={t.price || ''} placeholder="$" aria-label={`Price for ${t.name || 'team'}`} onChange={e => setTeam(t.id, { price: Math.max(0, parseInt(String(e.target.value).replace(/[^0-9]/g, ''), 10) || 0) })} style={{ ...inputStyle, textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace' }} />
+                    </div>
+                    {flights.length > 1 && (
+                      <select value={auctionTeamFlightId(tournament, t)} aria-label={`Flight for ${t.name || 'team'}`} onChange={e => setTeam(t.id, { flightId: e.target.value })} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px' }}>
+                        {flights.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </select>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[0, 1].map(slot => (
+                        <select key={slot} value={(t.playerIds || [])[slot] || ''} aria-label={`Player ${slot + 1} for live scores`} onChange={e => { const ids = [...(t.playerIds || [])]; ids[slot] = e.target.value; setTeam(t.id, { playerIds: ids.filter(Boolean) }); }} style={{ ...inputStyle, fontSize: 12, padding: '6px 8px' }}>
+                          <option value="">{slot === 0 ? 'Player 1 (live scores)' : 'Player 2'}</option>
+                          {(tournament.players || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => addTeam(f.id)} style={{ background: 'transparent', border: `1px dashed ${C.turfBorder}`, color: C.ivoryDim, borderRadius: 10, padding: '8px 0', width: '100%', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginTop: 6 }}>+ Add team to {f.name}</button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={card}>
+          <div style={lab}>Buyer not playing?</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginTop: 6 }}>
+            <input value={newBuyer} placeholder="Type a name" aria-label="New buyer name" onChange={e => setNewBuyer(e.target.value)} style={inputStyle} />
+            <button onClick={() => { const n = newBuyer.trim(); if (!n) return; setDraft(d => ({ ...d, buyers: [...new Set([...(d.buyers || []), n])] })); setNewBuyer(''); }} style={{ background: C.turfLight, border: `1px solid ${C.turfBorder}`, color: C.ivory, borderRadius: 10, padding: '0 14px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Add</button>
+          </div>
+          {(draft.buyers || []).length > 0 && <div style={{ fontSize: 11.5, color: C.ivoryDim, marginTop: 6 }}>Added: {(draft.buyers || []).join(', ')}</div>}
+        </div>
+
+        <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={lab}>Total pot</span>
+          <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 24, color: C.goldBright }}>{money0(pots.total)}</span>
+        </div>
+        <GoldButton onClick={() => { onSave({ ...draft, saved: true }); close(); }} style={{ width: '100%', padding: '13px 0' }}>Save results</GoldButton>
+        <div style={{ fontSize: 11, color: C.bunker, lineHeight: 1.4 }}>Once saved, everyone in the tournament can see this from the Calcutta banner on Home. You can edit it any time.</div>
+      </div>
+    )}</DrawerSheet>
+  );
+}
+
 
 function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wide = 380, children }) {
   const padRef = useRef(null), scrimRef = useRef(null), contentRef = useRef(null);
@@ -4515,7 +4853,7 @@ function GuideCard({ title, steps, onDismiss, cta }) {
   );
 }
 
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction }) {
   const now = useNow(5000);
   const [adminGuideSeen, markAdminGuide] = useSeenFlag('guide-admin');
   const [playerGuideSeen, markPlayerGuide] = useSeenFlag('guide-player');
@@ -5088,6 +5426,24 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               </div>
             ))}
           </div>
+        );
+      })()}
+
+      {tournament.auction?.saved && Array.isArray(tournament.auction.teams) && tournament.auction.teams.length > 0 && (() => {
+        const au = tournament.auction;
+        const pots = auctionPots(au, tournament);
+        const my = auctionMyNet(au, tournament, state, whoami);
+        return (
+          <button onClick={onOpenAuction} style={{ ...homeCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <Coins size={20} color={C.gold} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.ivory }}>Calcutta · {money0(pots.total)} pot</div>
+                <div style={{ fontSize: 11.5, color: C.ivoryDim }}>{my.count > 0 ? `You own ${my.count} team${my.count === 1 ? '' : 's'}${my.anyRanked ? ` · ${my.net >= 0 ? '+' : '−'}${money0(Math.abs(my.net))} if ended now` : ''}` : 'See teams, owners and payouts'}</div>
+              </div>
+            </div>
+            <ChevronRight size={18} color={C.ivoryDim} />
+          </button>
         );
       })()}
 
@@ -7171,7 +7527,7 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer }) {
+function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -7189,6 +7545,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
+        {isAdmin && hasPlayers && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
         {section('Me')}
         {whoami && item(User, `Not ${pgaName(whoami.name)}? Switch player`, onSwitchPlayer)}
@@ -8444,6 +8801,8 @@ export default function RoGreen() {
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
   const [kosOpen, setKosOpen] = useState(false);
+  const [auctionOpen, setAuctionOpen] = useState(false);
+  const [auctionSetupOpen, setAuctionSetupOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [autoAdvanceTimer, setAutoAdvanceTimer] = useState(null);
   const autoAdvanceRef = useRef(null);
@@ -9278,7 +9637,7 @@ export default function RoGreen() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
@@ -9324,7 +9683,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -9376,6 +9735,8 @@ export default function RoGreen() {
           <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={close} />
         )}</DrawerFrame>
       )}
+      {auctionOpen && tournament.auction?.saved && <AuctionDrawer auction={tournament.auction} tournament={tournament} state={state} whoami={whoami} onClose={() => setAuctionOpen(false)} />}
+      {auctionSetupOpen && <AuctionSetupDrawer auction={tournament.auction} tournament={tournament} state={state} onSave={(a) => updateTournament(p => ({ ...p, auction: a }))} onClose={() => setAuctionSetupOpen(false)} />}
       {kosOpen && (
         <DrawerFrame origin="tap" paper={false} fill wide={560} onClose={() => setKosOpen(false)}>{(close) => (
           <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={close} />
