@@ -3136,17 +3136,22 @@ function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wi
   );
 }
 
+/* The hole someone is "up to": one past the furthest hole that anyone they are scoring has a score for (0-based).
+   Admins score everyone; with group score entry you score your group; otherwise just yourself. */
+function currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry) {
+  const numHoles = state.numHoles;
+  const myGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
+  const ids = viewAsAdmin ? state.players.map(p => p.id)
+    : (groupScoreEntry && myGroup && (myGroup.playerIds || []).length > 0 ? myGroup.playerIds : (whoami ? [whoami.id] : []));
+  let last = -1;
+  ids.forEach(id => { for (let i = numHoles - 1; i >= 0; i--) { if (state.scores[id]?.[i] != null) { if (i > last) last = i; break; } } });
+  return Math.max(0, Math.min(numHoles - 1, last + 1));
+}
+
 function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
   // Open on the hole the player is actually up to: one past the furthest hole anyone being scored has a score for.
-  const initialHole = (() => {
-    const myGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
-    const ids = viewAsAdmin ? state.players.map(p => p.id)
-      : (groupScoreEntry && myGroup && (myGroup.playerIds || []).length > 0 ? myGroup.playerIds : (whoami ? [whoami.id] : []));
-    let last = -1;
-    ids.forEach(id => { for (let i = numHoles - 1; i >= 0; i--) { if (state.scores[id]?.[i] != null) { if (i > last) last = i; break; } } });
-    return Math.max(0, Math.min(numHoles - 1, last + 1));
-  })();
+  const initialHole = currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry);
   const [viewHole, setViewHole] = useState(initialHole);
   const [reviewMode, setReviewMode] = useState(!!initialReview);
   const [draftScores, setDraftScores] = useState({});
@@ -4515,7 +4520,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const leaderboard = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
   const top = leaderboard.slice(0, 6);
   const minThru = stats.length ? Math.min(...stats.map(s => s.thru)) : 0;
-  const groupHole = Math.max(0, Math.min(minThru, state.numHoles - 1));
+  const groupHole = currentHoleIndex(state, whoami, isAdmin, tournament?.groupScoreEntry);
   const g = state.games;
   const matchplay = g.matchplay.enabled ? computeMatchplay(state) : null;
   const teamRace = matchplay ? computeTeamRace(state, matchplay.results) : null;
@@ -4616,8 +4621,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                       <span style={{ ...lbl, fontSize: 9 }}>REVIEW</span>
                     ) : (
                       <>
-                        <span style={{ ...lbl, fontSize: 9 }}>ENTER</span>
-                        <span style={{ ...lbl, fontSize: 9 }}>SCORE</span>
+                        <span style={{ ...lbl, fontSize: 8, letterSpacing: 0.8 }}>ENTER</span>
+                        <span style={{ ...lbl, fontSize: groupHole + 1 >= 10 ? 12 : 15, lineHeight: 1.05, whiteSpace: 'nowrap' }}>HOLE {groupHole + 1}</span>
                       </>
                     )}
                   </div>
