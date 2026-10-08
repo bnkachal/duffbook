@@ -4622,7 +4622,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                     ) : (
                       <>
                         <span style={{ ...lbl, fontSize: 8, letterSpacing: 0.8 }}>ENTER</span>
-                        <span style={{ ...lbl, fontSize: groupHole + 1 >= 10 ? 12 : 15, lineHeight: 1.05, whiteSpace: 'nowrap' }}>HOLE {groupHole + 1}</span>
+                        <span style={{ ...lbl, fontSize: groupHole + 1 >= 10 ? 10.5 : 12, letterSpacing: 0, lineHeight: 1.05, whiteSpace: 'nowrap' }}>HOLE {groupHole + 1}</span>
                       </>
                     )}
                   </div>
