@@ -4006,6 +4006,31 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
 
   const positionChanges = usePositionChanges(leaderboard.map(p => p.id));
 
+  // Still until someone posts a score. Then that player's row flashes gold, says what they made, and scrolls into view.
+  const [flashes, setFlashes] = React.useState({});
+  const lastSeen = React.useRef(null);
+  const flashSeq = React.useRef(0);
+  React.useEffect(() => {
+    const snap = {};
+    leaderboard.forEach(p => { snap[p.id] = { thru: p.thru, toPar: p.toPar }; });
+    const prev = lastSeen.current;
+    lastSeen.current = snap;
+    if (!prev) return;
+    const fresh = {};
+    leaderboard.forEach((p, i) => {
+      const was = prev[p.id];
+      if (!was || p.thru !== was.thru + 1) return;
+      const d = p.toPar - was.toPar;
+      const word = d <= -2 ? 'Eagle' : d === -1 ? 'Birdie' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : 'Double+';
+      fresh[p.id] = { label: `${word} · H${p.thru}`, n: ++flashSeq.current, idx: i };
+    });
+    const ids = Object.keys(fresh);
+    if (!ids.length) return;
+    setFlashes(f => ({ ...f, ...fresh }));
+    if (shouldScroll) { setOffset(Math.max(0, fresh[ids[0]].idx - 1) % total); clearTimeout(pauseRef.current); setPaused(true); pauseRef.current = setTimeout(() => setPaused(false), 5000); }
+    setTimeout(() => setFlashes(f => { const n = { ...f }; ids.forEach(id => { if (n[id] && n[id].n === fresh[id].n) delete n[id]; }); return n; }), 6000);
+  }, [leaderboard]);
+
   // Tapping the card opens the full leaderboard, so pausing is press-and-hold: the list stops while a finger is down and resumes shortly after.
   const holdStart = () => { if (!shouldScroll) return; clearTimeout(pauseRef.current); setPaused(true); };
   const holdEnd = () => { if (!shouldScroll) return; clearTimeout(pauseRef.current); pauseRef.current = setTimeout(() => setPaused(false), 2500); };
@@ -4035,7 +4060,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
             const scoreStr = p.thru === 0 ? '–' : fmtToPar(score);
             const scoreColor = score < 0 ? C.emerald : score > 0 ? C.flagRed : C.bunker;
             return (
-              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent', animation: `lbRowGlow 4.4s ease-in-out ${idx * 0.55}s infinite`, animationPlayState: paused ? 'paused' : 'running' }}>
+              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent', animation: flashes[p.id] ? `${flashes[p.id].n % 2 ? 'lbFlashA' : 'lbFlashB'} 2.6s ease-out 1` : 'none' }}>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400, display: 'flex', alignItems: 'center', gap: 1 }}>
                   {rank}
                   {positionChanges[p.id] === 'up' && <ChevronUp size={11} color={C.emerald} style={{ flexShrink: 0 }} />}
@@ -4044,7 +4069,10 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
                   {isLive(p.id) && <span style={{ width: 6, height: 6, borderRadius: 999, background: C.emerald, flexShrink: 0, animation: 'pulse 2.2s ease-in-out infinite' }} />}
-                  <span style={{ fontSize: 13, fontWeight: rank === 1 ? 700 : 500, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: rank === 1 ? 700 : 500, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</div>
+                    {flashes[p.id] && <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: C.goldBright, lineHeight: 1.2 }}>{flashes[p.id].label}</div>}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 12, color: C.bunker }}>{p.thru > 0 ? p.thru : '–'}</div>
                 <div style={{ textAlign: 'right' }}>
@@ -7876,6 +7904,8 @@ function FontLoader() {
       button { transition: transform 0.08s ease; }
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes lbFlashA { 0% { background: rgba(201,162,39,0.30); box-shadow: inset 3px 0 0 rgba(201,162,39,1); } 100% { background: rgba(201,162,39,0); box-shadow: inset 3px 0 0 rgba(201,162,39,0); } }
+      @keyframes lbFlashB { 0% { background: rgba(201,162,39,0.30); box-shadow: inset 3px 0 0 rgba(201,162,39,1); } 100% { background: rgba(201,162,39,0); box-shadow: inset 3px 0 0 rgba(201,162,39,0); } }
       @keyframes lbRowGlow { 0%, 30%, 100% { box-shadow: inset 0 0 0 0 rgba(201,162,39,0); } 12% { box-shadow: inset 0 0 0 1.5px rgba(201,162,39,0.6), inset 0 0 22px rgba(201,162,39,0.20); } }
       @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201,162,39,0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(201,162,39,0.38); } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
