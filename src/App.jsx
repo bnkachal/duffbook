@@ -12,6 +12,26 @@ import {
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
+/* ============================== BRAND ==============================
+   One codebase, several looks. The build picks a brand from the VITE_BRAND environment variable
+   (default: matchbook). Ironwood's gold was sampled from the club's own app. */
+const BRANDS = {
+  matchbook: {
+    id: 'matchbook', name: 'MatchBook', short: 'MatchBook', heroTitle: 'MatchBook',
+    heroSub: 'Your Tournament. Every Match. One Book.', pill: 'Live Golf Scoring & Side Bets',
+    poweredBy: false, bettingDefault: true, goldRgb: '201,162,39', logoUrl: null, colors: {},
+  },
+  ironwood: {
+    id: 'ironwood', name: 'Ironwood Live Scoring', short: 'Ironwood', heroTitle: 'Ironwood',
+    heroSub: 'Live Scoring', pill: 'Live Golf Scoring',
+    poweredBy: true, bettingDefault: false, goldRgb: '178,153,84', logoUrl: '/brands/ironwood-logo.png',
+    colors: { gold: '#B29954', goldBright: '#CDB671', goldDark: '#7E6C33', goldLight: '#B2995422', teamA: '#2C3F55' },
+  },
+};
+const BRAND = BRANDS[(typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BRAND) || 'matchbook'] || BRANDS.matchbook;
+const GOLD_RGB = BRAND.goldRgb;
+const BRAND_POWERED = `${BRAND.name} · powered by MatchBook`;
+if (typeof document !== 'undefined') { try { document.title = BRAND.name; } catch (e) { /* ignore */ } }
 const C = {
   pine: '#0E1013', pineDark: '#0B0D10', turf: '#171A1F', turfLight: '#20242B',
   turfBorder: 'rgba(255,255,255,0.08)', hairline: 'rgba(255,255,255,0.06)', ivory: '#F5F5F5', ivoryDim: '#AEB4BC',
@@ -21,9 +41,10 @@ const C = {
   teamA: '#123C73', teamB: '#7A1F32',
   shadow: '0 10px 30px rgba(0,0,0,0.25)',
   shadowHero: '0 10px 30px rgba(0,0,0,0.3), 0 0 24px rgba(201,162,39,0.08)',
+  ...BRAND.colors,
 };
-const CHIP_COLORS = ['#C9A227', '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
-const FLIGHT_COLORS = ['#123C73', '#7A1F32', '#C9A227', '#19C37D'];
+const CHIP_COLORS = [C.gold, '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
+const FLIGHT_COLORS = [C.teamA, '#7A1F32', C.gold, '#19C37D'];
 const TABS = ['home', 'bets', 'settle'];
 
 // ⚠️ REPLACE THIS with your real Firebase UID before deploying — find it at
@@ -627,7 +648,7 @@ function defaultTournament() {
   const r0 = defaultRound(0);
   return {
     name: '', adminPin: null,
-    players: [], flights: [], handicapsEnabled: false, bettingEnabled: true,
+    players: [], flights: [], handicapsEnabled: false, bettingEnabled: BRAND.bettingDefault,
     spectatorsEnabled: false, spectatorShowBetting: false, rules: '',
     entryFee: 0, payoutSplit: [50, 30, 20], groupScoreEntry: false,
     rounds: [r0], activeRoundId: r0.id,
@@ -1837,7 +1858,7 @@ function getRoundPhase(state, stats, bets) {
 function getNextStep(phase, state, whoami, isAdmin) {
   const pm = state.games?.parimutuel || { enabled: false, resolved: false, tickets: [], lockAfterHole: 0 };
   if (phase === 'pre-round' || phase === 'in-progress') {
-    if (!isAdmin && !whoami) return { text: 'Tap here and pick your name so MatchBook knows whose score is whose.', action: 'card' };
+    if (!isAdmin && !whoami) return { text: `Tap here and pick your name so ${BRAND.short} knows whose score is whose.`, action: 'card' };
     if (pm.enabled && !pm.resolved) {
       const stats = computeStats(state);
       const bettingOpen = !stats.some(s => s.thru > pm.lockAfterHole);
@@ -1878,8 +1899,14 @@ function StatusBadge({ status, label }) {
   const s = styles[status] || styles.neutral;
   return <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', padding: '3px 10px', borderRadius: 999, background: s.bg, color: s.color, flexShrink: 0 }}>{label}</span>;
 }
+/* Shows the brand logo file when it exists in /public, otherwise falls back to the text title. */
+function BrandMark({ fallback }) {
+  const [ok, setOk] = useState(!!BRAND.logoUrl);
+  if (!BRAND.logoUrl || !ok) return fallback;
+  return <img src={BRAND.logoUrl} alt={BRAND.short} onError={() => setOk(false)} style={{ width: 'min(260px, 62vw)', height: 'auto', marginBottom: 10, filter: 'drop-shadow(0 4px 18px rgba(0,0,0,0.5))' }} />;
+}
 function GoldButton({ children, onClick, disabled, style }) {
-  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.turfBorder : `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', borderRadius: 12, padding: '11px 16px', fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, boxShadow: disabled ? 'none' : '0 4px 14px rgba(201,162,39,0.28)', transition: 'box-shadow 0.15s ease', ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.turfBorder : `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', border: 'none', borderRadius: 12, padding: '11px 16px', fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, boxShadow: disabled ? 'none' : `0 4px 14px rgba(${GOLD_RGB},0.28)`, transition: 'box-shadow 0.15s ease', ...style }}>{children}</button>;
 }
 function GhostButton({ children, onClick, style }) {
   return <button onClick={onClick} style={{ background: 'rgba(255,255,255,0.03)', color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '9px 14px', fontSize: 13, fontFamily: 'Inter, sans-serif', cursor: 'pointer', ...style }}>{children}</button>;
@@ -1969,7 +1996,7 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
 /* ============================== NAV ============================== */
 function NavBtn({ icon: Icon, label, active, onClick, hero, badge }) {
   return (
-    <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? C.goldBright : C.bunker, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 14, position: 'relative', boxShadow: active ? '0 0 14px rgba(201,162,39,0.14)' : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
+    <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? C.goldBright : C.bunker, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 14, position: 'relative', boxShadow: active ? `0 0 14px rgba(${GOLD_RGB},0.14)` : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
       <Icon size={hero ? 22 : 18} strokeWidth={active ? 2.4 : 1.8} />
       <span style={{ fontSize: 9, fontFamily: 'Inter, sans-serif', letterSpacing: 0.2, textTransform: 'uppercase', fontWeight: active ? 700 : 500 }}>{label}</span>
       {badge && <span style={{ position: 'absolute', top: 2, right: 6, background: badge.startsWith('-') ? C.emerald : badge === 'E' ? C.bunker : C.flagRed, color: '#FFF', borderRadius: 999, fontSize: 8, padding: '1px 4px', fontFamily: 'Inter, sans-serif', fontWeight: 700, minWidth: 14, textAlign: 'center' }}>{badge}</span>}
@@ -2859,19 +2886,20 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, joi
 
       {/* Hero — top portion */}
       <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 'max(40px, 10vh)', paddingBottom: 20 }}>
-        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 8 }}>MatchBook</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 1.5, marginBottom: 12, fontFamily: 'Inter, sans-serif' }}>Your Tournament. Every Match. One Book.</div>
+        <BrandMark fallback={<div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 'clamp(42px, 12vw, 62px)', letterSpacing: 5, textTransform: 'uppercase', color: '#FFFFFF', lineHeight: 1, textShadow: '0 4px 24px rgba(0,0,0,0.5)', marginBottom: 8 }}>{BRAND.heroTitle}</div>} />
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 1.5, marginBottom: 12, fontFamily: 'Inter, sans-serif', letterSpacing: BRAND.poweredBy ? 4 : 0, textTransform: BRAND.poweredBy ? 'uppercase' : 'none' }}>{BRAND.heroSub}</div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: `${C.gold}26`, border: `1px solid ${C.gold}66`, borderRadius: 999, padding: '5px 16px', backdropFilter: 'blur(8px)' }}>
           <div style={{ width: 5, height: 5, borderRadius: '50%', background: C.gold }} />
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 2, fontFamily: 'Inter, sans-serif', textTransform: 'uppercase', fontWeight: 600 }}>Live Golf Scoring & Side Bets</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 2, fontFamily: 'Inter, sans-serif', textTransform: 'uppercase', fontWeight: 600 }}>{BRAND.pill}</span>
         </div>
+        {BRAND.poweredBy && <div style={{ marginTop: 14, fontSize: 11, letterSpacing: 1.5, color: 'rgba(255,255,255,0.6)', fontFamily: 'Inter, sans-serif', textTransform: 'uppercase' }}>Powered by <b style={{ color: 'rgba(255,255,255,0.9)' }}>MatchBook</b></div>}
       </div>
 
       {/* Action panel — bottom portion, always visible */}
       <div style={{ position: 'relative', zIndex: 1, flex: '0 0 auto', width: '100%', maxWidth: 430, margin: '0 auto', padding: '0 20px max(24px, env(safe-area-inset-bottom, 24px)) 20px', boxSizing: 'border-box' }}>
 
         {/* Start button */}
-        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: '0 4px 14px rgba(201,162,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <button onClick={onCreate} data-testid="start-tournament-btn" style={{ width: '100%', padding: '16px 0', fontSize: 16, background: `linear-gradient(180deg, ${C.goldBright} 0%, ${C.gold} 100%)`, color: C.pineDark, fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 12, boxShadow: `0 4px 14px rgba(${GOLD_RGB},0.3)`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <Flag size={16} /> Create Tournament
         </button>
 
@@ -2896,7 +2924,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, joi
             autoCapitalize="characters"
             style={{ flex: 1, background: codeFocused ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)', border: `1.5px solid ${joinError ? `${C.flagRed}B3` : codeFocused ? `${C.gold}B3` : 'rgba(255,255,255,0.15)'}`, borderRadius: 12, padding: '14px 12px', color: '#FFF', fontSize: 20, textAlign: 'center', letterSpacing: 5, outline: 'none', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, boxSizing: 'border-box' }}
           />
-          <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking || !code.trim()} style={{ padding: '0 20px', background: code.trim() ? `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: code.trim() ? C.pineDark : '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? '0 4px 14px rgba(201,162,39,0.3)' : 'none', opacity: joinChecking ? 0.7 : 1, whiteSpace: 'nowrap' }}>
+          <button onClick={doJoin} data-testid="join-btn" disabled={joinChecking || !code.trim()} style={{ padding: '0 20px', background: code.trim() ? `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 12, color: code.trim() ? C.pineDark : '#FFF', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 15, letterSpacing: 0.5, textTransform: 'uppercase', cursor: code.trim() ? 'pointer' : 'default', boxShadow: code.trim() ? `0 4px 14px rgba(${GOLD_RGB},0.3)` : 'none', opacity: joinChecking ? 0.7 : 1, whiteSpace: 'nowrap' }}>
             {joinChecking ? '...' : 'Join'}
           </button>
         </div>
@@ -3460,7 +3488,7 @@ function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wi
   };
   const paperStyle = paper ? {
     backgroundColor: '#F3F0E6',
-    backgroundImage: 'linear-gradient(to right, rgba(201,162,39,0.30) 1px, transparent 1px), linear-gradient(to bottom, rgba(201,162,39,0.30) 1px, transparent 1px)',
+    backgroundImage: `linear-gradient(to right, rgba(${GOLD_RGB},0.30) 1px, transparent 1px), linear-gradient(to bottom, rgba(${GOLD_RGB},0.30) 1px, transparent 1px)`,
     backgroundSize: '24px 24px', backgroundPosition: '12px 0', backgroundAttachment: 'local',
     border: `2.5px solid ${C.blue}`, color: C.pineDark,
     boxShadow: '0 18px 50px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.7)',
@@ -3593,7 +3621,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                   const p = state.pars[hIdx] ?? 4;
                   const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : C.pineDark;
                   return (
-                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: 'rgba(255,255,255,0.78)', border: '1px solid rgba(201,162,39,0.45)', borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
+                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: 'rgba(255,255,255,0.78)', border: `1px solid rgba(${GOLD_RGB},0.45)`, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
                       <div style={{ fontSize: 9, color: '#6B6455' }}>{hIdx + 1}</div>
                       <div style={{ fontSize: 8, color: '#6B6455' }}>Par {p}</div>
                       <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
@@ -3631,7 +3659,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
           <div style={{ fontSize: 34, lineHeight: 1.1, color: paperOn ? C.pineDark : C.ivory, fontWeight: 800, letterSpacing: 1.5, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>HOLE {viewHole + 1}</div>
           <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : C.ivoryDim, marginTop: 8, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
           {groupScoreEntry && !viewAsAdmin && playersToShow.length > 1 && (
-            <div style={{ fontSize: 10.5, color: paperOn ? '#8D6B16' : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
+            <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
           )}
         </div>
 
@@ -3652,7 +3680,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
             <div key={p.id} style={{
               background: 'transparent', borderRadius: 0,
               padding: compact ? '8px 2px' : '14px 2px 12px', marginBottom: 0,
-              borderBottom: '1px solid rgba(201,162,39,0.5)',
+              borderBottom: `1px solid rgba(${GOLD_RGB},0.5)`,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: compact ? 6 : 12 }}>
                 <Chip color={pc(p)} style={{ width: compact ? 22 : 26, height: compact ? 22 : 26, fontSize: 9, flexShrink: 0 }}>{initials(p.name)}</Chip>
@@ -5429,7 +5457,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         );
       })()}
 
-      {tournament.auction?.saved && Array.isArray(tournament.auction.teams) && tournament.auction.teams.length > 0 && (() => {
+      {tournament.bettingEnabled !== false && tournament.auction?.saved && Array.isArray(tournament.auction.teams) && tournament.auction.teams.length > 0 && (() => {
         const au = tournament.auction;
         const pots = auctionPots(au, tournament);
         const my = auctionMyNet(au, tournament, state, whoami);
@@ -7083,7 +7111,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
   const openExtra = (key) => { setExtrasTouched(true); setSubKey(key); };
   const joinUrl = `${window.location.origin}?code=${roundCode}`;
   const shareWithPlayers = async () => {
-    const title = `Join ${tournament.name || 'my round'} on MatchBook`;
+    const title = `Join ${tournament.name || 'my round'} on ${BRAND.name}`;
     try {
       if (navigator.share) { await navigator.share({ title, text: `Tap to join: ${joinUrl}`, url: joinUrl }); setShareMsg('Shared'); }
       else { await navigator.clipboard.writeText(joinUrl); setShareMsg('Link copied'); }
@@ -7478,7 +7506,7 @@ function NotificationsModal({ prefs, setPrefs, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, borderTop: `1px solid ${C.turfBorder}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>Notifications</div><button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button></div>
-        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while MatchBook is open on this device — not true background push.</div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 14, lineHeight: 1.5 }}>These are browser alerts that fire while {BRAND.short} is open on this device — not true background push.</div>
         {perm !== 'granted' && supported && <GoldButton onClick={request} style={{ marginBottom: 16 }}>{perm === 'denied' ? 'Blocked — check browser settings' : 'Enable browser alerts'}</GoldButton>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{NOTIF_TYPES.map(n => <ToggleRow key={n.key} label={n.label} sub={n.sub} enabled={!!prefs[n.key]} onToggle={() => setPrefs({ ...prefs, [n.key]: !prefs[n.key] })} />)}</div>
       </div>
@@ -7591,7 +7619,7 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup }) {
+function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -7609,7 +7637,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
-        {isAdmin && hasPlayers && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
+        {isAdmin && hasPlayers && bettingOn && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
         {section('Me')}
         {whoami && item(User, `Not ${pgaName(whoami.name)}? Switch player`, onSwitchPlayer)}
@@ -7624,6 +7652,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
         {!isAdmin && !previewMode && item(KeyRound, 'Become an admin', onBecomeAdmin)}
         {section('Leave')}
         {item(LogOut, 'Leave this tournament', onLeave, true)}
+        {BRAND.poweredBy && <div style={{ textAlign: 'center', fontSize: 11, color: C.bunker, padding: '16px 0 4px' }}>{BRAND_POWERED}</div>}
         {isAdmin && item(Trash2, 'Reset scores & bets for this round', onOpenReset, true)}
     </>)}</DrawerSheet>
   );
@@ -8050,7 +8079,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 20, textTransform: 'uppercase', letterSpacing: 0.4 }}>My Position</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={22} /></button>
         </div>
-        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — MatchBook doesn't move real money. Covers every round of the trip.</div>
+        <div style={{ fontSize: 11, color: C.ivoryDim, fontStyle: 'italic', marginBottom: 16 }}>Values are tournament calculations only — {BRAND.short} doesn't move real money. Covers every round of the trip.</div>
 
         <div style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 14 }}>
           <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>Current net position</div></div>
@@ -8139,7 +8168,7 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
         style={{ flex: 1, overflowY: 'auto', textAlign: 'center', padding: '0 24px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
       >
         <div style={{ height: '40vh' }} />
-        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold, marginBottom: 10 }}>MatchBook Presents</div>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold, marginBottom: 10 }}>{BRAND.short} Presents</div>
         <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 30, color: '#FFFFFF', marginBottom: 8 }}>{tournament?.name || 'The Tournament'}</div>
         <div style={{ fontSize: 13, color: C.ivoryDim, marginBottom: '18vh' }}>{roundName}</div>
 
@@ -8161,7 +8190,7 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
 
         <div style={{ height: '20vh' }} />
         <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: '#FFFFFF', marginBottom: 6 }}>Thanks for playing</div>
-        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold }}>MatchBook</div>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', color: C.gold }}>{BRAND.poweredBy ? BRAND_POWERED : BRAND.name}</div>
         <div style={{ height: '50vh' }} />
       </div>
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '18vh', background: 'linear-gradient(#050709, rgba(5,7,9,0))', pointerEvents: 'none' }} />
@@ -8313,7 +8342,7 @@ function FontLoader() {
       @keyframes countdownBar { from{width:100%} to{width:0%} }
       @keyframes shimmerPremium { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
       @keyframes presencePulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
-      @keyframes rowGlow { 0%{background:rgba(201,162,39,0.22)} 100%{background:transparent} }
+      @keyframes rowGlow { 0%{background:rgba(${GOLD_RGB},0.22)} 100%{background:transparent} }
       .row-glow { animation: rowGlow 1.8s ease-out both; }
       .tab-content { animation: tabSlide 0.22s ease both; }
       .card-appear { animation: cardFadeUp 0.28s ease both; }
@@ -8325,10 +8354,10 @@ function FontLoader() {
       button { transition: transform 0.08s ease; }
       button:active { transform: scale(0.96); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-      @keyframes lbFlashA { 0% { background: rgba(201,162,39,0.30); box-shadow: inset 3px 0 0 rgba(201,162,39,1); } 100% { background: rgba(201,162,39,0); box-shadow: inset 3px 0 0 rgba(201,162,39,0); } }
-      @keyframes lbFlashB { 0% { background: rgba(201,162,39,0.30); box-shadow: inset 3px 0 0 rgba(201,162,39,1); } 100% { background: rgba(201,162,39,0); box-shadow: inset 3px 0 0 rgba(201,162,39,0); } }
-      @keyframes lbRowGlow { 0%, 30%, 100% { box-shadow: inset 0 0 0 0 rgba(201,162,39,0); } 12% { box-shadow: inset 0 0 0 1.5px rgba(201,162,39,0.6), inset 0 0 22px rgba(201,162,39,0.20); } }
-      @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201,162,39,0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(201,162,39,0.38); } }
+      @keyframes lbFlashA { 0% { background: rgba(${GOLD_RGB},0.30); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},1); } 100% { background: rgba(${GOLD_RGB},0); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},0); } }
+      @keyframes lbFlashB { 0% { background: rgba(${GOLD_RGB},0.30); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},1); } 100% { background: rgba(${GOLD_RGB},0); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},0); } }
+      @keyframes lbRowGlow { 0%, 30%, 100% { box-shadow: inset 0 0 0 0 rgba(${GOLD_RGB},0); } 12% { box-shadow: inset 0 0 0 1.5px rgba(${GOLD_RGB},0.6), inset 0 0 22px rgba(${GOLD_RGB},0.20); } }
+      @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(${GOLD_RGB},0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(${GOLD_RGB},0.38); } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
@@ -8554,7 +8583,7 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
 
   const shareLink = () => {
     if (navigator.share) {
-      navigator.share({ title: `${mode === 'spectator' ? 'Follow' : 'Join'} ${tournamentName} on MatchBook`, text: `Scan or tap to ${mode === 'spectator' ? 'follow live' : 'join'}: ${url}`, url });
+      navigator.share({ title: `${mode === 'spectator' ? 'Follow' : 'Join'} ${tournamentName} on ${BRAND.name}`, text: `Scan or tap to ${mode === 'spectator' ? 'follow live' : 'join'}: ${url}`, url });
     } else {
       copyLink();
     }
@@ -9616,7 +9645,7 @@ export default function RoGreen() {
       {showTips === 'show' && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => dismissTips()}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.turf, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to MatchBook</div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: C.ivory, marginBottom: 20, textAlign: 'center' }}>Welcome to {BRAND.short}</div>
             {[
               [Flag, 'Tap the round badge to score', 'Use + or − for each hole, then Save & Next'],
               [ChevronRight, 'Fix a score any time', 'Tap Review, pick the hole, and change it'],
@@ -9648,6 +9677,7 @@ export default function RoGreen() {
             )}
             {(viewAsAdmin || multiRound) && ' · '}code <span data-testid="round-code">{roundCode}</span>
           </div>
+          {BRAND.poweredBy && <div style={{ fontSize: 9.5, color: C.ivoryDim, marginTop: 1, letterSpacing: 0.3 }}>{BRAND_POWERED}</div>}
           {(() => {
             const g = state.games || {};
             const active = [g.skins?.enabled && 'Skins', g.nassau?.enabled && 'Nassau', g.bestBall?.enabled && 'Best Ball', g.scramble?.enabled && 'Scramble', g.shamble?.enabled && 'Shamble', g.parimutuel?.enabled && 'Pari-mutuel', g.wolf?.enabled && 'Wolf'].filter(Boolean);
@@ -9747,7 +9777,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -9799,8 +9829,8 @@ export default function RoGreen() {
           <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={close} />
         )}</DrawerFrame>
       )}
-      {auctionOpen && tournament.auction?.saved && <AuctionDrawer auction={tournament.auction} tournament={tournament} state={state} whoami={whoami} onClose={() => setAuctionOpen(false)} />}
-      {auctionSetupOpen && <AuctionSetupDrawer auction={tournament.auction} tournament={tournament} state={state} onSave={(a) => updateTournament(p => ({ ...p, auction: a }))} onClose={() => setAuctionSetupOpen(false)} />}
+      {auctionOpen && tournament.bettingEnabled !== false && tournament.auction?.saved && <AuctionDrawer auction={tournament.auction} tournament={tournament} state={state} whoami={whoami} onClose={() => setAuctionOpen(false)} />}
+      {auctionSetupOpen && tournament.bettingEnabled !== false && <AuctionSetupDrawer auction={tournament.auction} tournament={tournament} state={state} onSave={(a) => updateTournament(p => ({ ...p, auction: a }))} onClose={() => setAuctionSetupOpen(false)} />}
       {kosOpen && (
         <DrawerFrame origin="tap" paper={false} fill wide={560} onClose={() => setKosOpen(false)}>{(close) => (
           <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={close} />
