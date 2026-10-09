@@ -4538,6 +4538,9 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, pr
           <div style={{ fontSize: 10, color: C.bunker }}>ranked within each flight · tap for full board</div>
         </div>
       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 34px 54px 52px', padding: '5px 14px', background: C.pineDark }}>
+        {[['#','left'],['Player','left'],['Thru','center'],[useNet ? 'Net' : 'Score','right'],['Strokes','right']].map(([h, al]) => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Inter, sans-serif', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: al }}>{h}</div>)}
+      </div>
       {flights.map((flight, fi) => {
         const flightPlayers = leaderboard.filter(p => p.flightId === flight.id);
         if (flightPlayers.length === 0) return null;
@@ -4550,14 +4553,15 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, pr
             {flightPlayers.slice(0, 3).map((p, i) => {
               const val = useNet ? p.netToPar : p.toPar;
               return (
-                <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 34px 54px 52px', padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
                   <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                     {isLive(p.id) && <span style={{ width: 6, height: 6, borderRadius: 999, background: C.emerald, flexShrink: 0, animation: 'pulse 2.2s ease-in-out infinite' }} />}
                     <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
                   </span>
-                  <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
+                  <span style={{ fontSize: 11, color: C.bunker, textAlign: 'center' }}>{p.thru === 0 ? '—' : p.thru}</span>
                   <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, textAlign: 'right', color: C.ivoryDim }}>{p.thru === 0 ? '—' : p.strokes}</span>
                 </div>
               );
             })}
@@ -4635,8 +4639,8 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
         {shouldScroll && <div style={{ display: 'flex', gap: 2 }}>{[0,1,2].map(i => <div key={i} style={{ width: 3, height: paused ? 6 : 10, borderRadius: 999, background: paused ? C.bunker : C.gold, animation: paused ? 'none' : `scrollDot 1s ease-in-out ${i*0.2}s infinite alternate` }} />)}</div>}
       </div>
       <div style={{ padding: '0 0 0 0' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '4px 14px', background: C.pineDark }}>
-          {['#','Player','Thru', useNet ? 'Net (Gr)' : 'Score'].map(h => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Inter, sans-serif', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: h === 'Score' || h === 'Net (Gr)' ? 'right' : 'left' }}>{h}</div>)}
+        <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 34px 54px 52px', padding: '4px 14px', background: C.pineDark }}>
+          {[['#','left'],['Player','left'],['Thru','center'],[useNet ? 'Net' : 'Score','right'],['Strokes','right']].map(([h, al]) => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Inter, sans-serif', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: al }}>{h}</div>)}
         </div>
         <div style={{ height: ITEM_HEIGHT * Math.min(VISIBLE, Math.max(total, 1)), overflow: 'hidden' }}>
           {rows.map((p, idx) => {
@@ -4645,7 +4649,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
             const scoreStr = p.thru === 0 ? '–' : fmtToPar(score);
             const scoreColor = score < 0 ? C.emerald : score > 0 ? C.flagRed : C.bunker;
             return (
-              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 66px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent', animation: flashes[p.id] ? `${flashes[p.id].n % 2 ? 'lbFlashA' : 'lbFlashB'} 2.6s ease-out 1` : 'none' }}>
+              <div key={`${p.id}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 34px 54px 52px', padding: '0 14px', height: ITEM_HEIGHT, alignItems: 'center', borderBottom: `1px solid ${C.turfBorder}`, background: rank === 1 && p.thru > 0 ? C.goldLight : 'transparent', animation: flashes[p.id] ? `${flashes[p.id].n % 2 ? 'lbFlashA' : 'lbFlashB'} 2.6s ease-out 1` : 'none' }}>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: rank === 1 ? C.gold : C.bunker, fontWeight: rank === 1 ? 700 : 400, display: 'flex', alignItems: 'center', gap: 1 }}>
                   {rank}
                   {positionChanges[p.id] === 'up' && <ChevronUp size={11} color={C.emerald} style={{ flexShrink: 0 }} />}
@@ -4664,6 +4668,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
                   <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, lineHeight: 1, color: p.thru === 0 ? C.bunker : scoreColor }}>{scoreStr}</div>
                   {useNet && p.thru > 0 && <div style={{ fontSize: 9, color: C.bunker, marginTop: 1 }}>gr {fmtToPar(p.toPar)}</div>}
                 </div>
+                <div style={{ textAlign: 'right', fontFamily: 'Inter, sans-serif', fontSize: 13, color: C.ivoryDim }}>{p.thru > 0 ? p.strokes : '–'}</div>
               </div>
             );
           })}
