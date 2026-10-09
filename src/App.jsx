@@ -4014,6 +4014,225 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
 
 /* ============================== MISSING COMPONENTS ============================== */
 
+/* ============================== ROUND SCORECARD ==============================
+   One scorecard look used on Home ("Your round") and in the tap-a-player drawer.
+   Score shapes follow golf convention: circle = under par, square = over par; double outline = eagle / double bogey or worse.
+   Outlines only, never a filled highlight. */
+const SC_GREEN = '#0C6B45', SC_RED = '#B3261E', SC_INK = '#1D2A22', SC_BAND = '#1E4D35', SC_CREAM = '#F4EFE1';
+const SC_MONO = { fontFamily: 'IBM Plex Mono, monospace' };
+function ScoreMark({ score, par }) {
+  if (score == null) return <span style={{ ...SC_MONO, fontSize: 13.5, color: '#B0A78F' }}>–</span>;
+  const d = score - par;
+  const box = (sz, round, color) => ({ width: sz, height: sz, borderRadius: round ? '50%' : 0, border: `1.5px solid ${color}`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+  const txt = (size, color) => ({ ...SC_MONO, fontWeight: 700, fontSize: size, color });
+  if (d <= -2) return <div title={`${score}, eagle`} style={box(27, true, SC_GREEN)}><div style={{ ...box(20, true, SC_GREEN), ...txt(12, SC_GREEN) }}>{score}</div></div>;
+  if (d === -1) return <div title={`${score}, birdie`} style={{ ...box(25, true, SC_GREEN), ...txt(13.5, SC_GREEN) }}>{score}</div>;
+  if (d === 0) return <span title={`${score}, par`} style={{ ...SC_MONO, fontWeight: 600, fontSize: 13.5, color: SC_INK }}>{score}</span>;
+  if (d === 1) return <div title={`${score}, bogey`} style={{ ...box(25, false, SC_RED), ...txt(13.5, SC_RED) }}>{score}</div>;
+  return <div title={`${score}, double bogey or worse`} style={box(27, false, SC_RED)}><div style={{ ...box(20, false, SC_RED), ...txt(12, SC_RED) }}>{score}</div></div>;
+}
+function ScoreLegend({ light }) {
+  const g = light ? SC_GREEN : '#19C37D', r = light ? SC_RED : '#F04452';
+  const item = (shape, label) => <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{shape}<span>{label}</span></div>;
+  const sh = (sz, round, color) => ({ width: sz, height: sz, borderRadius: round ? '50%' : 0, border: `1.3px solid ${color}`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 9.5, color: light ? '#4A4535' : C.ivoryDim }}>
+      {item(<div style={sh(12, true, g)}><div style={{ ...sh(6, true, g), border: `1px solid ${g}` }} /></div>, 'Eagle')}
+      {item(<div style={sh(11, true, g)} />, 'Birdie')}
+      {item(<div style={sh(11, false, r)} />, 'Bogey')}
+      {item(<div style={sh(12, false, r)}><div style={{ ...sh(6, false, r), border: `1px solid ${r}` }} /></div>, 'Double+')}
+    </div>
+  );
+}
+/* Column plan: holes 1-9, OUT, holes 10-18, IN, TOT (9-hole rounds: holes then TOT). */
+function roundColumns(numHoles) {
+  const cols = [];
+  for (let i = 0; i < Math.min(9, numHoles); i++) cols.push({ type: 'hole', i });
+  if (numHoles > 9) {
+    cols.push({ type: 'tot', label: 'OUT', from: 0, to: 9 });
+    for (let i = 9; i < numHoles; i++) cols.push({ type: 'hole', i });
+    cols.push({ type: 'tot', label: 'IN', from: 9, to: numHoles });
+    cols.push({ type: 'tot', label: 'TOT', from: 0, to: numHoles });
+  } else cols.push({ type: 'tot', label: 'TOT', from: 0, to: numHoles });
+  return cols;
+}
+function roundRange(state, scores, from, to) {
+  let par = 0, yds = 0, hasYds = false, score = 0, n = 0, playedPar = 0;
+  for (let i = from; i < to; i++) {
+    const p = state.pars?.[i] ?? 4; par += p;
+    const y = state.yardage?.[i]; if (y) { yds += y; hasYds = true; }
+    const s = scores?.[i]; if (s != null) { score += s; n++; playedPar += p; }
+  }
+  return { par, yds: hasYds ? yds : null, score: n ? score : null, n, d: score - playedPar };
+}
+const scDelta = (d) => d === 0 ? 'E' : d > 0 ? `+${d}` : `−${Math.abs(d)}`;
+function RoundCardHome({ state, whoami, thru, toPar }) {
+  const [expanded, setExpanded] = useState(false);
+  const [bar, setBar] = useState({ sx: 0, tw: 1 });
+  const scRef = useRef(null);
+  const numHoles = state.numHoles || 18;
+  const scores = state.scores?.[whoami.id] || {};
+  const cols = roundColumns(numHoles);
+  const widths = cols.map(c => c.type === 'hole' ? 32 : 40);
+  const hasYds = Array.isArray(state.yardage) && state.yardage.some(Boolean);
+  const hasSi = Array.isArray(state.strokeIndex) && state.strokeIndex.length > 0;
+  const showMore = expanded && (hasYds || hasSi);
+  const LW = 46;
+  const syncBar = () => {
+    const el = scRef.current; if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setBar({ sx: max > 0 ? el.scrollLeft / max : 0, tw: el.scrollWidth ? Math.min(1, el.clientWidth / el.scrollWidth) : 1 });
+  };
+  // Start scrolled so the next hole to play is in view; re-run when a score is saved.
+  useEffect(() => {
+    const el = scRef.current; if (!el) return;
+    let idx = 0; while (idx < numHoles && scores[idx] != null) idx++;
+    idx = Math.min(idx, numHoles - 1);
+    const ci = cols.findIndex(c => c.type === 'hole' && c.i === idx);
+    if (ci >= 0) { let x = 0; for (let k = 0; k <= ci; k++) x += widths[k]; el.scrollLeft = Math.max(0, x - (el.clientWidth - LW) + 8); }
+    syncBar();
+  }, [thru, numHoles]);
+  const label = (bg, color, node, weight = 700) => <div style={{ position: 'sticky', left: 0, zIndex: 2, width: LW, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: weight, letterSpacing: 0.8, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: 12, boxSizing: 'border-box' }}>{node}</div>;
+  const cell = (k, c, content, extra = {}) => <div key={k} style={{ width: c.type === 'hole' ? 32 : 40, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...extra }}>{content}</div>;
+  let run = 0;
+  const runs = cols.map(c => {
+    if (c.type === 'hole') { const s = scores[c.i]; if (s == null) return null; run += s - (state.pars?.[c.i] ?? 4); return run; }
+    const r = roundRange(state, scores, c.from, c.to); return r.n ? r.d : null;
+  });
+  return (
+    <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 6px 14px' }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: C.bunker }}>Your round</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ ...SC_MONO, fontWeight: 700, fontSize: 14, color: C.goldBright }}>{thru === 0 ? '—' : `${fmtToPar(toPar)} thru ${thru}`}</span>
+          {(hasYds || hasSi) && (
+            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded} aria-label={expanded ? 'Hide yardage and handicap rows' : 'Show yardage and handicap rows'} style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.turfBorder}`, color: C.ivoryDim, borderRadius: 8, minHeight: 36, padding: '0 10px', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>
+              {expanded ? 'Less' : 'Yds · Hcp'}{expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+          )}
+        </div>
+      </div>
+      <div ref={scRef} onScroll={syncBar} style={{ overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ width: 'max-content', minWidth: '100%' }}>
+          <div style={{ display: 'flex', height: 38, background: SC_BAND, color: '#FFF' }}>
+            {label(SC_BAND, '#FFF', <><span>HOLE</span><span style={{ opacity: 0.7 }}>PAR</span></>)}
+            {cols.map((c, k) => cell(k, c, c.type === 'hole'
+              ? <div style={{ ...SC_MONO, display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.25 }}><span style={{ fontSize: 12, fontWeight: 700 }}>{c.i + 1}</span><span style={{ fontSize: 10.5, opacity: 0.72 }}>{state.pars?.[c.i] ?? 4}</span></div>
+              : <div style={{ ...SC_MONO, display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.25 }}><span style={{ fontSize: 11, fontWeight: 700 }}>{c.label}</span><span style={{ fontSize: 10.5, opacity: 0.72 }}>{roundRange(state, scores, c.from, c.to).par}</span></div>))}
+          </div>
+          {showMore && hasYds && (
+            <div style={{ display: 'flex', height: 21, background: '#1C2026', color: C.ivoryDim }}>
+              {label('#1C2026', C.ivoryDim, 'YDS', 700)}
+              {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (state.yardage?.[c.i] || '') : (roundRange(state, scores, c.from, c.to).yds || '')}</span>))}
+            </div>
+          )}
+          {showMore && hasSi && (
+            <div style={{ display: 'flex', height: 21, background: '#15181D', color: '#8D96A1' }}>
+              {label('#15181D', '#8D96A1', 'HCP', 700)}
+              {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (state.strokeIndex?.[c.i] ?? '') : ''}</span>))}
+            </div>
+          )}
+          <div style={{ display: 'flex', height: 40, background: SC_CREAM }}>
+            {label(SC_CREAM, SC_INK, 'SCORE', 800)}
+            {cols.map((c, k) => c.type === 'hole'
+              ? cell(k, c, <ScoreMark score={scores[c.i] ?? null} par={state.pars?.[c.i] ?? 4} />)
+              : cell(k, c, <span style={{ ...SC_MONO, fontSize: 13.5, fontWeight: 800, color: SC_INK }}>{roundRange(state, scores, c.from, c.to).score ?? '–'}</span>, { background: '#E8E1CC' }))}
+          </div>
+          <div style={{ display: 'flex', height: 21, background: C.turf }}>
+            {label(C.turf, C.bunker, '+/−', 700)}
+            {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10.5, fontWeight: 600, color: runs[k] == null ? 'transparent' : runs[k] < 0 ? C.emerald : runs[k] > 0 ? C.flagRed : C.ivoryDim }}>{runs[k] == null ? '' : scDelta(runs[k])}</span>))}
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: '8px 14px 10px' }}>
+        <div style={{ position: 'relative', height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.14)' }}>
+          <div style={{ position: 'absolute', top: 0, bottom: 0, borderRadius: 3, background: C.gold, left: `${bar.sx * (1 - bar.tw) * 100}%`, width: `${bar.tw * 100}%` }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 7 }}>
+          <ScoreLegend />
+          {bar.tw < 1 && <span style={{ fontSize: 9.5, color: C.goldBright, fontWeight: 600 }}>Swipe for all {numHoles} ›</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+/* Opens when a player taps someone on the leaderboard. Read-only; front and back nine stacked so nothing scrolls sideways. */
+function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
+  const player = state.players.find(p => p.id === playerId);
+  const stat = (stats || []).find(s => s.id === playerId);
+  if (!player) return null;
+  const numHoles = state.numHoles || 18;
+  const scores = state.scores?.[playerId] || {};
+  const flight = (tournament?.flights || []).find(f => f.id === player.flightId);
+  const hasYds = Array.isArray(state.yardage) && state.yardage.some(Boolean);
+  const hasSi = Array.isArray(state.strokeIndex) && state.strokeIndex.length > 0;
+  const nines = numHoles > 9 ? [[0, 9, 'OUT'], [9, numHoles, 'IN']] : [[0, numHoles, 'TOT']];
+  const dcol = (d, thruN) => thruN === 0 ? C.bunker : d < 0 ? SC_GREEN : d > 0 ? SC_RED : SC_INK;
+  const tile = (lbl, val, color) => <div style={{ flex: 1, background: '#FFF', border: '1px solid #D8D0BC', borderRadius: 10, padding: '8px 10px' }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#6B6455' }}>{lbl}</div><div style={{ ...SC_MONO, fontWeight: 700, fontSize: 18, color }}>{val}</div></div>;
+  const lab = (bg, color, text, w = 700) => <div style={{ width: 40, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 8, boxSizing: 'border-box' }}>{text}</div>;
+  const flex = { flexGrow: 1, flexBasis: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  return (
+    <DrawerFrame origin="tap" onClose={onClose}>{(close) => (
+      <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <Chip color={pc(player)}>{initials(player.name)}</Chip>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: C.pineDark, textTransform: 'uppercase', letterSpacing: 0.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(player.name)}</div>
+              <div style={{ fontSize: 11.5, color: '#6B6455' }}>{[flight?.name, player.teeName ? `${player.teeName} tees` : null].filter(Boolean).join(' · ') || 'Scorecard'}</div>
+            </div>
+          </div>
+          <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.pineDark, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {tile('GROSS', stat && stat.thru > 0 ? fmtToPar(stat.toPar) : '–', stat ? dcol(stat.toPar, stat.thru) : C.bunker)}
+          {state.handicapsEnabled && tile('NET', stat && stat.thru > 0 ? fmtToPar(stat.netToPar) : '–', stat ? dcol(stat.netToPar, stat.thru) : C.bunker)}
+          {tile('THRU', stat ? stat.thru : 0, SC_INK)}
+        </div>
+        {nines.map(([from, to, tot]) => {
+          const idxs = Array.from({ length: to - from }, (_, k) => from + k);
+          const r = roundRange(state, scores, from, to);
+          return (
+            <div key={tot} style={{ border: '1px solid #D8D0BC', borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
+              <div style={{ display: 'flex', height: 24, background: '#1F3A2D', color: '#FFF' }}>
+                {lab('#1F3A2D', '#FFF', 'HOLE')}
+                {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 10.5, fontWeight: 700 }}>{i + 1}</div>)}
+                <div style={{ ...flex, ...SC_MONO, fontSize: 10, fontWeight: 700 }}>{tot}</div>
+              </div>
+              <div style={{ display: 'flex', height: 24, background: '#2F6B45', color: '#FFF' }}>
+                {lab('#2F6B45', '#FFF', 'PAR')}
+                {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 11.5, fontWeight: 600 }}>{state.pars?.[i] ?? 4}</div>)}
+                <div style={{ ...flex, ...SC_MONO, fontSize: 11.5, fontWeight: 600 }}>{r.par}</div>
+              </div>
+              {hasYds && (
+                <div style={{ display: 'flex', height: 22, background: '#EBE4D1', color: '#4A4535' }}>
+                  {lab('#EBE4D1', '#4A4535', 'YDS')}
+                  {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 9 }}>{state.yardage?.[i] || ''}</div>)}
+                  <div style={{ ...flex, ...SC_MONO, fontSize: 9 }}>{r.yds || ''}</div>
+                </div>
+              )}
+              {hasSi && (
+                <div style={{ display: 'flex', height: 22, background: '#DAD5C6', color: '#5A5442' }}>
+                  {lab('#DAD5C6', '#5A5442', 'HCP')}
+                  {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 9.5 }}>{state.strokeIndex?.[i] ?? ''}</div>)}
+                  <div style={flex} />
+                </div>
+              )}
+              <div style={{ display: 'flex', height: 42, background: '#FFF', borderTop: '1px solid #CFC7B2' }}>
+                {lab('#FFF', SC_INK, 'SCORE', 800)}
+                {idxs.map(i => <div key={i} style={flex}><ScoreMark score={scores[i] ?? null} par={state.pars?.[i] ?? 4} /></div>)}
+                <div style={{ ...flex, background: '#F1ECDC', ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{r.score ?? '–'}</div>
+              </div>
+            </div>
+          );
+        })}
+        <div style={{ padding: '2px 4px 8px' }}><ScoreLegend light /></div>
+        <div style={{ fontSize: 11, color: '#6B6455', lineHeight: 1.4, padding: '0 4px' }}>Read-only. Tap another player on the leaderboard to see their card.</div>
+      </>
+    )}</DrawerFrame>
+  );
+}
+
 function MiniCard({ players, state }) {
   const numHoles = state.numHoles || 18;
   const cols = Math.min(numHoles, 18);
@@ -4273,7 +4492,7 @@ function GamesTab({ state }) {
   );
 }
 
-function LeaderboardTab({ state, stats, compact }) {
+function LeaderboardTab({ state, stats, compact, onPlayerTap }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const leaderboard = stats.slice().sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
@@ -4288,7 +4507,7 @@ function LeaderboardTab({ state, stats, compact }) {
         const primaryScore = useNet ? p.netToPar : p.toPar;
         const scoreColor = primaryScore < 0 ? C.emerald : primaryScore > 0 ? C.flagRed : C.bunker;
         return (
-          <div key={p.id} style={{ ...rowCard, gap: 10, display: 'grid', gridTemplateColumns: '24px 1fr 50px 50px 46px', alignItems: 'center' }}>
+          <div key={p.id} onClick={onPlayerTap ? () => onPlayerTap(p.id) : undefined} onKeyDown={onPlayerTap ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPlayerTap(p.id); } } : undefined} role={onPlayerTap ? 'button' : undefined} tabIndex={onPlayerTap ? 0 : undefined} aria-label={onPlayerTap ? `${pgaName(p.name)} scorecard` : undefined} style={{ ...rowCard, gap: 10, display: 'grid', gridTemplateColumns: '24px 1fr 50px 50px 46px', alignItems: 'center', cursor: onPlayerTap ? 'pointer' : 'default' }}>
             <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 14, color: i === 0 && p.thru > 0 ? C.gold : C.bunker, flexShrink: 0 }}>{i + 1}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <Chip color={pc(p)}>{initials(p.name)}</Chip>
@@ -4962,28 +5181,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ivoryDim, flex: 1 }}>Tournament Rules</span>
               <ChevronRight size={14} color={C.bunker} />
             </div>
-            {whoami && (
-              <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, padding: '10px 0', marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 14px 8px', fontSize: 11, color: C.bunker }}>
-                  <span>Your round so far</span>
-                  <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, color: C.goldBright }}>{thru === 0 ? '—' : `${fmtToPar(toPar)} thru ${thru}`}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 1, overflowX: 'auto', padding: '0 14px' }}>
-                  {Array.from({ length: state.numHoles }, (_, i) => {
-                    const s = myScores[i];
-                    const par = state.pars[i] ?? 4;
-                    const val = s == null ? C.bunker : s < par ? C.emerald : s > par ? C.flagRed : C.ivoryDim;
-                    const bg = s == null ? 'transparent' : s < par ? `${C.emerald}1F` : s > par ? `${C.flagRed}1A` : 'transparent';
-                    return (
-                      <div key={i} style={{ flexShrink: 0, width: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 0' }}>
-                        <div style={{ fontSize: 9, color: C.bunker, marginBottom: 4 }}>{i + 1}</div>
-                        <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, fontSize: 13, width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: val, background: bg }}>{s ?? '–'}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {whoami && <RoundCardHome state={state} whoami={whoami} thru={thru} toPar={toPar} />}
 
             {(() => {
               const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
@@ -8894,6 +9092,7 @@ export default function RoGreen() {
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
   const [kosOpen, setKosOpen] = useState(false);
+  const [cardPlayerId, setCardPlayerId] = useState(null);
   const [auctionOpen, setAuctionOpen] = useState(false);
   const [auctionSetupOpen, setAuctionSetupOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -9732,7 +9931,7 @@ export default function RoGreen() {
           </div>
         )}
         {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
-        {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} />}
+        {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} onPlayerTap={setCardPlayerId} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
       </div>
@@ -9819,7 +10018,7 @@ export default function RoGreen() {
               <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 14px 18px' }}>
-              <LeaderboardTab state={state} stats={stats} compact />
+              <LeaderboardTab state={state} stats={stats} compact onPlayerTap={setCardPlayerId} />
             </div>
           </>
         )}</DrawerFrame>
@@ -9831,6 +10030,7 @@ export default function RoGreen() {
       )}
       {auctionOpen && tournament.bettingEnabled !== false && tournament.auction?.saved && <AuctionDrawer auction={tournament.auction} tournament={tournament} state={state} whoami={whoami} onClose={() => setAuctionOpen(false)} />}
       {auctionSetupOpen && tournament.bettingEnabled !== false && <AuctionSetupDrawer auction={tournament.auction} tournament={tournament} state={state} onSave={(a) => updateTournament(p => ({ ...p, auction: a }))} onClose={() => setAuctionSetupOpen(false)} />}
+      {cardPlayerId && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={cardPlayerId} onClose={() => setCardPlayerId(null)} />}
       {kosOpen && (
         <DrawerFrame origin="tap" paper={false} fill wide={560} onClose={() => setKosOpen(false)}>{(close) => (
           <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={close} />
