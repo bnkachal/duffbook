@@ -5145,6 +5145,25 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const homeCard = { background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.turfBorder}`, borderRadius: 18, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, boxShadow: C.shadow, cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box' };
   const cardBtn = { ...homeCard, flexDirection: 'column', alignItems: 'stretch' };
   const nextStep = guidanceEnabled ? getNextStepLocal(phase, state, whoami, isAdmin) : null;
+  // Pair formats (Scramble / Captain's choice) show a pair leaderboard on Home. If no pairs are set up yet there is nothing to rank,
+  // so Home falls back to the normal player leaderboard instead of showing no leaderboard at all.
+  const isPairFormatHome = state.matchFormat === 'captain-choice' || !!state.games?.scramble?.enabled;
+  const homePairRows = (() => {
+    if (!isPairFormatHome) return [];
+    let pairs = [];
+    if (state.games?.scramble?.enabled) {
+      pairs = computeScramble(state).map(p => ({ id: p.pairId, name: p.pairName, players: p.players, thru: p.thru, toPar: p.toPar }));
+    } else {
+      const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
+      pairs = matches.map(m => {
+        const players = [...(m.sideA || []), ...(m.sideB || [])].map(id => state.players.find(p => p.id === id)).filter(Boolean);
+        const rep = players[0] ? stats.find(s => s.id === players[0].id) : null;
+        return { id: m.id, name: players.map(p => p.name.split(' ')[0]).join(' & '), players, thru: rep?.thru || 0, toPar: rep?.toPar || 0 };
+      });
+    }
+    pairs.sort((a, b) => a.toPar - b.toPar);
+    return pairs;
+  })();
   const multiRound = tournament && tournament.rounds.length > 1;
   const ryderCup = tournament ? computeRyderCupStandings(tournament) : null;
   const tournamentStandings = multiRound ? aggregateStatsAcrossRounds(tournament, tournament.players.map(p => p.id))
@@ -5624,20 +5643,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       {layoutPrefs.kos !== false && <KoSBracketCard tournament={tournament} onOpen={onOpenKoS} />}
 
       {(() => {
-        const isPairFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
-        if (!isPairFormat) return null;
-        let pairs = [];
-        if (state.games?.scramble?.enabled) {
-          pairs = computeScramble(state).map(p => ({ id: p.pairId, name: p.pairName, players: p.players, thru: p.thru, toPar: p.toPar }));
-        } else {
-          const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
-          pairs = matches.map(m => {
-            const players = [...(m.sideA || []), ...(m.sideB || [])].map(id => state.players.find(p => p.id === id)).filter(Boolean);
-            const rep = players[0] ? stats.find(s => s.id === players[0].id) : null;
-            return { id: m.id, name: players.map(p => p.name.split(' ')[0]).join(' & '), players, thru: rep?.thru || 0, toPar: rep?.toPar || 0 };
-          });
-        }
-        pairs.sort((a, b) => a.toPar - b.toPar);
+        const pairs = homePairRows;
         if (pairs.length === 0) return null;
         return (
           <div style={{ ...cardBtn, background: C.turf }}>
@@ -5673,7 +5679,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         );
       })()}
 
-      {!(state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled) && (
+      {!(isPairFormatHome && homePairRows.length > 0) && (
         Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? (
           <FlightedLeaderboard
             leaderboard={leaderboard}
