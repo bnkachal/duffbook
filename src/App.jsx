@@ -8165,6 +8165,17 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
   );
 }
 
+// Number box that lets you clear it and retype: the typed text is kept while the box has focus, and the clamped value shows once you leave.
+function NumField({ value, onChange, width = 64 }) {
+  const [text, setText] = useState(null);
+  return (
+    <input type="number" inputMode="numeric" value={text !== null ? text : value}
+      onFocus={e => { setText(String(value)); try { e.target.select(); } catch (err) {} }}
+      onChange={e => { setText(e.target.value); if (e.target.value !== '' && !isNaN(parseInt(e.target.value, 10))) onChange(e.target.value); }}
+      onBlur={() => { if (text !== null && text !== '' && !isNaN(parseInt(text, 10))) onChange(text); setText(null); }}
+      style={{ ...inputStyle, width, textAlign: 'center', padding: '8px 6px' }} />
+  );
+}
 // Settings for the Team Event game. Lives in the Games section; every rule below is an option the admin turns on, nothing is assumed.
 function TeamEventSetup({ tournament, updateTournament }) {
   const [nNet, setNNet] = useState(4);
@@ -8178,7 +8189,7 @@ function TeamEventSetup({ tournament, updateTournament }) {
   const setTe = (patch) => updateTournament(p => applyTeamEvent({ ...p, teamEvent: { ...getTeamEvent(p), ...patch } }));
   const box = { background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden', padding: 12 };
   const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
-  const numInput = (value, onChange, w = 64) => <input type="number" inputMode="numeric" value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: w, textAlign: 'center', padding: '8px 6px' }} />;
+  const numInput = (value, onChange, w = 64) => <NumField value={value} onChange={onChange} width={w} />;
   const nameOf = (id) => (players.find(p => p.id === id) || {}).name || '?';
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
   const sel = { ...inputStyle, padding: '9px 10px', fontSize: 14 };
@@ -8335,7 +8346,6 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
   const mine = (auctionTeam) => auctionIsMine(auctionTeam, whoami);
   const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
-  const numInput = (value, onChange, w = 64) => <input type="number" inputMode="numeric" value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: w, textAlign: 'center', padding: '8px 6px' }} />;
   const nameOf = (id) => (players.find(p => p.id === id) || {}).name || '?';
 
   // ---------- Gross ----------
