@@ -3737,10 +3737,11 @@ function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wi
 
 /* The hole someone is "up to": one past the furthest hole that anyone they are scoring has a score for (0-based).
    Admins score everyone; with group score entry you score your group; otherwise just yourself. */
-function currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry) {
+function currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry, showEveryone) {
   const numHoles = state.numHoles;
   const myGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
-  const ids = viewAsAdmin ? state.players.map(p => p.id)
+  const adminAll = viewAsAdmin && (showEveryone || !(groupScoreEntry && myGroup && (myGroup.playerIds || []).length > 0));
+  const ids = adminAll ? state.players.map(p => p.id)
     : (groupScoreEntry && myGroup && (myGroup.playerIds || []).length > 0 ? myGroup.playerIds : (whoami ? [whoami.id] : []));
   let last = -1;
   ids.forEach(id => { for (let i = numHoles - 1; i >= 0; i--) { if (state.scores[id]?.[i] != null) { if (i > last) last = i; break; } } });
@@ -3750,7 +3751,7 @@ function currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry) {
 function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
   // Open on the hole the player is actually up to: one past the furthest hole anyone being scored has a score for.
-  const initialHole = currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry);
+  const initialHole = currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry, false);
   const [viewHole, setViewHole] = useState(initialHole);
   const [reviewMode, setReviewMode] = useState(!!initialReview);
   const [draftScores, setDraftScores] = useState({});
@@ -3760,9 +3761,13 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   const yards = state.yardage?.[viewHole];
   const myFlowGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : null;
   const myGroupPlayers = myFlowGroup ? (myFlowGroup.playerIds || []).map(id => state.players.find(p => p.id === id)).filter(Boolean) : [];
-  const playersToShow = viewAsAdmin
+  // With group scoring on, an admin who is in a group sees just that group too; they can switch to everyone.
+  const [showEveryone, setShowEveryone] = useState(false);
+  const useGroup = !!(groupScoreEntry && myFlowGroup && myGroupPlayers.length > 0);
+  const listAll = !!viewAsAdmin && (showEveryone || !useGroup);
+  const playersToShow = listAll
     ? state.players
-    : (groupScoreEntry && myFlowGroup && myGroupPlayers.length > 0 ? myGroupPlayers : (whoami ? [whoami] : []));
+    : (useGroup ? myGroupPlayers : (whoami ? [whoami] : []));
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const allocConfig = getAllocationConfig(state);
@@ -3824,7 +3829,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   };
 
   const goHole = (delta) => setViewHole(v => Math.max(0, Math.min(numHoles - 1, v + delta)));
-  const missingPlayers = groupScoreEntry && !viewAsAdmin ? playersToShow.filter(p => !isConfirmed(p.id)) : [];
+  const missingPlayers = groupScoreEntry && !listAll ? playersToShow.filter(p => !isConfirmed(p.id)) : [];
   const [confirmAdvanceAnyway, setConfirmAdvanceAnyway] = useState(false);
   useEffect(() => { setConfirmAdvanceAnyway(false); }, [viewHole]);
   const tryAdvance = (action) => {
@@ -3891,8 +3896,11 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
         <div style={{ textAlign: 'center', marginBottom: 10, paddingBottom: 10, borderBottom: paperOn ? '2px solid #C0463A' : 'none' }}>
           <div style={{ fontSize: 34, lineHeight: 1.1, color: paperOn ? C.pineDark : C.ivory, fontWeight: 800, letterSpacing: 1.5, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>HOLE {viewHole + 1}</div>
           <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : C.ivoryDim, marginTop: 8, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
-          {groupScoreEntry && !viewAsAdmin && playersToShow.length > 1 && (
+          {groupScoreEntry && !listAll && playersToShow.length > 1 && (
             <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
+          )}
+          {viewAsAdmin && useGroup && (
+            <button onClick={() => setShowEveryone(v => !v)} style={{ marginTop: 6, background: 'transparent', border: 'none', color: paperOn ? C.goldDark : C.goldBright, fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>{listAll ? 'Show just my group' : 'Show everyone (admin)'}</button>
           )}
         </div>
 
@@ -3908,7 +3916,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
           const confirmed = isConfirmed(p.id);
           const label = scoreContextLabel(draft - par);
           const netInfo = netInfoFor(p.id);
-          const compact = viewAsAdmin;
+          const compact = listAll;
           return (
             <div key={p.id} style={{
               background: 'transparent', borderRadius: 0,
