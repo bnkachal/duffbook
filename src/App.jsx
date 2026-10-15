@@ -971,7 +971,7 @@ function computeShamble(state) {
      allowed improvement is posted, so Sunday's posted score is never lower than (round 1 - cap).
    - Gross ties after Sunday: back nine, then holes 10-12, 13-15, 16-18. Net ties are split.
    - Maximum score on any hole is net double bogey. */
-const TEAM_EVENT_DEFAULTS = { enabled: false, teams: [], netPct: 90, maxScore: 'netDouble', grossFlights: [], leaderMax: 5, trailBase: 5, trailMult: 2, expensesPct: 10, daySplit: [50, 50], mulliganFee: 20, mulligans: {} };
+const TEAM_EVENT_DEFAULTS = { enabled: false, teams: [], netPct: 100, maxScore: 'none', maxOver: 2, netFlightsOn: false, maxSpread: 0, grossFlightsOn: false, grossFlights: [], improveRule: false, leaderMax: 5, trailBase: 5, trailMult: 2, countback: true, expensesPct: 0, daySplit: [50, 50], mulligansOn: false, mulliganFee: 10, mulligans: {} };
 function getTeamEvent(tournament) {
   const te = (tournament && tournament.teamEvent) || {};
   const split = Array.isArray(te.daySplit) && te.daySplit.length === 2 ? te.daySplit.map(x => Number(x) || 0) : [50, 50];
@@ -985,10 +985,15 @@ function teamDisplayName(team, players) {
 }
 // Net double bogey: par + 2 + the strokes the player receives on that hole.
 function maxScoreFor(state, playerId, holeIdx, strokeMap) {
-  if (state.maxScore !== 'netDouble') return null;
+  if (state.maxScore !== 'netDouble' && state.maxScore !== 'overPar') return null;
   const par = state.pars?.[holeIdx] ?? 4;
+  if (state.maxScore === 'overPar') return par + (Number(state.maxOver) || 2);
   const map = strokeMap || allocStrokeMap(state);
   return par + 2 + strokesOnHole(map[playerId] || 0, state.strokeIndex || [], holeIdx);
+}
+function maxScoreText(state) {
+  if (state.maxScore === 'overPar') { const n = Number(state.maxOver) || 2; return n === 2 ? 'double bogey' : `par + ${n}`; }
+  return 'net double bogey';
 }
 function teamRoundResult(view, team) {
   const n = view.numHoles || 18, map = allocStrokeMap(view), pars = view.pars || [];
@@ -1020,7 +1025,7 @@ function teamEventModel(tournament) {
     return { ...t, name: teamDisplayName(t, players), players: tp, netFlightId, sig: teamSig(t.playerIds), rounds: rounds.map(r => teamRoundResult(r.view, t)) };
   });
   // ---- gross flights + Sunday improvement limit ----
-  const flightOf = (t) => (te.grossFlights.find(f => (f.teamIds || []).includes(t.id)) || { id: '_all', name: 'Everyone' });
+  const flightOf = (t) => ((te.grossFlightsOn ? te.grossFlights : []).find(f => (f.teamIds || []).includes(t.id)) || { id: '_all', name: 'Everyone' });
   const gf = {};
   teams.forEach(t => { const f = flightOf(t); (gf[f.id] = gf[f.id] || { flight: f, teams: [] }).teams.push(t); });
   const hasR2 = rounds.length > 1;
@@ -1030,9 +1035,9 @@ function teamEventModel(tournament) {
     ts.forEach(t => {
       const r1 = t.rounds[0], r2 = hasR2 ? t.rounds[1] : null;
       const behind = r1 && r1.complete && leader != null ? r1.gross - leader : null;
-      const cap = behind == null ? null : (behind === 0 ? te.leaderMax : te.trailBase + te.trailMult * behind);
+      const cap = behind == null || !te.improveRule ? null : (behind === 0 ? te.leaderMax : te.trailBase + te.trailMult * behind);
       const floor = cap == null ? null : r1.gross - cap;
-      const posted2 = r2 && r2.complete && floor != null ? Math.max(r2.gross, floor) : null;
+      const posted2 = r2 && r2.complete ? (floor != null ? Math.max(r2.gross, floor) : r2.gross) : null;
       const capped = !!(r2 && r2.complete && floor != null && r2.gross < floor);
       const r2ToPar = r2 ? (posted2 != null ? posted2 - r2.parFull : r2.grossToPar) : 0;
       t.gross = { flightId: flight.id, r1: r1 ? r1.gross : null, r1Done: !!(r1 && r1.complete), behind, cap, floor, r2: r2 ? r2.gross : null, r2Done: !!(r2 && r2.complete), posted2, capped, improvedBy: r2 && r2.complete && r1 ? Math.max(0, r1.gross - r2.gross) : null, total: posted2 != null && r1.complete ? r1.gross + posted2 : null, totalToPar: (r1 ? r1.grossToPar : 0) + r2ToPar };
@@ -1041,6 +1046,7 @@ function teamEventModel(tournament) {
     const cmp = (a, b) => {
       if (a.gross.totalToPar !== b.gross.totalToPar) return a.gross.totalToPar - b.gross.totalToPar;
       if (bothDone(a) && bothDone(b)) {
+        if (!te.countback) return 0;
         const ta = a.rounds[1].tiebreak, tb = b.rounds[1].tiebreak;
         for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) return ta[i] - tb[i];
       }
@@ -1116,7 +1122,7 @@ function applyTeamEvent(tournament) {
     ...tournament, handicapsEnabled: true,
     rounds: tournament.rounds.map(r => ({
       ...r, handicapAllowanceType: 'percentage', handicapAllowancePercent: te.netPct, scoringDisplay: 'both',
-      handicapMode: !r.handicapMode || r.handicapMode === 'none' ? 'full' : r.handicapMode, matchFormat: 'best-ball', maxScore: te.maxScore,
+      handicapMode: !r.handicapMode || r.handicapMode === 'none' ? 'full' : r.handicapMode, matchFormat: 'best-ball', maxScore: te.maxScore, maxOver: te.maxOver,
       games: { ...r.games, bestBall: { ...(r.games && r.games.bestBall), enabled: true, pairs } },
     })),
   };
@@ -3477,7 +3483,7 @@ function AuctionDrawer({ auction, tournament, state, whoami, onClose }) {
         {tab === 'pay' && (
           <>
             <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.45 }}>{mode === 'one' ? `One pot of ${money0(pots.total)}, shared between flights.` : 'Each flight pays out of its own pot.'}</div>
-            {getTeamEvent(tournament).enabled && <div style={{ ...box, padding: 12, fontSize: 12.5, lineHeight: 1.45, color: C.goldBright }}>Member-Member: {getTeamEvent(tournament).expensesPct}% of the pot goes to expenses and the rest is split {getTeamEvent(tournament).daySplit[0]}/{getTeamEvent(tournament).daySplit[1]} between the two days, paid on net. The amounts below are for a full pot; the Member-Member Money tab shows what each day actually pays.</div>}
+            {getTeamEvent(tournament).enabled && <div style={{ ...box, padding: 12, fontSize: 12.5, lineHeight: 1.45, color: C.goldBright }}>Team event: {getTeamEvent(tournament).expensesPct}% of the pot is held back for expenses and the rest is split {getTeamEvent(tournament).daySplit[0]}/{getTeamEvent(tournament).daySplit[1]} between the first two rounds, paid on net. The Team Event Money tab shows what each round actually pays.</div>}
             {flights.map(f => {
               const places = [0, 1, 2].filter(i => auctionPctFor(auction, f.id)[i] > 0);
               return (
@@ -3930,7 +3936,7 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
 
               {capFor(p.id) != null && (
                 <div role="note" style={{ textAlign: 'center', marginTop: 6, fontSize: compact ? 10 : 11, fontWeight: 700, color: draft >= capFor(p.id) ? '#8A2A1F' : '#6B6455' }}>
-                  {draft >= capFor(p.id) ? `Net double bogey. Pick up; ${capFor(p.id)} is the most that counts.` : `Max score ${capFor(p.id)} (net double bogey)`}
+                  {draft >= capFor(p.id) ? `Max score reached (${maxScoreText(state)}). Pick up; ${capFor(p.id)} is the most that counts.` : `Max score ${capFor(p.id)} (${maxScoreText(state)})`}
                 </div>
               )}
               {(useNet && netInfo) || (label && compact) ? (
@@ -7220,6 +7226,10 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
           {g.skins?.enabled && state.handicapsEnabled && <NetToggle value={g.skins.net} onChange={v => setGame('skins', 'net', v)} />}
         </>
       )}
+      {tournament && getTeamEvent(tournament).enabled ? (
+        <div style={{ fontSize: 12, color: C.ivoryDim, margin: '2px 4px 10px', lineHeight: 1.45 }}>Best Ball is on for the Team Event. Partners are set under Team Event below.</div>
+      ) : (
+        <>
       <ToggleRow label="Best Ball" sub="Each pair's lowest score per hole counts — set up pairs below" enabled={g.bestBall?.enabled} onToggle={() => setGame('bestBall', 'enabled', !g.bestBall?.enabled)} />
       {g.bestBall?.enabled && (
         <>
@@ -7227,6 +7237,14 @@ function GamesSection({ state, updateRound, tournament, updateTournament }) {
           {(!Array.isArray(g.bestBall.pairs) || g.bestBall.pairs.length === 0) && Array.isArray(g.matchplay?.matches) && g.matchplay.matches.length > 0 && (
             <div style={{ fontSize: 11, color: C.gold, marginLeft: 4, marginBottom: 8 }}>No pairs set here — using your Match Play pairings automatically.</div>
           )}
+        </>
+      )}
+        </>
+      )}
+      {tournament && updateTournament && (
+        <>
+          <ToggleRow label="Team Event" sub="Fixed partners across rounds: team flights, optional catch-up limit, per-round payouts (Member-Member style)" enabled={getTeamEvent(tournament).enabled} onToggle={() => updateTournament(p => applyTeamEvent({ ...p, teamEvent: { ...getTeamEvent(p), enabled: !getTeamEvent(p).enabled } }))} />
+          {getTeamEvent(tournament).enabled && <TeamEventSetup tournament={tournament} updateTournament={updateTournament} />}
         </>
       )}
       <ToggleRow label="Scramble" sub="Team plays from the best ball each shot — one score per pair" enabled={g.scramble?.enabled} onToggle={() => setGame('scramble', 'enabled', !g.scramble?.enabled)} />
@@ -8147,6 +8165,155 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
   );
 }
 
+// Settings for the Team Event game. Lives in the Games section; every rule below is an option the admin turns on, nothing is assumed.
+function TeamEventSetup({ tournament, updateTournament }) {
+  const [nNet, setNNet] = useState(4);
+  const [nGross, setNGross] = useState(3);
+  const [pickA, setPickA] = useState('');
+  const [pickB, setPickB] = useState('');
+  const [msg, setMsg] = useState('');
+  const te = getTeamEvent(tournament);
+  const model = useMemo(() => teamEventModel(tournament), [tournament]);
+  const players = tournament.players || [];
+  const setTe = (patch) => updateTournament(p => applyTeamEvent({ ...p, teamEvent: { ...getTeamEvent(p), ...patch } }));
+  const box = { background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden', padding: 12 };
+  const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
+  const numInput = (value, onChange, w = 64) => <input type="number" inputMode="numeric" value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: w, textAlign: 'center', padding: '8px 6px' }} />;
+  const nameOf = (id) => (players.find(p => p.id === id) || {}).name || '?';
+  const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
+  const sel = { ...inputStyle, padding: '9px 10px', fontSize: 14 };
+  const lab = (t) => <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, margin: '2px 0 8px' }}>{t}</div>;
+  const help = (t) => <div style={{ fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>{t}</div>;
+  const row = (label, control) => <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13, marginTop: 8 }}><span>{label}</span>{control}</div>;
+  const hasBetting = tournament.bettingEnabled !== false;
+  const inTeam = new Set(te.teams.flatMap(t => t.playerIds || []));
+  const free = players.filter(p => !inTeam.has(p.id));
+  const addTeam = () => { if (!pickA || !pickB || pickA === pickB) return; setTe({ teams: [...te.teams, { id: 'team_' + Date.now() + '_' + te.teams.length, name: '', playerIds: [pickA, pickB] }] }); setPickA(''); setPickB(''); };
+  const importPairs = () => {
+    const src = tournament.rounds.map(r => (r.games && r.games.bestBall && r.games.bestBall.pairs) || []).find(ps => ps.some(p => (p.playerIds || []).length === 2));
+    if (!src) { setMsg('No Best Ball pairs found in any round.'); return; }
+    const have = new Set(te.teams.map(t => teamSig(t.playerIds)));
+    const fresh = src.filter(p => (p.playerIds || []).length === 2 && !have.has(teamSig(p.playerIds))).map((p, i) => ({ id: 'team_' + Date.now() + '_' + i, name: p.label || '', playerIds: [...p.playerIds] }));
+    setMsg(fresh.length ? `Added ${fresh.length} team${fresh.length === 1 ? '' : 's'} from your Best Ball pairs.` : 'Those pairs are already teams.');
+    if (fresh.length) setTe({ teams: [...te.teams, ...fresh] });
+  };
+  const diffs = te.teams.map(t => { const ph = teamPlayingHandicaps(tournament, t); return { t, diff: ph.length === 2 ? Math.abs(ph[0] - ph[1]) : 0 }; });
+  const tooFar = te.maxSpread > 0 ? diffs.filter(d => d.diff > te.maxSpread) : [];
+  const flightNet = () => {
+    const r = autoNetFlights(tournament, num(nNet, 1, 12));
+    updateTournament(p => {
+      const next = { ...p, flights: r.flights, players: p.players.map(pl => (r.assign[pl.id] ? { ...pl, flightId: r.assign[pl.id] } : pl)) };
+      if (p.auction && Array.isArray(p.auction.teams)) next.auction = { ...p.auction, teams: p.auction.teams.map(t => { const first = (t.playerIds || [])[0]; return r.assign[first] ? { ...t, flightId: r.assign[first] } : t; }) };
+      return applyTeamEvent(next);
+    });
+    setMsg(`Teams flighted into ${r.flights.length} net flights by average handicap.`);
+  };
+  const r1Done = model.teams.filter(t => t.rounds[0] && t.rounds[0].complete).length;
+  const flightGross = () => { const gf = autoGrossFlights(model, num(nGross, 1, 12)); setTe({ grossFlights: gf }); setMsg(`Teams flighted into ${gf.length} gross flights by ${dayName(0)} score.`); };
+  const moveGross = (teamId, flightId) => {
+    const base = te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== teamId) }));
+    setTe({ grossFlights: base.map(f => (f.id === flightId ? { ...f, teamIds: [...f.teamIds, teamId] } : f)) });
+  };
+  const mull = teamEventMulligans(te, players);
+  const seg = (value, opts, onPick) => <div style={{ display: 'flex', gap: 4 }}>{opts.map(([k, l]) => <button key={k} onClick={() => onPick(k)} aria-pressed={value === k} style={{ flex: 1, fontSize: 12, padding: '8px 4px', borderRadius: 8, border: `1px solid ${value === k ? C.gold : C.turfBorder}`, background: value === k ? `${C.gold}26` : 'transparent', color: value === k ? C.goldBright : C.ivoryDim, cursor: 'pointer' }}>{l}</button>)}</div>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+      {msg && <div role="status" style={{ fontSize: 12.5, color: C.emerald }}>{msg}</div>}
+      <div style={box}>
+        {lab(`Teams (${te.teams.length})`)}
+        {te.teams.length === 0 && help('Add each pair of partners. They keep the same partner every round. Players already on a team are hidden from the lists.')}
+        {te.teams.map(t => (
+          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}` }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(t.playerIds || []).map(nameOf).join(' & ')}</span>
+            <button onClick={() => setTe({ teams: te.teams.filter(x => x.id !== t.id), grossFlights: te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== t.id) })) })} aria-label={`Remove team ${(t.playerIds || []).map(nameOf).join(' and ')}`} style={{ background: 'transparent', border: 'none', color: C.flagRed, fontSize: 12, cursor: 'pointer' }}>Remove</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          <select aria-label="Partner one" value={pickA} onChange={e => setPickA(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 1</option>{free.filter(p => p.id !== pickB).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          <select aria-label="Partner two" value={pickB} onChange={e => setPickB(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 2</option>{free.filter(p => p.id !== pickA).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          <GoldButton onClick={addTeam} disabled={!pickA || !pickB} style={{ padding: '0 14px' }}>Add</GoldButton>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><GhostButton onClick={importPairs}>Use my Best Ball pairs</GhostButton></div>
+        {free.length > 0 && te.teams.length > 0 && <div style={{ fontSize: 12, color: C.goldBright, marginTop: 8 }}>{free.length} player{free.length === 1 ? ' is' : 's are'} not on a team: {free.map(p => p.name).join(', ')}</div>}
+      </div>
+
+      <div style={box}>
+        {lab('Scoring')}
+        {help('Each team scores best ball: the lower partner score on each hole counts. Handicaps are on for this event.')}
+        {row('Net handicap allowance %', numInput(te.netPct, v => setTe({ netPct: num(v, 1, 100) })))}
+        <div style={{ fontSize: 12, color: C.ivoryDim, margin: '12px 0 6px' }}>Maximum score on a hole</div>
+        {seg(te.maxScore, [['none', 'No limit'], ['netDouble', 'Net double bogey'], ['overPar', 'Par plus…']], v => setTe({ maxScore: v }))}
+        {te.maxScore === 'overPar' && row('Strokes over par', numInput(te.maxOver, v => setTe({ maxOver: num(v, 1, 10) })))}
+        {te.maxScore !== 'none' && <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 8 }}>Score entry stops at the limit and counts only that much.</div>}
+        <div style={{ marginTop: 8 }}><ToggleRow label="Break ties by back nine" sub="Back nine, then holes 10-12, 13-15 and so on, on the last round" enabled={te.countback} onToggle={() => setTe({ countback: !te.countback })} /></div>
+      </div>
+
+      <div style={box}>
+        <ToggleRow label="Net flights" sub="Group teams by the average of their playing handicaps before play" enabled={te.netFlightsOn} onToggle={() => setTe({ netFlightsOn: !te.netFlightsOn })} />
+        {te.netFlightsOn && (
+          <>
+            {help(`Set each player's handicap index and tee first. You can edit any handicap afterwards and run this again to re-flight.`)}
+            {row('Number of flights', numInput(nNet, setNNet, 56))}
+            <GoldButton onClick={flightNet} disabled={te.teams.length === 0} style={{ width: '100%', marginTop: 10, padding: '10px 0' }}>Flight by handicap</GoldButton>
+            {row('Warn if partners are further apart than (0 = off)', numInput(te.maxSpread, v => setTe({ maxSpread: num(v, 0, 54) })))}
+            {tooFar.length > 0 && <div role="alert" style={{ marginTop: 10, fontSize: 12.5, color: C.flagRed, lineHeight: 1.45 }}>Partners more than {te.maxSpread} strokes apart: {tooFar.map(d => `${d.t.playerIds.map(nameOf).join(' & ')} (${d.diff})`).join('; ')}</div>}
+          </>
+        )}
+      </div>
+
+      <div style={box}>
+        <ToggleRow label="Gross flights" sub={`Re-group teams by gross score after ${dayName(0)}`} enabled={te.grossFlightsOn} onToggle={() => setTe({ grossFlightsOn: !te.grossFlightsOn })} />
+        {te.grossFlightsOn && (
+          <>
+            {help(`${r1Done} of ${te.teams.length} teams have finished ${dayName(0)}. Flights are set by gross score, best first.`)}
+            {row('Number of flights', numInput(nGross, setNGross, 56))}
+            <GoldButton onClick={flightGross} disabled={r1Done === 0} style={{ width: '100%', marginTop: 10, padding: '10px 0' }}>{`Flight by ${dayName(0)} gross`}</GoldButton>
+            {te.grossFlights.length > 0 && model.grossFlights.flatMap(g => g.teams).map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}`, marginTop: 6 }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}<span style={{ color: C.bunker }}> · {t.gross.r1Done ? t.gross.r1 : '–'}</span></span>
+                <select aria-label={`Gross flight for ${t.name}`} value={t.gross.flightId} onChange={e => moveGross(t.id, e.target.value)} style={{ ...sel, width: 120 }}>{te.grossFlights.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div style={box}>
+        <ToggleRow label="Catch-up limit on later rounds" sub="Caps how much a team can improve on its first-round gross score" enabled={te.improveRule} onToggle={() => setTe({ improveRule: !te.improveRule })} />
+        {te.improveRule && (
+          <>
+            {help(`Only the allowed improvement is posted; shooting lower than that is not penalized. Teams in the same gross flight are compared with the flight leader${te.grossFlightsOn ? '' : ' (turn on Gross flights to compare within flights; otherwise everyone is one group)'}.`)}
+            {row('Flight leader can improve by up to', numInput(te.leaderMax, v => setTe({ leaderMax: num(v, 0, 50) })))}
+            {row('Other teams: base improvement', numInput(te.trailBase, v => setTe({ trailBase: num(v, 0, 50) })))}
+            {row('Plus this many strokes for each stroke behind', numInput(te.trailMult, v => setTe({ trailMult: num(v, 0, 10) })))}
+          </>
+        )}
+      </div>
+
+      {hasBetting && (
+        <div style={box}>
+          {lab('Calcutta payouts')}
+          {help('Applies if you run a Calcutta (Betting → Auction). Net winners are paid for each round separately.')}
+          {row('Share held back for expenses %', numInput(te.expensesPct, v => setTe({ expensesPct: num(v, 0, 100) })))}
+          {row(`${dayName(0)} share of payouts %`, numInput(te.daySplit[0], v => { const a = num(v, 0, 100); setTe({ daySplit: [a, 100 - a] }); }))}
+          <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 6, textAlign: 'right' }}>{dayName(1)} gets {te.daySplit[1]}%</div>
+        </div>
+      )}
+
+      <div style={box}>
+        <ToggleRow label="Sell mulligans" sub="Track who bought one so the group can see it" enabled={te.mulligansOn} onToggle={() => setTe({ mulligansOn: !te.mulligansOn })} />
+        {te.mulligansOn && (
+          <>
+            {row('Price $', <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{numInput(te.mulliganFee, v => setTe({ mulliganFee: num(v, 0, 1000) }))}<span style={{ fontSize: 13, color: C.goldBright }}>{mull.count} sold · {money0(mull.total)}</span></span>)}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {players.map(p => { const on = !!te.mulligans[p.id]; return <button key={p.id} onClick={() => setTe({ mulligans: { ...te.mulligans, [p.id]: !on } })} aria-pressed={on} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${on ? C.gold : C.turfBorder}`, background: on ? `${C.gold}26` : 'transparent', color: on ? C.goldBright : C.ivoryDim, cursor: 'pointer' }}>{pgaName(p.name)}{on ? ' ✓' : ''}</button>; })}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initialTab, onClose }) {
   const [tab, setTab] = useState(initialTab || 'gross');
   const [netView, setNetView] = useState(0);
@@ -8175,10 +8342,10 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   const grossTab = (
     <>
       {model.teams.length === 0 && note('No teams yet. The admin sets them up under Setup.')}
-      {note(`Saturday sets the gross flights. On Sunday a team can improve its Saturday score by at most ${te.leaderMax} strokes if it leads its flight, or by ${te.trailBase} plus ${te.trailMult} times the strokes it trails by. Only the allowed improvement is posted.`)}
+      {te.improveRule && note(`${dayName(0)} sets the starting scores. In later rounds a team can improve on it by at most ${te.leaderMax} strokes if it leads its flight, or by ${te.trailBase} plus ${te.trailMult} times the strokes it trails by. Only the allowed improvement is posted.`)}
       {model.grossFlights.map(({ flight, teams, leader, playoff, allMaxed }) => (
         <div key={flight.id} style={box}>
-          {head(flight.id === '_all' ? 'All teams' : flight.name, leader != null ? `Saturday leader ${leader}` : null)}
+          {head(flight.id === '_all' ? 'All teams' : flight.name, leader != null ? `${dayName(0)} leader ${leader}` : null)}
           {playoff && <div role="alert" style={{ padding: '8px 12px', fontSize: 12.5, fontWeight: 700, color: C.goldBright, background: `${C.gold}1F` }}>{allMaxed ? 'Every team improved by the maximum. Playoff for first place.' : 'Tied for first after every tiebreaker. Playoff for first place.'}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, padding: '5px 12px', background: C.pineDark, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: C.bunker }}>
             <span>#</span><span>Team</span><span style={{ textAlign: 'right' }}>{dayName(0).slice(0, 3)}</span><span style={{ textAlign: 'right' }}>{model.hasR2 ? dayName(1).slice(0, 3) : ''}</span><span style={{ textAlign: 'right' }}>Total</span>
@@ -8205,7 +8372,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
           })}
         </div>
       ))}
-      <div style={{ fontSize: 11, color: C.bunker }}>* Sunday score is raised to the lowest allowed score. "h" means holes played.</div>
+      <div style={{ fontSize: 11, color: C.bunker }}>{te.improveRule ? `* Posted score is raised to the lowest allowed score. ` : ''}"h" means holes played.</div>
     </>
   );
 
@@ -8277,114 +8444,13 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
     </>
   );
 
-  // ---------- Setup (admin) ----------
-  const inTeam = new Set(te.teams.flatMap(t => t.playerIds || []));
-  const free = players.filter(p => !inTeam.has(p.id));
-  const addTeam = () => { if (!pickA || !pickB || pickA === pickB) return; setTe({ teams: [...te.teams, { id: 'team_' + Date.now() + '_' + te.teams.length, name: '', playerIds: [pickA, pickB] }] }); setPickA(''); setPickB(''); };
-  const importPairs = () => {
-    const src = tournament.rounds.map(r => (r.games && r.games.bestBall && r.games.bestBall.pairs) || []).find(ps => ps.some(p => (p.playerIds || []).length === 2));
-    if (!src) { setMsg('No Best Ball pairs found in any round.'); return; }
-    const have = new Set(te.teams.map(t => teamSig(t.playerIds)));
-    const fresh = src.filter(p => (p.playerIds || []).length === 2 && !have.has(teamSig(p.playerIds))).map((p, i) => ({ id: 'team_' + Date.now() + '_' + i, name: p.label || '', playerIds: [...p.playerIds] }));
-    setMsg(fresh.length ? `Added ${fresh.length} team${fresh.length === 1 ? '' : 's'} from your Best Ball pairs.` : 'Those pairs are already teams.');
-    if (fresh.length) setTe({ teams: [...te.teams, ...fresh] });
-  };
-  const diffs = te.teams.map(t => { const ph = teamPlayingHandicaps(tournament, t); return { t, ph, diff: ph.length === 2 ? Math.abs(ph[0] - ph[1]) : 0 }; });
-  const tooFar = diffs.filter(d => d.diff > 10);
-  const flightNet = () => {
-    const r = autoNetFlights(tournament, num(nNet, 1, 12));
-    updateTournament(p => {
-      const next = { ...p, flights: r.flights, players: p.players.map(pl => (r.assign[pl.id] ? { ...pl, flightId: r.assign[pl.id] } : pl)) };
-      if (p.auction && Array.isArray(p.auction.teams)) next.auction = { ...p.auction, teams: p.auction.teams.map(t => { const first = (t.playerIds || [])[0]; return r.assign[first] ? { ...t, flightId: r.assign[first] } : t; }) };
-      return applyTeamEvent(next);
-    });
-    setMsg(`Teams flighted into ${r.flights.length} net flights by average handicap.`);
-  };
-  const r1Done = model.teams.filter(t => t.rounds[0] && t.rounds[0].complete).length;
-  const flightGross = () => { const gf = autoGrossFlights(model, num(nGross, 1, 12)); setTe({ grossFlights: gf }); setMsg(`Teams flighted into ${gf.length} gross flights by ${dayName(0)} score.`); };
-  const moveGross = (teamId, flightId) => {
-    const base = te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== teamId) }));
-    setTe({ grossFlights: base.map(f => (f.id === flightId ? { ...f, teamIds: [...f.teamIds, teamId] } : f)) });
-  };
-  const mull = teamEventMulligans(te, players);
-  const sel = { ...inputStyle, padding: '9px 10px', fontSize: 14 };
-  const lab = (t) => <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, margin: '14px 0 6px' }}>{t}</div>;
-  const setupTab = !isAdmin ? note('Only the admin can change the Member-Member setup.') : (
-    <>
-      <ToggleRow label="Member-Member scoring" sub="Teams, net and gross flights, Sunday improvement limit, tiebreaks" enabled={te.enabled} onToggle={() => setTe({ enabled: !te.enabled })} />
-      {msg && <div role="status" style={{ fontSize: 12.5, color: C.emerald }}>{msg}</div>}
-      {te.enabled && (
-        <>
-          <div style={{ ...box, padding: 12 }}>
-            {lab(`Teams (${te.teams.length})`)}
-            {te.teams.length === 0 && <div style={{ fontSize: 12.5, color: C.ivoryDim, marginBottom: 8 }}>Add each pair of partners. Players already on a team are hidden from the lists.</div>}
-            {te.teams.map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}` }}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(t.playerIds || []).map(nameOf).join(' & ')}</span>
-                <button onClick={() => setTe({ teams: te.teams.filter(x => x.id !== t.id), grossFlights: te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== t.id) })) })} aria-label={`Remove team ${(t.playerIds || []).map(nameOf).join(' and ')}`} style={{ background: 'transparent', border: 'none', color: C.flagRed, fontSize: 12, cursor: 'pointer' }}>Remove</button>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-              <select aria-label="Partner one" value={pickA} onChange={e => setPickA(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 1</option>{free.filter(p => p.id !== pickB).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-              <select aria-label="Partner two" value={pickB} onChange={e => setPickB(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 2</option>{free.filter(p => p.id !== pickA).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-              <GoldButton onClick={addTeam} disabled={!pickA || !pickB} style={{ padding: '0 14px' }}>Add</GoldButton>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <GhostButton onClick={importPairs}>Use my Best Ball pairs</GhostButton>
-            </div>
-            {free.length > 0 && te.teams.length > 0 && <div style={{ fontSize: 12, color: C.goldBright, marginTop: 8 }}>{free.length} player{free.length === 1 ? ' is' : 's are'} not on a team: {free.map(p => p.name).join(', ')}</div>}
-          </div>
-
-          <div style={{ ...box, padding: 12 }}>
-            {lab('Rules')}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', fontSize: 13 }}>
-              <span>Net handicap allowance %</span>{numInput(te.netPct, v => setTe({ netPct: num(v, 1, 100) }))}
-              <span>Leader can improve by (max)</span>{numInput(te.leaderMax, v => setTe({ leaderMax: num(v, 0, 50) }))}
-              <span>Everyone else: base improvement</span>{numInput(te.trailBase, v => setTe({ trailBase: num(v, 0, 50) }))}
-              <span>Plus this many x strokes behind</span>{numInput(te.trailMult, v => setTe({ trailMult: num(v, 0, 10) }))}
-              <span>Calcutta to expenses %</span>{numInput(te.expensesPct, v => setTe({ expensesPct: num(v, 0, 100) }))}
-              <span>Saturday share of Calcutta %</span>{numInput(te.daySplit[0], v => { const a = num(v, 0, 100); setTe({ daySplit: [a, 100 - a] }); })}
-            </div>
-            <div style={{ marginTop: 12 }}><ToggleRow label="Net double bogey maximum" sub="Score entry stops at par + 2 + your strokes on that hole" enabled={te.maxScore === 'netDouble'} onToggle={() => setTe({ maxScore: te.maxScore === 'netDouble' ? 'none' : 'netDouble' })} /></div>
-          </div>
-
-          <div style={{ ...box, padding: 12 }}>
-            {lab('Net flights (before Saturday)')}
-            <div style={{ fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>Teams are flighted by the average of both players' playing handicaps at {te.netPct}%. Set each player's handicap index and tee first. The Handicap Committee can still edit any index afterwards; run this again to re-flight.</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13 }}>Flights</span>{numInput(nNet, setNNet, 56)}<GoldButton onClick={flightNet} disabled={te.teams.length === 0} style={{ flex: 1, padding: '10px 0' }}>Flight by handicap</GoldButton></div>
-            {tooFar.length > 0 && <div role="alert" style={{ marginTop: 10, fontSize: 12.5, color: C.flagRed, lineHeight: 1.45 }}>Teammates more than 10 strokes apart: {tooFar.map(d => `${d.t.playerIds.map(nameOf).join(' & ')} (${d.diff})`).join('; ')}</div>}
-          </div>
-
-          <div style={{ ...box, padding: 12 }}>
-            {lab(`Gross flights (after ${dayName(0)})`)}
-            <div style={{ fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>{r1Done} of {te.teams.length} teams have finished {dayName(0)}. Flights are set by gross score, best first, and decide who gets the 5-stroke limit.</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13 }}>Flights</span>{numInput(nGross, setNGross, 56)}<GoldButton onClick={flightGross} disabled={r1Done === 0} style={{ flex: 1, padding: '10px 0' }}>Flight by {dayName(0)} gross</GoldButton></div>
-            {te.grossFlights.length > 0 && model.grossFlights.flatMap(g => g.teams).map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}` }}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}<span style={{ color: C.bunker }}> · {t.gross.r1Done ? t.gross.r1 : '–'}</span></span>
-                <select aria-label={`Gross flight for ${t.name}`} value={t.gross.flightId} onChange={e => moveGross(t.id, e.target.value)} style={{ ...sel, width: 120 }}>{te.grossFlights.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ ...box, padding: 12 }}>
-            {lab(`Mulligans · ${money0(te.mulliganFee)} each`)}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontSize: 13 }}>Price $</span>{numInput(te.mulliganFee, v => setTe({ mulliganFee: num(v, 0, 1000) }))}<span style={{ marginLeft: 'auto', fontSize: 13, color: C.goldBright }}>{mull.count} sold · {money0(mull.total)}</span></div>
-            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 6 }}>Each buyer gets one per nine per day. Once a mulligan is hit, the original ball is out for the team.</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {players.map(p => { const on = !!te.mulligans[p.id]; return <button key={p.id} onClick={() => setTe({ mulligans: { ...te.mulligans, [p.id]: !on } })} aria-pressed={on} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${on ? C.gold : C.turfBorder}`, background: on ? `${C.gold}26` : 'transparent', color: on ? C.goldBright : C.ivoryDim, cursor: 'pointer' }}>{pgaName(p.name)}{on ? ' ✓' : ''}</button>; })}
-            </div>
-          </div>
-        </>
-      )}
-    </>
-  );
+  const setupTab = !isAdmin ? note('Only the admin can change the team event setup.') : <TeamEventSetup tournament={tournament} updateTournament={updateTournament} />;
 
   return (
     <DrawerSheet onClose={onClose}>{(close) => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: 1 }}>Member-Member</div>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: 1 }}>Team Event</div>
           <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
         </div>
         {te.enabled || isAdmin ? (
@@ -8397,7 +8463,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
             {te.enabled && tab === 'money' && moneyTab}
             {(tab === 'setup' || !te.enabled) && setupTab}
           </>
-        ) : note('Member-Member scoring is not switched on.')}
+        ) : note('Team Event is not switched on. Turn it on under Games.')}
       </div>
     )}</DrawerSheet>
   );
@@ -8420,7 +8486,6 @@ function SettingsSheet({ onClose, onOpenTeamEvent, onOpenSetup, onOpenNotificati
         {item(FileText, 'Tournament Rules', onOpenRules)}
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
-        {isAdmin && hasPlayers && onOpenTeamEvent && item(Users, 'Member-Member setup', onOpenTeamEvent)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
         {isAdmin && hasPlayers && bettingOn && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
@@ -10341,7 +10406,7 @@ export default function RoGreen() {
         newRound.courseId = last.courseId; newRound.courseName = last.courseName; newRound.courseRating = last.courseRating; newRound.courseSlope = last.courseSlope;
         newRound.numHoles = last.numHoles; newRound.pars = last.pars.slice(); newRound.strokeIndex = last.strokeIndex.slice();
         // Day two plays the same course under the same handicap rules: carry them over, not just the pars.
-        ['providerId', 'teeName', 'courseTeeBoxes', 'courseEstimated', 'handicapMode', 'matchFormat', 'scoringDisplay', 'handicapAllowanceType', 'handicapAllowancePercent', 'maxScore'].forEach(k => { if (last[k] !== undefined) newRound[k] = JSON.parse(JSON.stringify(last[k])); });
+        ['providerId', 'teeName', 'courseTeeBoxes', 'courseEstimated', 'handicapMode', 'matchFormat', 'scoringDisplay', 'handicapAllowanceType', 'handicapAllowancePercent', 'maxScore', 'maxOver'].forEach(k => { if (last[k] !== undefined) newRound[k] = JSON.parse(JSON.stringify(last[k])); });
         if (Array.isArray(last.yardage)) newRound.yardage = last.yardage.slice();
         newRound.games = JSON.parse(JSON.stringify(last.games));
         newRound.games.matchplay.matches = []; newRound.games.wolf.choices = {};
