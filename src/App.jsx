@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
   MessageCircle, Swords, Shuffle, Copy, LogOut, Loader2, Home, Ticket, KeyRound,
   Calendar, User, ChevronsUpDown, RefreshCw, Share2, Target, Zap, TrendingUp,
-  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText,
+  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText, Users,
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
@@ -45,6 +45,17 @@ const C = {
 };
 const CHIP_COLORS = [C.gold, '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
 const FLIGHT_COLORS = [C.teamA, '#7A1F32', C.gold, '#19C37D'];
+// "Red" and "Blue" must actually look red and blue, or tapping Red appears to pick Blue.
+const RED_FLIGHT_COLOR = '#D0453F', BLUE_FLIGHT_COLOR = '#4A86D6';
+const defaultRedBlueFlights = () => [{ id: 'f1', name: 'Red', color: RED_FLIGHT_COLOR }, { id: 'f2', name: 'Blue', color: BLUE_FLIGHT_COLOR }];
+// Older tournaments saved the default Red/Blue flights with swapped colors (Red drawn navy, Blue drawn maroon); repair on load.
+const fixRedBlueColors = (f) => {
+  if (!f) return f; const n = String(f.name || '').trim().toLowerCase();
+  const oldRed = f.color === C.teamA || f.color === '#123C73' || f.color === '#2C3F55', oldBlue = f.color === '#7A1F32';
+  if (n === 'red' && oldRed) return { ...f, color: RED_FLIGHT_COLOR };
+  if (n === 'blue' && oldBlue) return { ...f, color: BLUE_FLIGHT_COLOR };
+  return f;
+};
 const TABS = ['home', 'bets', 'settle'];
 
 // ⚠️ REPLACE THIS with your real Firebase UID before deploying — find it at
@@ -480,6 +491,8 @@ function singlesStrokeHoles(chA, chB, strokeIndexArr, numHoles) {
 // so an existing tournament's behavior is byte-for-byte unchanged unless an
 // admin actively opens the new settings and changes something.
 function getScoringDisplay(tournament) {
+  // No handicaps in play means there is nothing to net, whatever else is saved.
+  if (!tournament.handicapsEnabled) return 'gross';
   if (tournament.scoringDisplay) return tournament.scoringDisplay;
   if (!tournament.handicapsEnabled || tournament.handicapMode === 'none' || !tournament.handicapMode) return 'gross';
   return 'net';
@@ -518,6 +531,15 @@ function getRelativeStrokes(playerIds, state, allocConfig) {
   const byId = {};
   playerIds.forEach(id => { byId[id] = phById[id] != null ? Math.max(0, phById[id] - low) : 0; });
   return { byId, low };
+}
+// One source of truth for "how many handicap strokes does each player get": the leaderboard,
+// skins/nassau/stableford/wolf, awards and the score-entry screen all read this, so they cannot
+// drift apart. Off-low formats are measured against the lowest handicap in the field.
+function allocStrokeMap(state) {
+  const alloc = getAllocationConfig(state);
+  const players = Array.isArray(state.players) ? state.players : [];
+  if (alloc.type === 'offLow' || alloc.type === 'percentageOffLow') return getRelativeStrokes(players.map(p => p.id), state, alloc).byId;
+  const m = {}; players.forEach(p => { m[p.id] = getPlayingHandicap(p, state, alloc); }); return m;
 }
 // 2v2 Best Ball off low man: low man = lowest individual playing handicap among
 // all 4 in the match. Each other player's strokes = their PH - low man PH.
@@ -599,7 +621,7 @@ function strokesOnHole(h, strokeIndexArr, holeIdx) {
   return base + (rem > 0 && si >= thresh ? -1 : 0);
 }
 function holeScoreFn(state, useNet) {
-  const chMap = {}; state.players.forEach(p => { chMap[p.id] = getCourseHandicap(p, state); });
+  const chMap = allocStrokeMap(state);
   return (playerId, holeIdx) => {
     const g = state.scores[playerId]?.[holeIdx];
     if (g == null) return null;
@@ -717,7 +739,7 @@ function getRoundView(tournament, roundId) {
   return {
     ...round,
     pars, strokeIndex, customBets, flowGroups, submittedPlayers, scores: safeScores, nineHoleTotals,
-    players, flights, handicapsEnabled: tournament.handicapsEnabled,
+    players, flights, handicapsEnabled: !!(tournament.handicapsEnabled || round.handicapsEnabled),
     adminPin: tournament.adminPin, roundName: round.name, tournamentName: tournament.name,
     tournamentCustomBets,
   };
@@ -794,7 +816,7 @@ function generateDemoTournament() {
 
   const tournament = {
     name: 'Spring Trip 2026', adminPin: genPin(),
-    players, flights: [{ id: 'f1', name: 'Red', color: FLIGHT_COLORS[0] }, { id: 'f2', name: 'Blue', color: FLIGHT_COLORS[1] }],
+    players, flights: defaultRedBlueFlights(),
     handicapsEnabled: true, rounds: [round1, round2], activeRoundId: round1.id,
     ryderCup: { enabled: true, teamAName: 'Red', teamBName: 'Blue', totalPlayers: 5 },
     tournamentCustomBets: [
@@ -868,6 +890,7 @@ function computeBestBall(state) {
   let pairs = Array.isArray(state.games?.bestBall?.pairs) ? state.games.bestBall.pairs : [];
   if (pairs.length === 0) pairs = pairsFromMatches(state);
   if (pairs.length === 0) return [];
+  const bbStrokes = allocStrokeMap(state);
   return pairs.map(pair => {
     const playerIds = Array.isArray(pair.playerIds) ? pair.playerIds : [];
     const players = playerIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
@@ -875,9 +898,15 @@ function computeBestBall(state) {
       const scores = playerIds.map(id => state.scores[id]?.[h]).filter(s => s != null);
       return scores.length > 0 ? Math.min(...scores) : null;
     });
+    // Net best ball: each partner plays off their own strokes, then the better net score counts.
+    const holeNets = Array.from({ length: state.numHoles }, (_, h) => {
+      const nets = playerIds.map(id => { const g = state.scores[id]?.[h]; return g == null ? null : g - strokesOnHole(bbStrokes[id] || 0, state.strokeIndex, h); }).filter(v => v != null);
+      return nets.length > 0 ? Math.min(...nets) : null;
+    });
     const thru = holeScores.filter(s => s != null).length;
     const totalPar = state.pars.slice(0, thru).reduce((a, b) => a + b, 0);
     const totalScore = holeScores.slice(0, thru).reduce((a, b) => a + (b || 0), 0);
+    const netTotal = holeNets.slice(0, thru).reduce((a, b) => a + (b || 0), 0);
     const playerStats = players.map(p => {
       const pHoles = Array.from({ length: state.numHoles }, (_, h) => state.scores[p.id]?.[h]).filter(s => s != null);
       const pThru = pHoles.length;
@@ -892,9 +921,12 @@ function computeBestBall(state) {
       playerStats,
       pairName: pair.label && pair.label.trim() ? pair.label.trim() : players.map(p => p.name).join(' & '),
       holeScores,
+      holeNets,
       thru,
       totalScore,
+      netTotal,
       toPar: thru > 0 ? totalScore - totalPar : 0,
+      netToPar: thru > 0 ? netTotal - totalPar : 0,
     };
   }).sort((a, b) => a.toPar - b.toPar);
 }
@@ -930,6 +962,192 @@ function computeShamble(state) {
   }).sort((a, b) => a.totalScore - b.totalScore);
 }
 
+/* ============================== MEMBER-MEMBER / TWO-DAY TEAM EVENT ==============================
+   Two-person best ball over two rounds (Saturday, Sunday):
+   - Net: every player plays off netPct% of their course handicap (90% by default); teams are pre-flighted
+     by the average of those playing handicaps. Net prizes are paid each day.
+   - Gross: teams are flighted after round 1 by gross score. Sunday, a team can improve its round 1 score by at
+     most `cap` strokes: 5 for the gross flight leader, 5 + 2x the strokes behind for everyone else. Only the
+     allowed improvement is posted, so Sunday's posted score is never lower than (round 1 - cap).
+   - Gross ties after Sunday: back nine, then holes 10-12, 13-15, 16-18. Net ties are split.
+   - Maximum score on any hole is net double bogey. */
+const TEAM_EVENT_DEFAULTS = { enabled: false, teams: [], netPct: 90, maxScore: 'netDouble', grossFlights: [], leaderMax: 5, trailBase: 5, trailMult: 2, expensesPct: 10, daySplit: [50, 50], mulliganFee: 20, mulligans: {} };
+function getTeamEvent(tournament) {
+  const te = (tournament && tournament.teamEvent) || {};
+  const split = Array.isArray(te.daySplit) && te.daySplit.length === 2 ? te.daySplit.map(x => Number(x) || 0) : [50, 50];
+  return { ...TEAM_EVENT_DEFAULTS, ...te, teams: Array.isArray(te.teams) ? te.teams : [], grossFlights: Array.isArray(te.grossFlights) ? te.grossFlights : [], mulligans: te.mulligans && typeof te.mulligans === 'object' ? te.mulligans : {}, daySplit: split };
+}
+const teamSig = (ids) => [...(ids || [])].sort().join('|');
+function teamDisplayName(team, players) {
+  if (team.name && String(team.name).trim()) return String(team.name).trim();
+  const names = (team.playerIds || []).map(id => (players || []).find(p => p.id === id)).filter(Boolean).map(p => p.name);
+  return names.join(' & ') || 'Team';
+}
+// Net double bogey: par + 2 + the strokes the player receives on that hole.
+function maxScoreFor(state, playerId, holeIdx, strokeMap) {
+  if (state.maxScore !== 'netDouble') return null;
+  const par = state.pars?.[holeIdx] ?? 4;
+  const map = strokeMap || allocStrokeMap(state);
+  return par + 2 + strokesOnHole(map[playerId] || 0, state.strokeIndex || [], holeIdx);
+}
+function teamRoundResult(view, team) {
+  const n = view.numHoles || 18, map = allocStrokeMap(view), pars = view.pars || [];
+  const gross = [], net = [];
+  for (let h = 0; h < n; h++) {
+    const vals = (team.playerIds || []).map(id => {
+      const raw = view.scores?.[id]?.[h]; if (raw == null) return null;
+      const cap = maxScoreFor(view, id, h, map); const g = cap != null ? Math.min(raw, cap) : raw;
+      return { g, n: g - strokesOnHole(map[id] || 0, view.strokeIndex || [], h) };
+    }).filter(Boolean);
+    gross.push(vals.length ? Math.min(...vals.map(v => v.g)) : null);
+    net.push(vals.length ? Math.min(...vals.map(v => v.n)) : null);
+  }
+  const thru = gross.filter(v => v != null).length;
+  const sum = (arr, a, b) => arr.slice(a, b).reduce((s, v) => s + (v || 0), 0);
+  const parThru = gross.reduce((s, v, i) => s + (v != null ? (pars[i] ?? 4) : 0), 0);
+  const parFull = Array.from({ length: n }, (_, i) => pars[i] ?? 4).reduce((a, b) => a + b, 0);
+  const g = sum(gross, 0, n), nt = sum(net, 0, n), half = Math.ceil(n / 2);
+  const ranges = n === 18 ? [[9, 18], [9, 12], [12, 15], [15, 18]] : [[half, n]];
+  return { thru, complete: thru === n, n, holesGross: gross, holesNet: net, gross: g, net: nt, par: parThru, parFull, grossToPar: thru ? g - parThru : 0, netToPar: thru ? nt - parThru : 0, tiebreak: ranges.map(([a, b]) => sum(gross, a, b)) };
+}
+function teamEventModel(tournament) {
+  const te = getTeamEvent(tournament);
+  const players = tournament.players || [];
+  const rounds = (tournament.rounds || []).map(r => ({ id: r.id, name: r.name, view: getRoundView(tournament, r.id) }));
+  const teams = te.teams.filter(t => (t.playerIds || []).length > 0).map(t => {
+    const tp = (t.playerIds || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+    const netFlightId = (tp.find(p => p.flightId) || {}).flightId || null;
+    return { ...t, name: teamDisplayName(t, players), players: tp, netFlightId, sig: teamSig(t.playerIds), rounds: rounds.map(r => teamRoundResult(r.view, t)) };
+  });
+  // ---- gross flights + Sunday improvement limit ----
+  const flightOf = (t) => (te.grossFlights.find(f => (f.teamIds || []).includes(t.id)) || { id: '_all', name: 'Everyone' });
+  const gf = {};
+  teams.forEach(t => { const f = flightOf(t); (gf[f.id] = gf[f.id] || { flight: f, teams: [] }).teams.push(t); });
+  const hasR2 = rounds.length > 1;
+  const grossFlights = Object.values(gf).map(({ flight, teams: ts }) => {
+    const done1 = ts.filter(t => t.rounds[0] && t.rounds[0].complete);
+    const leader = done1.length ? Math.min(...done1.map(t => t.rounds[0].gross)) : null;
+    ts.forEach(t => {
+      const r1 = t.rounds[0], r2 = hasR2 ? t.rounds[1] : null;
+      const behind = r1 && r1.complete && leader != null ? r1.gross - leader : null;
+      const cap = behind == null ? null : (behind === 0 ? te.leaderMax : te.trailBase + te.trailMult * behind);
+      const floor = cap == null ? null : r1.gross - cap;
+      const posted2 = r2 && r2.complete && floor != null ? Math.max(r2.gross, floor) : null;
+      const capped = !!(r2 && r2.complete && floor != null && r2.gross < floor);
+      const r2ToPar = r2 ? (posted2 != null ? posted2 - r2.parFull : r2.grossToPar) : 0;
+      t.gross = { flightId: flight.id, r1: r1 ? r1.gross : null, r1Done: !!(r1 && r1.complete), behind, cap, floor, r2: r2 ? r2.gross : null, r2Done: !!(r2 && r2.complete), posted2, capped, improvedBy: r2 && r2.complete && r1 ? Math.max(0, r1.gross - r2.gross) : null, total: posted2 != null && r1.complete ? r1.gross + posted2 : null, totalToPar: (r1 ? r1.grossToPar : 0) + r2ToPar };
+    });
+    const bothDone = (t) => t.gross.total != null;
+    const cmp = (a, b) => {
+      if (a.gross.totalToPar !== b.gross.totalToPar) return a.gross.totalToPar - b.gross.totalToPar;
+      if (bothDone(a) && bothDone(b)) {
+        const ta = a.rounds[1].tiebreak, tb = b.rounds[1].tiebreak;
+        for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) return ta[i] - tb[i];
+      }
+      return 0;
+    };
+    const sorted = [...ts].sort(cmp);
+    sorted.forEach((t, i) => { t.gross.rank = i > 0 && cmp(sorted[i - 1], t) === 0 ? sorted[i - 1].gross.rank : i + 1; });
+    sorted.forEach((t, i) => { t.gross.tied = sorted.some((o, j) => j !== i && o.gross.rank === t.gross.rank); });
+    const finals = sorted.filter(bothDone);
+    const top = finals.filter(t => t.gross.rank === 1);
+    const playoff = finals.length > 1 && finals.length === sorted.length && top.length > 1;
+    const allMaxed = finals.length > 1 && finals.length === sorted.length && finals.every(t => t.gross.capped);
+    return { flight, teams: sorted, leader, playoff, allMaxed };
+  });
+  return { te, rounds, teams, grossFlights, hasR2 };
+}
+// Net standings for one round (index) or the two-day total ('total'), grouped by net flight. Net ties share a place and split.
+function teamEventNetStandings(model, tournament, which) {
+  const flights = Array.isArray(tournament.flights) && tournament.flights.length ? tournament.flights : [{ id: '_all', name: 'Everyone', color: C.gold }];
+  const val = (t) => {
+    if (which === 'total') {
+      const rs = t.rounds.filter(Boolean); const thru = rs.reduce((s, r) => s + r.thru, 0);
+      return { net: rs.reduce((s, r) => s + r.net, 0), netToPar: rs.reduce((s, r) => s + r.netToPar, 0), thru, complete: rs.length > 0 && rs.every(r => r.complete) };
+    }
+    const r = t.rounds[which]; return r ? { net: r.net, netToPar: r.netToPar, thru: r.thru, complete: r.complete } : { net: 0, netToPar: 0, thru: 0, complete: false };
+  };
+  return flights.map(f => {
+    const rows = model.teams.filter(t => (t.netFlightId && flights.some(x => x.id === t.netFlightId) ? t.netFlightId : flights[0].id) === f.id).map(t => ({ team: t, ...val(t) }));
+    const ranked = rows.filter(r => r.thru > 0).sort((a, b) => a.netToPar - b.netToPar || b.thru - a.thru);
+    ranked.forEach((r, i) => { r.place = i > 0 && ranked[i - 1].netToPar === r.netToPar && ranked[i - 1].thru === r.thru ? ranked[i - 1].place : i + 1; });
+    ranked.forEach((r, i) => { r.tied = ranked.some((o, j) => j !== i && o.place === r.place); });
+    return { flight: f, ranked, rest: rows.filter(r => r.thru === 0) };
+  });
+}
+// Calcutta money for each day: purse minus expenses, split between the days, then by place inside each net flight. Tied teams split.
+function teamEventPayouts(tournament, model) {
+  const a = tournament.auction, te = model.te;
+  if (!a || !Array.isArray(a.teams) || a.teams.length === 0) return null;
+  const pots = auctionPots(a, tournament);
+  const expPct = Math.max(0, Math.min(100, Number(te.expensesPct) || 0)), keep = (100 - expPct) / 100;
+  const nDays = Math.min(2, model.rounds.length);
+  const byTeam = {}; a.teams.forEach(t => { byTeam[t.id] = [0, 0]; });
+  const bySig = {}; model.teams.forEach(t => { bySig[t.sig] = t; });
+  const days = [];
+  for (let d = 0; d < nDays; d++) {
+    const flights = auctionFlights(tournament).map(f => {
+      const rows = a.teams.filter(t => auctionTeamFlightId(tournament, t) === f.id).map(t => {
+        const mt = bySig[teamSig(t.playerIds)] || null; const r = mt ? mt.rounds[d] : null;
+        return { auctionTeam: t, mt, net: r ? r.net : 0, netToPar: r ? r.netToPar : 0, thru: r ? r.thru : 0, complete: !!(r && r.complete), amount: 0 };
+      });
+      const ranked = rows.filter(r => r.thru > 0).sort((x, y) => x.netToPar - y.netToPar || y.thru - x.thru);
+      ranked.forEach((r, i) => { r.place = i > 0 && ranked[i - 1].netToPar === r.netToPar && ranked[i - 1].thru === r.thru ? ranked[i - 1].place : i + 1; });
+      const places = [0, 1, 2].map(i => auctionAmount(a, tournament, f.id, i) * keep * (te.daySplit[d] || 0) / 100);
+      const groups = {}; ranked.forEach(r => { (groups[r.place] = groups[r.place] || []).push(r); });
+      Object.keys(groups).forEach(pl => {
+        const g = groups[pl], start = Number(pl) - 1;
+        let money = 0; for (let k = 0; k < g.length; k++) money += places[start + k] || 0;
+        g.forEach(r => { r.amount = money / g.length; r.tied = g.length > 1; byTeam[r.auctionTeam.id][d] += r.amount; });
+      });
+      return { flight: f, ranked, rest: rows.filter(r => r.thru === 0) };
+    });
+    days.push({ index: d, name: model.rounds[d].name, complete: model.teams.length > 0 && model.teams.every(t => t.rounds[d] && t.rounds[d].complete), flights });
+  }
+  const expenses = Math.round(pots.total * expPct) / 100;
+  return { expenses, purse: pots.total - expenses, total: pots.total, days, byTeam };
+}
+// Teams, flights and settings that every round has to agree on. Pure: returns the next tournament.
+function applyTeamEvent(tournament) {
+  const te = getTeamEvent(tournament);
+  if (!te.enabled) return tournament;
+  const pairs = te.teams.map(t => ({ id: t.id, playerIds: [...(t.playerIds || [])], label: t.name || '' }));
+  return {
+    ...tournament, handicapsEnabled: true,
+    rounds: tournament.rounds.map(r => ({
+      ...r, handicapAllowanceType: 'percentage', handicapAllowancePercent: te.netPct, scoringDisplay: 'both',
+      handicapMode: !r.handicapMode || r.handicapMode === 'none' ? 'full' : r.handicapMode, matchFormat: 'best-ball', maxScore: te.maxScore,
+      games: { ...r.games, bestBall: { ...(r.games && r.games.bestBall), enabled: true, pairs } },
+    })),
+  };
+}
+function chunkSizes(total, n) { const k = Math.max(1, Math.min(n, total || 1)); const base = Math.floor(total / k), extra = total % k; return Array.from({ length: k }, (_, i) => base + (i < extra ? 1 : 0)); }
+function teamPlayingHandicaps(tournament, team) {
+  const te = getTeamEvent(tournament); const r0 = tournament.rounds[0]; if (!r0) return [];
+  const view = getRoundView({ ...tournament, handicapsEnabled: true }, r0.id);
+  return (team.playerIds || []).map(id => (tournament.players || []).find(p => p.id === id)).filter(Boolean).map(p => getPlayingHandicap(p, view, { type: 'percentage', percent: te.netPct }));
+}
+// Net flights: by average playing handicap (lowest handicaps first). Returns the flights and which flight each player joins.
+function autoNetFlights(tournament, nFlights) {
+  const te = getTeamEvent(tournament);
+  const rows = te.teams.map(t => { const ph = teamPlayingHandicaps(tournament, t); return { t, avg: ph.length ? ph.reduce((a, b) => a + b, 0) / ph.length : 0 }; }).sort((a, b) => a.avg - b.avg);
+  const sizes = chunkSizes(rows.length, nFlights);
+  const flights = sizes.map((_, i) => ({ id: 'nf' + (i + 1), name: `Flight ${i + 1}`, color: FLIGHT_COLORS[i % FLIGHT_COLORS.length] }));
+  const assign = {}; let at = 0;
+  sizes.forEach((sz, i) => { rows.slice(at, at + sz).forEach(r => (r.t.playerIds || []).forEach(id => { assign[id] = flights[i].id; })); at += sz; });
+  return { flights, assign };
+}
+// Gross flights: after round 1, best gross first.
+function autoGrossFlights(model, nFlights) {
+  const done = model.teams.filter(t => t.rounds[0] && t.rounds[0].complete).sort((a, b) => a.rounds[0].gross - b.rounds[0].gross);
+  const sizes = chunkSizes(done.length, nFlights); let at = 0;
+  return sizes.map((sz, i) => { const f = { id: 'gf' + (i + 1), name: `Gross ${i + 1}`, teamIds: done.slice(at, at + sz).map(t => t.id) }; at += sz; return f; });
+}
+function teamEventMulligans(te, players) {
+  const ids = Object.keys(te.mulligans || {}).filter(id => te.mulligans[id] && (players || []).some(p => p.id === id));
+  return { count: ids.length, total: ids.length * (Number(te.mulliganFee) || 0) };
+}
+
 const AWARD_DEFS = {
   medalist:      { label: 'Medalist', sub: 'low gross', icon: Trophy },
   netMedalist:   { label: 'Net Medalist', sub: 'low net', icon: Target, requires: 'handicaps' },
@@ -957,8 +1175,9 @@ function computeAwards(state, tournament, ledger) {
   const grossTotal = (p) => (state.scores[p.id] || []).slice(0, numHoles).reduce((a, b) => a + (b || 0), 0);
   const parTotal = (from, to) => pars.slice(from, to).reduce((a, b) => a + (b || 4), 0);
   const holeScore = (p, h) => state.scores[p.id]?.[h];
+  const awardStrokes = allocStrokeMap(state);
   const netStrokesFor = (p) => {
-    const ch = getCourseHandicap(p, state);
+    const ch = awardStrokes[p.id] || 0;
     return Array.from({ length: numHoles }, (_, h) => strokesOnHole(ch, state.strokeIndex, h)).reduce((a, b) => a + b, 0);
   };
   const results = [];
@@ -1087,8 +1306,9 @@ function computeScramble(state) {
 }
 
 function computeStats(state) {
+  const strokeMap = allocStrokeMap(state);
   return state.players.map(p => {
-    const ch = getCourseHandicap(p, state);
+    const ch = strokeMap[p.id] || 0;
     let strokes = 0, parSum = 0, thru = 0, netStrokes = 0;
     for (let i = 0; i < state.numHoles; i++) {
       const s = state.scores[p.id]?.[i];
@@ -1097,7 +1317,7 @@ function computeStats(state) {
       strokes += s; parSum += par; thru++;
       netStrokes += s - strokesOnHole(ch, state.strokeIndex, i);
     }
-    return { ...p, strokes, parSum, thru, toPar: strokes - parSum, netToPar: netStrokes - parSum, courseHandicap: ch };
+    return { ...p, strokes, parSum, thru, toPar: strokes - parSum, netToPar: netStrokes - parSum, courseHandicap: getCourseHandicap(p, state), playingStrokes: ch };
   });
 }
 
@@ -1175,10 +1395,11 @@ function computeStableford(state, scoreFn) {
 function sideNames(ids, state) { return ids.map(id => state.players.find(p => p.id === id)?.name || '?').join(' & '); }
 function matchSideScore(side, scoreFn, holeIdx) { const vals = side.map(id => scoreFn(id, holeIdx)).filter(v => v != null); return vals.length ? Math.min(...vals) : null; }
 function buildMatchScoreFn(match, state) {
-  const allIds = [...match.sideA, ...match.sideB]; const chMap = {};
-  allIds.forEach(id => { const p = state.players.find(pp => pp.id === id); chMap[id] = p ? getCourseHandicap(p, state) : 0; });
-  const minCh = allIds.length ? Math.min(...allIds.map(id => chMap[id])) : 0;
-  return (playerId, holeIdx) => { const g = state.scores[playerId]?.[holeIdx]; if (g == null) return null; return g - strokesOnHole((chMap[playerId] || 0) - minCh, state.strokeIndex, holeIdx); };
+  const allIds = [...match.sideA, ...match.sideB];
+  // Match play is played net off the low handicap in the match, honoring the allowance %.
+  const alloc = getAllocationConfig(state);
+  const rel = getRelativeStrokes(allIds, state, { type: 'percentageOffLow', percent: alloc.percent ?? 100 }).byId;
+  return (playerId, holeIdx) => { const g = state.scores[playerId]?.[holeIdx]; if (g == null) return null; return g - strokesOnHole(rel[playerId] || 0, state.strokeIndex, holeIdx); };
 }
 // A match normally covers all holes. Split 9 Singles matches are scoped to just the
 // front or back 9 — this returns the [startHole, endHole) range (0-indexed, exclusive end)
@@ -1531,7 +1752,8 @@ function computeParimutuel(state) {
       const perTicket = winnerTickets > 0 ? matchPot / winnerTickets : 0;
       tickets.filter(t => t.entrantId === `${m.id}-A` || t.entrantId === `${m.id}-B`).forEach(t => {
         const won = t.entrantId === winnerId;
-        payoutNet[t.bettorId] = (payoutNet[t.bettorId] || 0) + (won ? t.count * perTicket : 0) - t.count * 5;
+        const refund = winnerTickets === 0; // nobody backed the winner: refund the match pool
+        payoutNet[t.bettorId] = (payoutNet[t.bettorId] || 0) + (won ? t.count * perTicket : 0) - (refund ? 0 : t.count * 5);
       });
     });
     const enrichedEntrants = entrants.map(e => ({ ...e, tickets: ticketCount[e.id] || 0, odds: ticketCount[e.id] > 0 && entrantMatchPot[e.matchId] > 0 ? Math.round((entrantMatchPot[e.matchId] / 5 / ticketCount[e.id]) - 1) : 0, locked: matchInfo[e.matchId]?.locked || false, resolved: matchInfo[e.matchId]?.resolved || false, isWinner: matchInfo[e.matchId]?.winnerSide === e.side }));
@@ -1553,6 +1775,8 @@ function computeParimutuel(state) {
   if (pm.resolved && pm.winnerId) {
     const winnerTickets = ticketCount[pm.winnerId] || 0, perTicket = winnerTickets > 0 ? pot / winnerTickets : 0;
     const grossByBettor = {};
+    // Nobody backed the winner: every ticket is refunded rather than the pot disappearing.
+    if (winnerTickets === 0) tickets.forEach(t => { grossByBettor[t.bettorId] = (grossByBettor[t.bettorId] || 0) + t.count * 5; });
     tickets.forEach(t => { if (t.entrantId === pm.winnerId) grossByBettor[t.bettorId] = (grossByBettor[t.bettorId] || 0) + t.count * perTicket; });
     new Set(tickets.map(t => t.bettorId)).forEach(id => { payoutNet[id] = (grossByBettor[id] || 0) - (spendByBettor[id] || 0); });
   }
@@ -1758,7 +1982,7 @@ function aggregateStatsAcrossRounds(tournament, participantIds) {
       if (!round.started) return;
       roundsStarted++;
       const rv = getRoundView(tournament, round.id);
-      const ch = getCourseHandicap(player, rv);
+      const ch = allocStrokeMap(rv)[id] || 0;
       let thru = 0;
       for (let i = 0; i < round.numHoles; i++) {
         const s = round.scores[id]?.[i];
@@ -3158,7 +3382,8 @@ function auctionTeamScores(state, teams) {
   const bySig = {};
   results.forEach(r => { bySig[sig(r.playerIds || [])] = r; });
   const out = {};
-  teams.forEach(t => { const ids = t.playerIds || []; const r = ids.length ? bySig[sig(ids)] : null; if (r) out[t.id] = { toPar: r.toPar, thru: r.thru }; });
+  const useNetTeams = key === 'bestBall' && getScoringDisplay(state) !== 'gross';
+  teams.forEach(t => { const ids = t.playerIds || []; const r = ids.length ? bySig[sig(ids)] : null; if (r) out[t.id] = { toPar: useNetTeams ? r.netToPar : r.toPar, thru: r.thru }; });
   return out;
 }
 function auctionStandings(a, tournament, state) {
@@ -3252,6 +3477,7 @@ function AuctionDrawer({ auction, tournament, state, whoami, onClose }) {
         {tab === 'pay' && (
           <>
             <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.45 }}>{mode === 'one' ? `One pot of ${money0(pots.total)}, shared between flights.` : 'Each flight pays out of its own pot.'}</div>
+            {getTeamEvent(tournament).enabled && <div style={{ ...box, padding: 12, fontSize: 12.5, lineHeight: 1.45, color: C.goldBright }}>Member-Member: {getTeamEvent(tournament).expensesPct}% of the pot goes to expenses and the rest is split {getTeamEvent(tournament).daySplit[0]}/{getTeamEvent(tournament).daySplit[1]} between the two days, paid on net. The amounts below are for a full pot; the Member-Member Money tab shows what each day actually pays.</div>}
             {flights.map(f => {
               const places = [0, 1, 2].filter(i => auctionPctFor(auction, f.id)[i] > 0);
               return (
@@ -3563,29 +3789,30 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   };
 
   // Every hole starts at par. Tapping the number saves par as-is; moving the score up or down saves it right away.
+  const fieldStrokes = allocStrokeMap(state);
+  const capFor = (playerId) => maxScoreFor(state, playerId, viewHole, fieldStrokes);
+  const clampToCap = (playerId, v) => { const c = capFor(playerId); return c != null ? Math.min(v, c) : v; };
   const bump = (playerId, delta) => {
     if (!viewAsAdmin && isSubmitted) return;
-    const next = Math.max(1, getDraft(playerId) + delta);
+    const next = clampToCap(playerId, Math.max(1, getDraft(playerId) + delta));
     setDraftScores(prev => ({ ...prev, [playerId]: next }));
     setScoreVal(playerId, viewHole, next);
     if (viewHole === numHoles - 1 && whoami && playerId === whoami.id) onFinalHoleConfirmed?.(playerId);
   };
   const confirm = (playerId) => {
     if (!viewAsAdmin && isSubmitted) return;
-    setScoreVal(playerId, viewHole, getDraft(playerId));
+    setScoreVal(playerId, viewHole, clampToCap(playerId, getDraft(playerId)));
     if (viewHole === numHoles - 1 && whoami && playerId === whoami.id) onFinalHoleConfirmed?.(playerId);
   };
   const isConfirmed = (playerId) => {
     const saved = state.scores[playerId]?.[viewHole];
     return saved != null && draftScores[playerId] === saved;
   };
-  const isOffLow = allocConfig.type === 'offLow' || allocConfig.type === 'percentageOffLow';
-  const groupRelative = isOffLow ? getRelativeStrokes(playersToShow.map(p => p.id), state, allocConfig) : null;
   const netInfoFor = (playerId) => {
     if (!useNet) return null;
     const player = state.players.find(pl => pl.id === playerId);
     if (!player) return null;
-    const allocatedHandicap = isOffLow ? (groupRelative?.byId?.[playerId] ?? 0) : getPlayingHandicap(player, state, allocConfig);
+    const allocatedHandicap = fieldStrokes[playerId] ?? 0;
     const strokesHere = strokesOnHole(allocatedHandicap, state.strokeIndex, viewHole);
     return { strokes: strokesHere, net: getDraft(playerId) - strokesHere };
   };
@@ -3701,6 +3928,11 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                 {confirmed ? 'Saved ✓' : 'Tap # to save'}
               </div>
 
+              {capFor(p.id) != null && (
+                <div role="note" style={{ textAlign: 'center', marginTop: 6, fontSize: compact ? 10 : 11, fontWeight: 700, color: draft >= capFor(p.id) ? '#8A2A1F' : '#6B6455' }}>
+                  {draft >= capFor(p.id) ? `Net double bogey. Pick up; ${capFor(p.id)} is the most that counts.` : `Max score ${capFor(p.id)} (net double bogey)`}
+                </div>
+              )}
               {(useNet && netInfo) || (label && compact) ? (
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 6, fontSize: 10, color: '#6B6455', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700 }}>
                   {useNet && netInfo && <span>GROSS {draft} · NET {netInfo.net} · {netInfo.strokes} STROKE{netInfo.strokes === 1 ? '' : 'S'}</span>}
@@ -4031,7 +4263,16 @@ function ScoreMark({ score, par }) {
   if (d === 1) return <div title={`${score}, bogey`} style={{ ...box(25, false, SC_RED), ...txt(13.5, SC_RED) }}>{score}</div>;
   return <div title={`${score}, double bogey or worse`} style={box(27, false, SC_RED)}><div style={{ ...box(20, false, SC_RED), ...txt(12, SC_RED) }}>{score}</div></div>;
 }
-function ScoreLegend({ light }) {
+/* Little dots in the corner of a hole: one per handicap stroke the player gets there (two max shown). */
+function strokeDotsFor(state, strokeMap, playerId, holeIdx) {
+  if (!state.handicapsEnabled) return 0;
+  return Math.max(0, Math.min(2, strokesOnHole(strokeMap?.[playerId] || 0, state.strokeIndex || [], holeIdx)));
+}
+function StrokeDots({ n, color = SC_INK }) {
+  if (!n) return null;
+  return <span aria-label={`${n} stroke${n > 1 ? 's' : ''} here`} style={{ position: 'absolute', top: 3, right: 4, display: 'flex', gap: 2, pointerEvents: 'none' }}>{Array.from({ length: n }, (_, i) => <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: color }} />)}</span>;
+}
+function ScoreLegend({ light, strokes }) {
   const g = light ? SC_GREEN : '#19C37D', r = light ? SC_RED : '#F04452';
   const item = (shape, label) => <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{shape}<span>{label}</span></div>;
   const sh = (sz, round, color) => ({ width: sz, height: sz, borderRadius: round ? '50%' : 0, border: `1.3px solid ${color}`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' });
@@ -4041,6 +4282,7 @@ function ScoreLegend({ light }) {
       {item(<div style={sh(11, true, g)} />, 'Birdie')}
       {item(<div style={sh(11, false, r)} />, 'Bogey')}
       {item(<div style={sh(12, false, r)}><div style={{ ...sh(6, false, r), border: `1px solid ${r}` }} /></div>, 'Double+')}
+      {strokes && item(<span style={{ width: 5, height: 5, borderRadius: '50%', background: light ? SC_INK : C.ivoryDim, display: 'inline-block' }} />, 'Stroke')}
     </div>
   );
 }
@@ -4073,6 +4315,8 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
   const numHoles = state.numHoles || 18;
   const scores = state.scores?.[whoami.id] || {};
   const cols = roundColumns(numHoles);
+  const strokeMap = allocStrokeMap(state);
+  const anyStroke = Array.from({ length: numHoles }, (_, h) => strokeDotsFor(state, strokeMap, whoami.id, h)).some(Boolean);
   const widths = cols.map(c => c.type === 'hole' ? 32 : 40);
   const hasYds = Array.isArray(state.yardage) && state.yardage.some(Boolean);
   const hasSi = Array.isArray(state.strokeIndex) && state.strokeIndex.length > 0;
@@ -4135,7 +4379,7 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
           <div style={{ display: 'flex', height: 40, background: SC_CREAM }}>
             {label(SC_CREAM, SC_INK, 'SCORE', 800)}
             {cols.map((c, k) => c.type === 'hole'
-              ? cell(k, c, <ScoreMark score={scores[c.i] ?? null} par={state.pars?.[c.i] ?? 4} />)
+              ? cell(k, c, <><ScoreMark score={scores[c.i] ?? null} par={state.pars?.[c.i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, whoami.id, c.i)} /></>, { position: 'relative' })
               : cell(k, c, <span style={{ ...SC_MONO, fontSize: 13.5, fontWeight: 800, color: SC_INK }}>{roundRange(state, scores, c.from, c.to).score ?? '–'}</span>, { background: '#E8E1CC' }))}
           </div>
           <div style={{ display: 'flex', height: 21, background: C.turf }}>
@@ -4149,7 +4393,7 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
           <div style={{ position: 'absolute', top: 0, bottom: 0, borderRadius: 3, background: C.gold, left: `${bar.sx * (1 - bar.tw) * 100}%`, width: `${bar.tw * 100}%` }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 7 }}>
-          <ScoreLegend />
+          <ScoreLegend strokes={anyStroke} />
           {bar.tw < 1 && <span style={{ fontSize: 9.5, color: C.goldBright, fontWeight: 600 }}>Swipe for all {numHoles} ›</span>}
         </div>
       </div>
@@ -4167,9 +4411,11 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
   const hasYds = Array.isArray(state.yardage) && state.yardage.some(Boolean);
   const hasSi = Array.isArray(state.strokeIndex) && state.strokeIndex.length > 0;
   const nines = numHoles > 9 ? [[0, 9, 'OUT'], [9, numHoles, 'IN']] : [[0, numHoles, 'TOT']];
+  const strokeMap = allocStrokeMap(state);
+  const anyStroke = Array.from({ length: numHoles }, (_, h) => strokeDotsFor(state, strokeMap, playerId, h)).some(Boolean);
   const dcol = (d, thruN) => thruN === 0 ? C.bunker : d < 0 ? SC_GREEN : d > 0 ? SC_RED : SC_INK;
   const tile = (lbl, val, color) => <div style={{ flex: 1, background: '#FFF', border: '1px solid #D8D0BC', borderRadius: 10, padding: '8px 10px' }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#6B6455' }}>{lbl}</div><div style={{ ...SC_MONO, fontWeight: 700, fontSize: 18, color }}>{val}</div></div>;
-  const lab = (bg, color, text, w = 700) => <div style={{ width: 40, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 8, boxSizing: 'border-box' }}>{text}</div>;
+  const lab = (bg, color, text, w = 700) => <div style={{ width: 46, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 8, boxSizing: 'border-box' }}>{text}</div>;
   const flex = { flexGrow: 1, flexBasis: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
   return (
     <DrawerFrame origin="tap" onClose={onClose}>{(close) => (
@@ -4220,13 +4466,13 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
               )}
               <div style={{ display: 'flex', height: 42, background: '#FFF', borderTop: '1px solid #CFC7B2' }}>
                 {lab('#FFF', SC_INK, 'SCORE', 800)}
-                {idxs.map(i => <div key={i} style={flex}><ScoreMark score={scores[i] ?? null} par={state.pars?.[i] ?? 4} /></div>)}
+                {idxs.map(i => <div key={i} style={{ ...flex, position: 'relative' }}><ScoreMark score={scores[i] ?? null} par={state.pars?.[i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, playerId, i)} /></div>)}
                 <div style={{ ...flex, background: '#F1ECDC', ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{r.score ?? '–'}</div>
               </div>
             </div>
           );
         })}
-        <div style={{ padding: '2px 4px 8px' }}><ScoreLegend light /></div>
+        <div style={{ padding: '2px 4px 8px' }}><ScoreLegend light strokes={anyStroke} /></div>
         <div style={{ fontSize: 11, color: '#6B6455', lineHeight: 1.4, padding: '0 4px' }}>Read-only. Tap another player on the leaderboard to see their card.</div>
       </>
     )}</DrawerFrame>
@@ -4529,20 +4775,22 @@ function LeaderboardTab({ state, stats, compact, onPlayerTap }) {
 
 function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, presence, now }) {
   const isLive = (playerId) => presence && now && presence[playerId] && (now - presence[playerId] < 100000);
+  // Anyone not placed in a flight still shows up, in their own group at the bottom.
+  const groups = leaderboard.some(p => !flights.some(f => f.id === p.flightId)) ? [...flights, { id: '__none', name: 'Everyone else', color: C.bunker }] : flights;
   return (
     <div onClick={onTap} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${C.turfBorder}` }}>
         <IconBadge icon={Trophy} color={C.gold} size={26} />
         <div>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>This Round</div>
-          <div style={{ fontSize: 10, color: C.bunker }}>ranked within each flight · tap for full board</div>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>Leaderboard</div>
+          <div style={{ fontSize: 10, color: C.bunker }}>this round · ranked within each flight · tap for full board</div>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 34px 54px 52px', padding: '5px 14px', background: C.pineDark }}>
         {[['#','left'],['Player','left'],['Thru','center'],[useNet ? 'Net' : 'Score','right'],['Strokes','right']].map(([h, al]) => <div key={h} style={{ fontSize: 9, color: C.bunker, fontFamily: 'Inter, sans-serif', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: al }}>{h}</div>)}
       </div>
-      {flights.map((flight, fi) => {
-        const flightPlayers = leaderboard.filter(p => p.flightId === flight.id);
+      {groups.map((flight, fi) => {
+        const flightPlayers = leaderboard.filter(p => flight.id === '__none' ? !flights.some(f => f.id === p.flightId) : p.flightId === flight.id);
         if (flightPlayers.length === 0) return null;
         return (
           <div key={flight.id} style={{ borderTop: fi > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
@@ -4632,7 +4880,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <IconBadge icon={Trophy} color={C.gold} size={26} />
           <div>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>This Round</div>
+            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>Leaderboard</div>
             <div style={{ fontSize: 10, color: C.bunker }}>{shouldScroll ? (paused ? 'paused' : 'live · hold to pause') : 'live'} · tap for full leaderboard</div>
           </div>
         </div>
@@ -4818,9 +5066,24 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
           {pm.resolved && pmData?.winnerId && (
             <div style={{ ...rowCard, background: C.turfLight, gap: 8 }}>
               <Trophy size={16} color={C.goldBright} />
-              <span style={{ fontSize: 13 }}>Winner: <strong>{state.players.find(p => p.id === pmData.winnerId)?.name}</strong> · payouts calculated in Settle</span>
+              <span style={{ fontSize: 13 }}>Winner: <strong>{pmData.entrants.find(e => e.id === pmData.winnerId)?.name || state.players.find(p => p.id === pmData.winnerId)?.name}</strong> · payouts calculated in Settle</span>
             </div>
           )}
+          {pm.resolved && pmData?.winnerId && (() => {
+            const bettors = Object.keys(pmData.spendByBettor || {});
+            if (bettors.length === 0) return null;
+            const nameOf = (id) => (pm.tickets || []).find(t => t.bettorId === id)?.bettorName || state.players.find(p => p.id === id)?.name || 'Player';
+            return (
+              <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+                {bettors.map(id => { const net = pmData.payoutNet?.[id] || 0; return (
+                  <div key={id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ color: C.ivoryDim }}>{nameOf(id)} · wagered ${pmData.spendByBettor[id]}</span>
+                    <span style={{ fontWeight: 700, color: net > 0 ? C.emerald : net < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(net)}</span>
+                  </div>
+                ); })}
+              </div>
+            );
+          })()}
           {isAdmin && pm.enabled && !pm.resolved && (
             <div style={{ marginTop: 8 }}>
               <SectionHeader title="Admin: resolve market" sub={pmData?.suggestedId ? `Suggested winner: ${pmData?.entrants.find(e => e.id === pmData?.suggestedId)?.name}` : 'No clear leader yet'} />
@@ -5105,8 +5368,9 @@ function GuideCard({ title, steps, onDismiss, cta }) {
   );
 }
 
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction, onOpenTeamEvent }) {
   const now = useNow(5000);
+  const teCfg = getTeamEvent(tournament || {});
   const [adminGuideSeen, markAdminGuide] = useSeenFlag('guide-admin');
   const [playerGuideSeen, markPlayerGuide] = useSeenFlag('guide-player');
   const bbResultsEarly = state.games?.bestBall?.enabled ? computeBestBall(state) : [];
@@ -5205,6 +5469,16 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ivoryDim, flex: 1 }}>Tournament Rules</span>
               <ChevronRight size={14} color={C.bunker} />
             </div>
+            {isAdmin && (() => {
+              const g0 = state.games || {};
+              const missing = state.handicapsEnabled ? state.players.filter(p => isNaN(parseFloat(p.handicapIndex))) : [];
+              const netFlag = ['skins', 'nassau', 'stableford', 'wolf', 'parimutuel', 'shamble'].some(k => g0[k]?.enabled && g0[k]?.net);
+              if (state.handicapsEnabled ? missing.length === 0 : !netFlag) return null;
+              const msg = !state.handicapsEnabled
+                ? 'Handicaps are off, so every game plays gross. Turn them on in Round setup to play net.'
+                : `No handicap index for ${missing.map(p => p.name.split(' ')[0]).join(', ')}. Net scores match gross until you add one (Round setup → Players).`;
+              return <div role="note" style={{ background: `rgba(${GOLD_RGB},0.10)`, border: `1px solid rgba(${GOLD_RGB},0.35)`, borderRadius: 12, padding: '9px 12px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: C.goldBright }}>{msg}</div>;
+            })()}
             {whoami && <RoundCardHome state={state} whoami={whoami} thru={thru} toPar={toPar} />}
 
             {(() => {
@@ -5328,7 +5602,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         {state.courseEstimated && <div style={{ fontSize: 10.5, color: C.goldBright, fontWeight: 600 }}>Course details are estimated</div>}
       </div>
 
-      {layoutPrefs.yourMatch !== false && ryderCup && (() => {
+      {layoutPrefs.yourMatch !== false && (ryderCup || state.games?.matchplay?.enabled) && (() => {
         const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
         if (matches.length === 0) return null;
         const format = state.matchFormat;
@@ -5536,7 +5810,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </div>
       )}
 
-      {state.games?.bestBall?.enabled && bbResultsEarly.length > 0 && (() => {
+      {!teCfg.enabled && state.games?.bestBall?.enabled && bbResultsEarly.length > 0 && (() => {
         const bbResults = bbResultsEarly;
         return (
           <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
@@ -5684,7 +5958,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         );
       })()}
 
-      {!(isPairFormatHome && homePairRows.length > 0) && (
+      {teCfg.enabled && tournament && <TeamLeaderboardCard tournament={tournament} onOpen={onOpenTeamEvent} />}
+      {!teCfg.enabled && !(isPairFormatHome && homePairRows.length > 0) && (
         Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? (
           <FlightedLeaderboard
             leaderboard={leaderboard}
@@ -5708,7 +5983,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         )
       )}
 
-      {layoutPrefs.standings !== false && !ryderCup && multiRound && tournamentStandings.length > 0 && (
+      {layoutPrefs.standings !== false && !ryderCup && !teCfg.enabled && multiRound && tournamentStandings.length > 0 && (
         <div style={{ ...cardBtn, cursor: 'default', background: `${C.blueBright}14`, border: `1px solid ${C.blueBright}44` }}>
           <SectionHeader title="Overall Standings" sub="cumulative across every started round" icon={Calendar} iconColor={C.blueBright} />
           {tournamentStandings.slice(0, 6).map((p, i) => {
@@ -5864,7 +6139,7 @@ function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
     (bet.participants || []).forEach(pid => {
       if (!itemsByPlayer[pid]) return;
       const amt = bet.calculatedPayout?.[pid] || 0;
-      if (amt === 0) return;
+      if (amt === 0 && bet.currentStatus === 'pending') return;
       const key = bet.betType || 'Other';
       itemsByPlayer[pid][key] = (itemsByPlayer[pid][key] || 0) + amt;
     });
@@ -5900,7 +6175,7 @@ function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
                       {fromItems.length === 0 ? <div style={{ fontSize: 11, color: C.bunker }}>No itemized bets</div> : fromItems.map(([game, amt]) => (
                         <div key={game} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
                           <span style={{ color: C.ivoryDim }}>{game}</span>
-                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : C.flagRed }}>{fmtMoney(amt)}</span>
+                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : amt < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(amt)}</span>
                         </div>
                       ))}
                     </div>
@@ -5909,7 +6184,7 @@ function SettleTab({ tournament, ledger, bets, onOpenMyPosition }) {
                       {toItems.length === 0 ? <div style={{ fontSize: 11, color: C.bunker }}>No itemized bets</div> : toItems.map(([game, amt]) => (
                         <div key={game} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
                           <span style={{ color: C.ivoryDim }}>{game}</span>
-                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : C.flagRed }}>{fmtMoney(amt)}</span>
+                          <span style={{ fontWeight: 700, color: amt > 0 ? C.emerald : amt < 0 ? C.flagRed : C.ivoryDim }}>{fmtMoney(amt)}</span>
                         </div>
                       ))}
                     </div>
@@ -6425,7 +6700,7 @@ function PlayersSection({ state, newPlayerName, setNewPlayerName, addPlayer, rem
 
       {hasPlayers && updateTournament && (
         <div style={{ borderTop: `1px solid ${C.turfBorder}`, paddingTop: 12 }}>
-          <ToggleRow label="Use teams / flights" sub="Assign players to Red vs Blue, USA vs Europe, etc." enabled={flightsOn} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : [{ id: 'f1', name: 'Red', color: FLIGHT_COLORS[0] }, { id: 'f2', name: 'Blue', color: FLIGHT_COLORS[1] }] }))} />
+          <ToggleRow label="Use teams / flights" sub="Assign players to Red vs Blue, USA vs Europe, etc." enabled={flightsOn} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
           {flightsOn && (
             <div style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -6480,7 +6755,7 @@ function HandicapsFlightsSection({ state, updateTournament, setPlayerField, auto
               })}
             </div>
           )}
-          <ToggleRow label="Use flights / teams" sub="Separate leaderboards, or Red vs Blue for team match play" enabled={state.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : [{ id: 'f1', name: 'Red', color: FLIGHT_COLORS[0] }, { id: 'f2', name: 'Blue', color: FLIGHT_COLORS[1] }] }))} />
+          <ToggleRow label="Use flights / teams" sub="Separate leaderboards, or Red vs Blue for team match play" enabled={state.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
           {state.flights.length > 0 && (
             <div>
               <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -7508,7 +7783,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               ))}
             </div>
           )}
-          <ToggleRow label="Use flights / teams" sub="Red vs Blue, auto-balanced by handicap" enabled={tournament.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : [{ id: 'f1', name: 'Red', color: FLIGHT_COLORS[0] }, { id: 'f2', name: 'Blue', color: FLIGHT_COLORS[1] }] }))} />
+          <ToggleRow label="Use flights / teams" sub="Red vs Blue, auto-balanced by handicap" enabled={tournament.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
           {tournament.flights.length > 0 && <GhostButton onClick={autoFlights} style={{ marginBottom: 10 }}>Auto-balance now</GhostButton>}
 
           <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} />
@@ -7828,7 +8103,307 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
   );
 }
 
-function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn }) {
+/* ============================== MEMBER-MEMBER SCREENS ============================== */
+/* Home card for a Member-Member event: today's net standings by flight, best three per flight. Tap for everything. */
+function TeamLeaderboardCard({ tournament, onOpen }) {
+  const model = useMemo(() => teamEventModel(tournament), [tournament]);
+  const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+  const stand = teamEventNetStandings(model, tournament, idx).filter(f => f.ranked.length + f.rest.length > 0);
+  const cols = '22px 1fr 34px 54px 52px';
+  const toParColor = (v) => (v < 0 ? C.emerald : v > 0 ? C.flagRed : C.bunker);
+  const open = (e) => { if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen && onOpen(); } };
+  return (
+    <div role="button" tabIndex={0} onClick={open} onKeyDown={open} style={{ background: C.turf, border: 'none', borderRadius: 16, overflow: 'hidden', boxShadow: C.shadow, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${C.turfBorder}` }}>
+        <IconBadge icon={Trophy} color={C.gold} size={26} />
+        <div>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivory }}>Leaderboard</div>
+          <div style={{ fontSize: 10, color: C.bunker }}>{(model.rounds[idx] && model.rounds[idx].name) || 'Today'} · net by flight · tap for gross and money</div>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '5px 14px', background: C.pineDark }}>
+        {[['#', 'left'], ['Team', 'left'], ['Thru', 'center'], ['Net', 'right'], ['Gross', 'right']].map(([h, al]) => <div key={h} style={{ fontSize: 9, color: C.bunker, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', textAlign: al }}>{h}</div>)}
+      </div>
+      {model.teams.length === 0 && <div style={{ padding: '12px 14px', fontSize: 12.5, color: C.ivoryDim }}>No teams yet.</div>}
+      {stand.map(({ flight, ranked, rest }) => (
+        <div key={flight.id}>
+          {(tournament.flights || []).length > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color || C.gold}18` }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color || C.gold }} /><span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color || C.gold }}>{flight.name}</span></div>}
+          {[...ranked.slice(0, 3), ...(ranked.length === 0 ? rest.slice(0, 3).map(r => ({ ...r, place: null })) : [])].map((r, i) => {
+            const rr = r.team.rounds[idx];
+            return (
+              <div key={r.team.id} style={{ display: 'grid', gridTemplateColumns: cols, padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                <span style={{ fontSize: 13, color: r.place === 1 ? C.gold : C.bunker, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}</span>
+                <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+                <span style={{ fontSize: 11, color: C.bunker, textAlign: 'center' }}>{r.thru > 0 ? r.thru : '–'}</span>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: r.thru === 0 ? C.bunker : toParColor(r.netToPar) }}>{r.thru === 0 ? '–' : fmtToPar(r.netToPar)}</span>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, textAlign: 'right', color: C.ivoryDim }}>{rr && rr.thru > 0 ? fmtToPar(rr.grossToPar) : '–'}</span>
+              </div>
+            );
+          })}
+          {ranked.length > 3 && <div style={{ padding: '5px 14px 8px', fontSize: 10, color: C.bunker }}>+{ranked.length - 3} more in {flight.name}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initialTab, onClose }) {
+  const [tab, setTab] = useState(initialTab || 'gross');
+  const [netView, setNetView] = useState(0);
+  const [nNet, setNNet] = useState(4);
+  const [nGross, setNGross] = useState(3);
+  const [pickA, setPickA] = useState('');
+  const [pickB, setPickB] = useState('');
+  const [msg, setMsg] = useState('');
+  const te = getTeamEvent(tournament);
+  const model = useMemo(() => teamEventModel(tournament), [tournament]);
+  const players = tournament.players || [];
+  const hasAuction = tournament.bettingEnabled !== false && tournament.auction && Array.isArray(tournament.auction.teams) && tournament.auction.teams.length > 0;
+  const payouts = useMemo(() => (hasAuction ? teamEventPayouts(tournament, model) : null), [tournament, model, hasAuction]);
+  const setTe = (patch) => updateTournament(p => applyTeamEvent({ ...p, teamEvent: { ...getTeamEvent(p), ...patch } }));
+  const box = { background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden' };
+  const head = (label, right) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: C.turfLight, borderTop: `1px solid ${C.turfBorder}` }}><span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.gold }}>{label}</span>{right && <span style={{ fontSize: 11, color: C.ivoryDim, textAlign: 'right' }}>{right}</span>}</div>;
+  const tabBtn = (key, label) => <button key={key} onClick={() => setTab(key)} role="tab" aria-selected={tab === key} style={{ flex: 1, background: tab === key ? C.turfLight : 'transparent', color: tab === key ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '9px 4px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{label}</button>;
+  const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? C.goldBright : C.ivoryDim, borderColor: tone === 'warn' ? `${C.gold}66` : C.turfBorder }}>{txt}</div>;
+  const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
+  const mine = (auctionTeam) => auctionIsMine(auctionTeam, whoami);
+  const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
+  const numInput = (value, onChange, w = 64) => <input type="number" inputMode="numeric" value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, width: w, textAlign: 'center', padding: '8px 6px' }} />;
+  const nameOf = (id) => (players.find(p => p.id === id) || {}).name || '?';
+
+  // ---------- Gross ----------
+  const grossTab = (
+    <>
+      {model.teams.length === 0 && note('No teams yet. The admin sets them up under Setup.')}
+      {note(`Saturday sets the gross flights. On Sunday a team can improve its Saturday score by at most ${te.leaderMax} strokes if it leads its flight, or by ${te.trailBase} plus ${te.trailMult} times the strokes it trails by. Only the allowed improvement is posted.`)}
+      {model.grossFlights.map(({ flight, teams, leader, playoff, allMaxed }) => (
+        <div key={flight.id} style={box}>
+          {head(flight.id === '_all' ? 'All teams' : flight.name, leader != null ? `Saturday leader ${leader}` : null)}
+          {playoff && <div role="alert" style={{ padding: '8px 12px', fontSize: 12.5, fontWeight: 700, color: C.goldBright, background: `${C.gold}1F` }}>{allMaxed ? 'Every team improved by the maximum. Playoff for first place.' : 'Tied for first after every tiebreaker. Playoff for first place.'}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, padding: '5px 12px', background: C.pineDark, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: C.bunker }}>
+            <span>#</span><span>Team</span><span style={{ textAlign: 'right' }}>{dayName(0).slice(0, 3)}</span><span style={{ textAlign: 'right' }}>{model.hasR2 ? dayName(1).slice(0, 3) : ''}</span><span style={{ textAlign: 'right' }}>Total</span>
+          </div>
+          {teams.map(t => {
+            const g = t.gross, r2 = t.rounds[1];
+            const sunday = !model.hasR2 ? '' : g.r2Done ? (g.capped ? `${g.posted2}*` : String(g.r2)) : (r2 && r2.thru > 0 ? `${r2.thru}h` : '–');
+            const total = g.total != null ? String(g.total) : ((g.r1Done || (t.rounds[0] && t.rounds[0].thru > 0)) ? fmtToPar(g.totalToPar) : '–');
+            let sub = '';
+            if (model.hasR2 && g.cap != null && !g.r2Done) sub = `Can improve by ${g.cap}; ${g.floor} is the lowest ${dayName(1)} score that counts`;
+            else if (g.capped) sub = `Improved ${g.improvedBy}; only ${g.cap} counts (${g.r2} shot, ${g.posted2} posted)`;
+            return (
+              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, alignItems: 'center', padding: '9px 12px', borderTop: `1px solid ${C.turfBorder}` }}>
+                <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: g.rank === 1 ? C.gold : C.bunker }}>{g.tied ? 'T' : ''}{g.rank}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                  {sub && <div style={{ fontSize: 10.5, color: C.ivoryDim, lineHeight: 1.3 }}>{sub}</div>}
+                </div>
+                <span style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: C.ivory }}>{g.r1Done ? g.r1 : (t.rounds[0] && t.rounds[0].thru > 0 ? `${t.rounds[0].thru}h` : '–')}</span>
+                <span style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: g.capped ? C.goldBright : C.ivory }}>{sunday}</span>
+                <span style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 14, color: C.ivory }}>{total}</span>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      <div style={{ fontSize: 11, color: C.bunker }}>* Sunday score is raised to the lowest allowed score. "h" means holes played.</div>
+    </>
+  );
+
+  // ---------- Net ----------
+  const netStand = teamEventNetStandings(model, tournament, netView === 'total' ? 'total' : netView);
+  const viewBtn = (key, label) => <button key={String(key)} onClick={() => setNetView(key)} aria-pressed={netView === key} style={{ flex: 1, background: netView === key ? C.turfLight : 'transparent', color: netView === key ? C.ivory : C.ivoryDim, border: 'none', borderRadius: 8, padding: '8px 4px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{label}</button>;
+  const netTab = (
+    <>
+      <div style={{ display: 'flex', gap: 3, background: C.pineDark, borderRadius: 10, padding: 3 }}>
+        {model.rounds.slice(0, 2).map((r, i) => viewBtn(i, r.name || `Round ${i + 1}`))}
+        {model.rounds.length > 1 && viewBtn('total', '2-day')}
+      </div>
+      {note(`Best ball net, each player at ${te.netPct}% of course handicap. Net ties are split.`)}
+      {netStand.map(({ flight, ranked, rest }) => (ranked.length + rest.length === 0 ? null : (
+        <div key={flight.id} style={box}>
+          {head(flight.id === '_all' ? 'All teams' : flight.name)}
+          {[...ranked, ...rest.map(r => ({ ...r, place: null }))].map(r => (
+            <div key={r.team.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto auto', gap: 8, alignItems: 'center', padding: '9px 12px', borderTop: `1px solid ${C.turfBorder}` }}>
+              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : C.bunker }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}</span>
+              <span style={{ fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+              <span style={{ fontSize: 11, color: C.bunker }}>{r.thru > 0 ? (r.complete ? 'F' : `thru ${netView === 'total' ? r.thru : r.thru}`) : ''}</span>
+              <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, minWidth: 54, textAlign: 'right', color: r.thru === 0 ? C.bunker : r.netToPar < 0 ? C.emerald : r.netToPar > 0 ? C.flagRed : C.ivory }}>{r.thru === 0 ? '–' : (r.complete ? `${r.net} ` : '') + `(${fmtToPar(r.netToPar)})`}</span>
+            </div>
+          ))}
+        </div>
+      )))}
+    </>
+  );
+
+  // ---------- Money ----------
+  const myTotal = payouts ? tournament.auction.teams.filter(t => mine(t)).reduce((s, t) => s + (payouts.byTeam[t.id] || [0, 0]).reduce((a, b) => a + b, 0), 0) : 0;
+  const myPaid = hasAuction ? tournament.auction.teams.filter(t => mine(t)).reduce((s, t) => s + (Number(t.price) || 0), 0) : 0;
+  const moneyTab = !payouts ? note('Set up the Calcutta first (Settings, Calcutta auction results).') : (
+    <>
+      <div style={{ ...box, padding: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.bunker }}>Calcutta pot</span>
+          <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, color: C.goldBright }}>{money0(payouts.total)}</span>
+        </div>
+        <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 4, lineHeight: 1.45 }}>{te.expensesPct}% ({money0(payouts.expenses)}) goes to tournament expenses. {money0(payouts.purse)} is paid out: {te.daySplit[0]}% for {dayName(0)}, {te.daySplit[1]}% for {dayName(1)}.</div>
+      </div>
+      {whoami && myPaid > 0 && (
+        <div style={{ ...box, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 12, color: C.ivoryDim }}>Your teams · paid {money0(myPaid)} · collect {money0(myTotal)}</span>
+          <b style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 18, color: myTotal - myPaid >= 0 ? C.emerald : C.flagRed }}>{myTotal - myPaid >= 0 ? '+' : '−'}{money0(Math.abs(myTotal - myPaid))}</b>
+        </div>
+      )}
+      {payouts.days.map(day => (
+        <div key={day.index} style={box}>
+          {head(`${day.name} net`, day.complete ? 'final' : 'if the round ended now')}
+          {day.flights.map(({ flight, ranked }) => ranked.length === 0 ? null : (
+            <div key={flight.id}>
+              {(tournament.flights || []).length > 1 && <div style={{ padding: '6px 12px', fontSize: 10.5, color: C.bunker, letterSpacing: 0.8, textTransform: 'uppercase' }}>{flight.name}</div>}
+              {ranked.map(r => (
+                <div key={r.auctionTeam.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto', gap: 8, alignItems: 'center', padding: '8px 12px', borderTop: `1px solid ${C.turfBorder}`, background: mine(r.auctionTeam) ? `${C.gold}1F` : 'transparent' }}>
+                  <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : C.bunker }}>{r.tied ? 'T' : ''}{r.place}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ivory }}>{r.auctionTeam.name || (r.mt && r.mt.name) || 'Team'}</div>
+                    <div style={{ fontSize: 11, color: C.ivoryDim }}>{r.auctionTeam.buyer ? (mine(r.auctionTeam) ? 'You' : r.auctionTeam.buyer) : 'Unsold'} · net {fmtToPar(r.netToPar)}{r.complete ? '' : ` thru ${r.thru}`}</div>
+                  </div>
+                  <b style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 14, color: r.amount > 0 ? C.goldBright : C.bunker }}>{r.amount > 0 ? money0(r.amount) : '-'}</b>
+                </div>
+              ))}
+            </div>
+          ))}
+          {day.flights.every(f => f.ranked.length === 0) && <div style={{ padding: 12, fontSize: 12.5, color: C.ivoryDim }}>No scores yet.</div>}
+        </div>
+      ))}
+    </>
+  );
+
+  // ---------- Setup (admin) ----------
+  const inTeam = new Set(te.teams.flatMap(t => t.playerIds || []));
+  const free = players.filter(p => !inTeam.has(p.id));
+  const addTeam = () => { if (!pickA || !pickB || pickA === pickB) return; setTe({ teams: [...te.teams, { id: 'team_' + Date.now() + '_' + te.teams.length, name: '', playerIds: [pickA, pickB] }] }); setPickA(''); setPickB(''); };
+  const importPairs = () => {
+    const src = tournament.rounds.map(r => (r.games && r.games.bestBall && r.games.bestBall.pairs) || []).find(ps => ps.some(p => (p.playerIds || []).length === 2));
+    if (!src) { setMsg('No Best Ball pairs found in any round.'); return; }
+    const have = new Set(te.teams.map(t => teamSig(t.playerIds)));
+    const fresh = src.filter(p => (p.playerIds || []).length === 2 && !have.has(teamSig(p.playerIds))).map((p, i) => ({ id: 'team_' + Date.now() + '_' + i, name: p.label || '', playerIds: [...p.playerIds] }));
+    setMsg(fresh.length ? `Added ${fresh.length} team${fresh.length === 1 ? '' : 's'} from your Best Ball pairs.` : 'Those pairs are already teams.');
+    if (fresh.length) setTe({ teams: [...te.teams, ...fresh] });
+  };
+  const diffs = te.teams.map(t => { const ph = teamPlayingHandicaps(tournament, t); return { t, ph, diff: ph.length === 2 ? Math.abs(ph[0] - ph[1]) : 0 }; });
+  const tooFar = diffs.filter(d => d.diff > 10);
+  const flightNet = () => {
+    const r = autoNetFlights(tournament, num(nNet, 1, 12));
+    updateTournament(p => {
+      const next = { ...p, flights: r.flights, players: p.players.map(pl => (r.assign[pl.id] ? { ...pl, flightId: r.assign[pl.id] } : pl)) };
+      if (p.auction && Array.isArray(p.auction.teams)) next.auction = { ...p.auction, teams: p.auction.teams.map(t => { const first = (t.playerIds || [])[0]; return r.assign[first] ? { ...t, flightId: r.assign[first] } : t; }) };
+      return applyTeamEvent(next);
+    });
+    setMsg(`Teams flighted into ${r.flights.length} net flights by average handicap.`);
+  };
+  const r1Done = model.teams.filter(t => t.rounds[0] && t.rounds[0].complete).length;
+  const flightGross = () => { const gf = autoGrossFlights(model, num(nGross, 1, 12)); setTe({ grossFlights: gf }); setMsg(`Teams flighted into ${gf.length} gross flights by ${dayName(0)} score.`); };
+  const moveGross = (teamId, flightId) => {
+    const base = te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== teamId) }));
+    setTe({ grossFlights: base.map(f => (f.id === flightId ? { ...f, teamIds: [...f.teamIds, teamId] } : f)) });
+  };
+  const mull = teamEventMulligans(te, players);
+  const sel = { ...inputStyle, padding: '9px 10px', fontSize: 14 };
+  const lab = (t) => <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.5, margin: '14px 0 6px' }}>{t}</div>;
+  const setupTab = !isAdmin ? note('Only the admin can change the Member-Member setup.') : (
+    <>
+      <ToggleRow label="Member-Member scoring" sub="Teams, net and gross flights, Sunday improvement limit, tiebreaks" enabled={te.enabled} onToggle={() => setTe({ enabled: !te.enabled })} />
+      {msg && <div role="status" style={{ fontSize: 12.5, color: C.emerald }}>{msg}</div>}
+      {te.enabled && (
+        <>
+          <div style={{ ...box, padding: 12 }}>
+            {lab(`Teams (${te.teams.length})`)}
+            {te.teams.length === 0 && <div style={{ fontSize: 12.5, color: C.ivoryDim, marginBottom: 8 }}>Add each pair of partners. Players already on a team are hidden from the lists.</div>}
+            {te.teams.map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}` }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(t.playerIds || []).map(nameOf).join(' & ')}</span>
+                <button onClick={() => setTe({ teams: te.teams.filter(x => x.id !== t.id), grossFlights: te.grossFlights.map(f => ({ ...f, teamIds: (f.teamIds || []).filter(id => id !== t.id) })) })} aria-label={`Remove team ${(t.playerIds || []).map(nameOf).join(' and ')}`} style={{ background: 'transparent', border: 'none', color: C.flagRed, fontSize: 12, cursor: 'pointer' }}>Remove</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              <select aria-label="Partner one" value={pickA} onChange={e => setPickA(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 1</option>{free.filter(p => p.id !== pickB).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+              <select aria-label="Partner two" value={pickB} onChange={e => setPickB(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 2</option>{free.filter(p => p.id !== pickA).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+              <GoldButton onClick={addTeam} disabled={!pickA || !pickB} style={{ padding: '0 14px' }}>Add</GoldButton>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <GhostButton onClick={importPairs}>Use my Best Ball pairs</GhostButton>
+            </div>
+            {free.length > 0 && te.teams.length > 0 && <div style={{ fontSize: 12, color: C.goldBright, marginTop: 8 }}>{free.length} player{free.length === 1 ? ' is' : 's are'} not on a team: {free.map(p => p.name).join(', ')}</div>}
+          </div>
+
+          <div style={{ ...box, padding: 12 }}>
+            {lab('Rules')}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', fontSize: 13 }}>
+              <span>Net handicap allowance %</span>{numInput(te.netPct, v => setTe({ netPct: num(v, 1, 100) }))}
+              <span>Leader can improve by (max)</span>{numInput(te.leaderMax, v => setTe({ leaderMax: num(v, 0, 50) }))}
+              <span>Everyone else: base improvement</span>{numInput(te.trailBase, v => setTe({ trailBase: num(v, 0, 50) }))}
+              <span>Plus this many x strokes behind</span>{numInput(te.trailMult, v => setTe({ trailMult: num(v, 0, 10) }))}
+              <span>Calcutta to expenses %</span>{numInput(te.expensesPct, v => setTe({ expensesPct: num(v, 0, 100) }))}
+              <span>Saturday share of Calcutta %</span>{numInput(te.daySplit[0], v => { const a = num(v, 0, 100); setTe({ daySplit: [a, 100 - a] }); })}
+            </div>
+            <div style={{ marginTop: 12 }}><ToggleRow label="Net double bogey maximum" sub="Score entry stops at par + 2 + your strokes on that hole" enabled={te.maxScore === 'netDouble'} onToggle={() => setTe({ maxScore: te.maxScore === 'netDouble' ? 'none' : 'netDouble' })} /></div>
+          </div>
+
+          <div style={{ ...box, padding: 12 }}>
+            {lab('Net flights (before Saturday)')}
+            <div style={{ fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>Teams are flighted by the average of both players' playing handicaps at {te.netPct}%. Set each player's handicap index and tee first. The Handicap Committee can still edit any index afterwards; run this again to re-flight.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13 }}>Flights</span>{numInput(nNet, setNNet, 56)}<GoldButton onClick={flightNet} disabled={te.teams.length === 0} style={{ flex: 1, padding: '10px 0' }}>Flight by handicap</GoldButton></div>
+            {tooFar.length > 0 && <div role="alert" style={{ marginTop: 10, fontSize: 12.5, color: C.flagRed, lineHeight: 1.45 }}>Teammates more than 10 strokes apart: {tooFar.map(d => `${d.t.playerIds.map(nameOf).join(' & ')} (${d.diff})`).join('; ')}</div>}
+          </div>
+
+          <div style={{ ...box, padding: 12 }}>
+            {lab(`Gross flights (after ${dayName(0)})`)}
+            <div style={{ fontSize: 12.5, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>{r1Done} of {te.teams.length} teams have finished {dayName(0)}. Flights are set by gross score, best first, and decide who gets the 5-stroke limit.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 13 }}>Flights</span>{numInput(nGross, setNGross, 56)}<GoldButton onClick={flightGross} disabled={r1Done === 0} style={{ flex: 1, padding: '10px 0' }}>Flight by {dayName(0)} gross</GoldButton></div>
+            {te.grossFlights.length > 0 && model.grossFlights.flatMap(g => g.teams).map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${C.turfBorder}` }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}<span style={{ color: C.bunker }}> · {t.gross.r1Done ? t.gross.r1 : '–'}</span></span>
+                <select aria-label={`Gross flight for ${t.name}`} value={t.gross.flightId} onChange={e => moveGross(t.id, e.target.value)} style={{ ...sel, width: 120 }}>{te.grossFlights.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ ...box, padding: 12 }}>
+            {lab(`Mulligans · ${money0(te.mulliganFee)} each`)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontSize: 13 }}>Price $</span>{numInput(te.mulliganFee, v => setTe({ mulliganFee: num(v, 0, 1000) }))}<span style={{ marginLeft: 'auto', fontSize: 13, color: C.goldBright }}>{mull.count} sold · {money0(mull.total)}</span></div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 6 }}>Each buyer gets one per nine per day. Once a mulligan is hit, the original ball is out for the team.</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {players.map(p => { const on = !!te.mulligans[p.id]; return <button key={p.id} onClick={() => setTe({ mulligans: { ...te.mulligans, [p.id]: !on } })} aria-pressed={on} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${on ? C.gold : C.turfBorder}`, background: on ? `${C.gold}26` : 'transparent', color: on ? C.goldBright : C.ivoryDim, cursor: 'pointer' }}>{pgaName(p.name)}{on ? ' ✓' : ''}</button>; })}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  return (
+    <DrawerSheet onClose={onClose}>{(close) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, textTransform: 'uppercase', letterSpacing: 1 }}>Member-Member</div>
+          <button onClick={close} aria-label="Close" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 4 }}><X size={22} /></button>
+        </div>
+        {te.enabled || isAdmin ? (
+          <>
+            <div role="tablist" style={{ display: 'flex', gap: 3, background: C.pineDark, borderRadius: 10, padding: 3 }}>
+              {te.enabled && tabBtn('gross', 'Gross')}{te.enabled && tabBtn('net', 'Net')}{te.enabled && hasAuction && tabBtn('money', 'Money')}{isAdmin && tabBtn('setup', 'Setup')}
+            </div>
+            {te.enabled && tab === 'gross' && grossTab}
+            {te.enabled && tab === 'net' && netTab}
+            {te.enabled && tab === 'money' && moneyTab}
+            {(tab === 'setup' || !te.enabled) && setupTab}
+          </>
+        ) : note('Member-Member scoring is not switched on.')}
+      </div>
+    )}</DrawerSheet>
+  );
+}
+
+function SettingsSheet({ onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? C.flagRed : C.ivory, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${C.turfBorder}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -7845,6 +8420,7 @@ function SettingsSheet({ onClose, onOpenSetup, onOpenNotifications, onOpenScan, 
         {item(FileText, 'Tournament Rules', onOpenRules)}
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
+        {isAdmin && hasPlayers && onOpenTeamEvent && item(Users, 'Member-Member setup', onOpenTeamEvent)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
         {isAdmin && hasPlayers && bettingOn && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
@@ -9106,6 +9682,7 @@ export default function RoGreen() {
   const [cardPlayerId, setCardPlayerId] = useState(null);
   const [auctionOpen, setAuctionOpen] = useState(false);
   const [auctionSetupOpen, setAuctionSetupOpen] = useState(false);
+  const [teamEventOpen, setTeamEventOpen] = useState(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [autoAdvanceTimer, setAutoAdvanceTimer] = useState(null);
   const autoAdvanceRef = useRef(null);
@@ -9255,7 +9832,7 @@ export default function RoGreen() {
     const isJustCreated = justCreatedRef.current === roundCode;
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe);
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe);
         // Determine admin status right here, atomically, the instant real data
         // is in hand — a local device flag OR a verified account match, either
         // one grants it. Doing this in one place (instead of splitting the
@@ -9319,7 +9896,7 @@ export default function RoGreen() {
       if (!raw || !Array.isArray(raw.players)) return null;
       return { ...defaultTournament(), ...raw,
         players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [],
-        flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id) : [],
+        flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [],
         ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup,
         tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [],
         rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r,
@@ -9763,6 +10340,9 @@ export default function RoGreen() {
       if (last) {
         newRound.courseId = last.courseId; newRound.courseName = last.courseName; newRound.courseRating = last.courseRating; newRound.courseSlope = last.courseSlope;
         newRound.numHoles = last.numHoles; newRound.pars = last.pars.slice(); newRound.strokeIndex = last.strokeIndex.slice();
+        // Day two plays the same course under the same handicap rules: carry them over, not just the pars.
+        ['providerId', 'teeName', 'courseTeeBoxes', 'courseEstimated', 'handicapMode', 'matchFormat', 'scoringDisplay', 'handicapAllowanceType', 'handicapAllowancePercent', 'maxScore'].forEach(k => { if (last[k] !== undefined) newRound[k] = JSON.parse(JSON.stringify(last[k])); });
+        if (Array.isArray(last.yardage)) newRound.yardage = last.yardage.slice();
         newRound.games = JSON.parse(JSON.stringify(last.games));
         newRound.games.matchplay.matches = []; newRound.games.wolf.choices = {};
         newRound.games.parimutuel.resolved = false; newRound.games.parimutuel.winnerId = null; newRound.games.parimutuel.tickets = [];
@@ -9941,7 +10521,7 @@ export default function RoGreen() {
             ) : <div style={{ color: C.ivoryDim, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenTeamEvent={() => setTeamEventOpen('gross')} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} onPlayerTap={setCardPlayerId} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
@@ -9987,7 +10567,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -10039,6 +10619,7 @@ export default function RoGreen() {
           <RoundFlowScreen tournament={tournament} state={state} isAdmin={viewAsAdmin} whoami={whoami} sendChat={sendChat} updateRound={updateRound} onClose={close} />
         )}</DrawerFrame>
       )}
+      {teamEventOpen && <TeamEventDrawer tournament={tournament} updateTournament={updateTournament} isAdmin={viewAsAdmin} whoami={whoami} initialTab={teamEventOpen} onClose={() => setTeamEventOpen(null)} />}
       {auctionOpen && tournament.bettingEnabled !== false && tournament.auction?.saved && <AuctionDrawer auction={tournament.auction} tournament={tournament} state={state} whoami={whoami} onClose={() => setAuctionOpen(false)} />}
       {auctionSetupOpen && tournament.bettingEnabled !== false && <AuctionSetupDrawer auction={tournament.auction} tournament={tournament} state={state} onSave={(a) => updateTournament(p => ({ ...p, auction: a }))} onClose={() => setAuctionSetupOpen(false)} />}
       {cardPlayerId && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={cardPlayerId} onClose={() => setCardPlayerId(null)} />}
