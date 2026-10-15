@@ -2930,6 +2930,69 @@ function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
   );
 }
 
+// ---- Live boards: rows slide to their new place when ranks change, the leader is gold, and a row flashes when a score lands ----
+function useFlipList(depKey) {
+  const ref = useRef(null);
+  const prev = useRef({});
+  React.useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const nodes = Array.from(el.querySelectorAll('[data-flip]'));
+    const next = {};
+    nodes.forEach(n => { next[n.getAttribute('data-flip')] = n.offsetTop; });
+    nodes.forEach(n => {
+      const id = n.getAttribute('data-flip'); const was = prev.current[id];
+      if (was != null && Math.abs(was - next[id]) > 1) {
+        n.style.transition = 'none'; n.style.transform = `translateY(${was - next[id]}px)`; n.style.zIndex = '2';
+        void n.offsetHeight;
+        requestAnimationFrame(() => { n.style.transition = 'transform 650ms cubic-bezier(0.2, 0.8, 0.2, 1)'; n.style.transform = ''; setTimeout(() => { n.style.zIndex = ''; }, 700); });
+      }
+    });
+    prev.current = next;
+  }, [depKey]);
+  return ref;
+}
+function useRowFlashes(items) {
+  const [flashes, setFlashes] = useState({});
+  const last = useRef(null);
+  const seq = useRef(0);
+  const key = items.map(p => `${p.id}:${p.thru}:${p.val}`).join('|');
+  useEffect(() => {
+    const snap = {}; items.forEach(p => { snap[p.id] = { thru: p.thru, val: p.val }; });
+    const prev = last.current; last.current = snap;
+    if (!prev) return;
+    const fresh = {};
+    items.forEach(p => {
+      const was = prev[p.id];
+      if (!was || p.thru !== was.thru + 1) return;
+      const d = p.val - was.val;
+      const word = d <= -2 ? 'Eagle' : d === -1 ? 'Birdie' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : 'Double+';
+      fresh[p.id] = { label: p.noHole ? (d < 0 ? `+${-d} pt${d === -1 ? '' : 's'}` : 'No points') + ` · H${p.thru}` : `${word} · H${p.thru}`, n: ++seq.current };
+    });
+    const ids = Object.keys(fresh); if (!ids.length) return;
+    setFlashes(f => ({ ...f, ...fresh }));
+    setTimeout(() => setFlashes(f => { const n = { ...f }; ids.forEach(id => { if (n[id] && n[id].n === fresh[id].n) delete n[id]; }); return n; }), 6000);
+    return () => {};
+  }, [key]);
+  return flashes;
+}
+// items: [{ id, thru, val (the number being ranked, strokes to par), leader }]. renderRow(item, { change, flash, index }) draws the inside of each row.
+function LiveBoard({ items, renderRow, rowStyle }) {
+  const changes = usePositionChanges(items.map(i => i.id));
+  const flashes = useRowFlashes(items);
+  const ref = useFlipList(items.map(i => `${i.id}:${i.thru}:${i.val}`).join('|') + '#' + Object.keys(flashes).join(','));
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      {items.map((it, idx) => (
+        <div key={it.id} data-flip={it.id} style={{ position: 'relative', borderTop: idx > 0 ? `1px solid ${C.turfBorder}` : 'none', background: it.leader ? C.goldLight : 'transparent', animation: flashes[it.id] ? `${flashes[it.id].n % 2 ? 'lbFlashA' : 'lbFlashB'} 2.6s ease-out 1` : 'none', ...(rowStyle || {}) }}>
+          {renderRow(it, { change: changes[it.id], flash: flashes[it.id], index: idx })}
+        </div>
+      ))}
+    </div>
+  );
+}
+const LiveChange = ({ change }) => change === 'up' ? <ChevronUp size={11} color={C.emerald} style={{ flexShrink: 0 }} /> : change === 'down' ? <ChevronDown size={11} color={C.flagRed} style={{ flexShrink: 0 }} /> : null;
+const LiveFlash = ({ flash }) => flash ? <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: C.goldBright, lineHeight: 1.2 }}>{flash.label}</div> : null;
+
 function SpectatorScreen({ roundCode, onExit }) {
   const [loading, setLoading] = useState(true);
   const [tournament, setTournament] = useState(null);
@@ -3023,17 +3086,36 @@ function SpectatorScreen({ roundCode, onExit }) {
   const heroValue = ryderCup ? (rcStand ? `${rcStand.totalA} – ${rcStand.totalB}` : null) : teamMode ? (teLead ? fmtToPar(teLead.netToPar) : '—') : (pairKey && pairRows[0] ? (pairRows[0].thru > 0 ? fmtToPar(pairNet ? pairRows[0].netToPar : pairRows[0].toPar) : '—') : (sorted[0] && sorted[0].thru > 0 ? fmtToPar(useNet ? sorted[0].netToPar : sorted[0].toPar) : '—'));
   const heroCaption = ryderCup ? 'Team Match' : teamMode ? (teLead ? 'Low net' : 'Team event') : pairKey ? 'Leading team' : 'Leader';
 
-  const leaderboardBlock = (playersInGroup) => playersInGroup.map((p, i) => {
-    const val = useNet ? p.netToPar : p.toPar;
-    const expanded = expandedPlayerId === p.id;
-    return (
-      <div key={p.id}>
-        <div onClick={() => setExpandedPlayerId(expanded ? null : p.id)} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none', cursor: 'pointer' }}>
-          <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
-          <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
-          <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
-          <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
-        </div>
+  // When the round has flights, any list is split into one block per flight, each ranked on its own.
+  const flightHeader = (flight) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color }} />
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: flight.color }}>{flight.name}</span>
+    </div>
+  );
+  const playerFlight = (id) => (state.players.find(p => p.id === id) || {}).flightId;
+  const splitByFlight = (rows, flightOfRow, draw) => {
+    if (flights.length < 2) return draw(rows);
+    const groups = flights.map(f => ({ flight: f, rows: rows.filter(r => flightOfRow(r) === f.id) }));
+    const other = rows.filter(r => !flights.some(f => f.id === flightOfRow(r)));
+    if (other.length) groups.push({ flight: { id: '__none', name: 'Everyone else', color: C.bunker }, rows: other });
+    return groups.filter(g => g.rows.length > 0).map((g, gi) => <div key={g.flight.id} style={{ borderTop: gi > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>{flightHeader(g.flight)}{draw(g.rows)}</div>);
+  };
+  const leaderboardBlock = (playersInGroup) => {
+    const items = playersInGroup.map((p, i) => ({ id: p.id, thru: p.thru, val: useNet ? p.netToPar : p.toPar, leader: i === 0 && p.thru > 0, p }));
+    return <LiveBoard items={items} renderRow={(it, { change, flash, index }) => {
+      const p = it.p; const val = it.val; const expanded = expandedPlayerId === p.id;
+      return (
+        <>
+          <div onClick={() => setExpandedPlayerId(expanded ? null : p.id)} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center', cursor: 'pointer' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontFamily: 'Inter, sans-serif', fontSize: 13, color: index === 0 ? C.gold : C.bunker, fontWeight: index === 0 ? 700 : 400 }}>{index + 1}<LiveChange change={change} /></span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, color: C.ivory, fontWeight: index === 0 && p.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+              <LiveFlash flash={flash} />
+            </span>
+            <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: p.thru === 0 ? C.bunker : val < 0 ? C.emerald : val > 0 ? C.flagRed : C.bunker }}>{p.thru === 0 ? '—' : fmtToPar(val)}</span>
+          </div>
         {expanded && (
           <div style={{ display: 'flex', gap: 3, padding: '6px 14px 12px', overflowX: 'auto', background: C.pineDark }}>
             {Array.from({ length: state.numHoles }, (_, h) => {
@@ -3048,12 +3130,14 @@ function SpectatorScreen({ roundCode, onExit }) {
             })}
           </div>
         )}
-      </div>
-    );
-  });
+        </>
+      );
+    }} />;
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: C.pine, fontFamily: 'Inter, sans-serif', color: C.ivory, display: 'flex', flexDirection: 'column' }}>
+      <FontLoader />
       <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</div>
@@ -3113,17 +3197,20 @@ function SpectatorScreen({ roundCode, onExit }) {
         ) : pairKey && pairRows.length > 0 ? (
         <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Teams</div>
-          {pairRows.map((pr, i) => {
-            const v = pairNet ? pr.netToPar : pr.toPar;
+          {splitByFlight(pairRows, pr => playerFlight((pr.playerIds || [])[0]), (rows) => <LiveBoard items={rows.map((pr, i) => ({ id: pr.pairId, thru: pr.thru, val: pairNet ? pr.netToPar : pr.toPar, leader: i === 0 && pr.thru > 0, pr }))} renderRow={(it, { change, flash, index }) => {
+            const pr = it.pr; const v = it.val;
             return (
-              <div key={pr.pairId} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-                <span style={{ fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
-                <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pr.pairName}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 13, color: index === 0 ? C.gold : C.bunker, fontWeight: index === 0 ? 700 : 400 }}>{index + 1}<LiveChange change={change} /></span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, color: C.ivory, fontWeight: index === 0 && pr.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pr.pairName}</span>
+                  <LiveFlash flash={flash} />
+                </span>
                 <span style={{ fontSize: 11, color: C.bunker }}>{pr.thru === 0 ? '—' : pr.thru}</span>
                 <span style={{ fontWeight: 600, fontSize: 13, textAlign: 'right', color: pr.thru === 0 ? C.bunker : v < 0 ? C.emerald : v > 0 ? C.flagRed : C.bunker }}>{pr.thru === 0 ? '—' : fmtToPar(v)}</span>
               </div>
             );
-          })}
+          }} />)}
           <div style={{ padding: '6px 14px 10px', fontSize: 10.5, color: C.bunker }}>{pairKey === 'scramble' ? 'Scramble' : pairKey === 'shamble' ? 'Shamble' : 'Best ball'} team scores{pairNet ? ', net' : ', gross'}</div>
         </div>
         ) : rcStand ? null : (
@@ -3148,14 +3235,20 @@ function SpectatorScreen({ roundCode, onExit }) {
         {stblRows.length > 0 && (
         <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Stableford points</div>
-          {stblRows.map((p, i) => (
-            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-              <span style={{ fontSize: 13, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</span>
-              <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
-              <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
-              <span style={{ fontWeight: 600, fontSize: 13, textAlign: 'right', color: C.ivory }}>{p.thru === 0 ? '—' : `${p.points} pts`}</span>
-            </div>
-          ))}
+          {splitByFlight(stblRows, p => playerFlight(p.id), (rows) => <LiveBoard items={rows.map((p, i) => ({ id: p.id, thru: p.thru, val: -p.points, noHole: true, leader: i === 0 && p.thru > 0, p }))} renderRow={(it, { change, flash, index }) => {
+            const p = it.p;
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 13, color: index === 0 ? C.gold : C.bunker, fontWeight: index === 0 ? 700 : 400 }}>{index + 1}<LiveChange change={change} /></span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, color: C.ivory, fontWeight: index === 0 && p.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+                  <LiveFlash flash={flash} />
+                </span>
+                <span style={{ fontSize: 11, color: C.bunker }}>{p.thru === 0 ? '—' : p.thru}</span>
+                <span style={{ fontWeight: 600, fontSize: 13, textAlign: 'right', color: C.ivory }}>{p.thru === 0 ? '—' : `${p.points} pts`}</span>
+              </div>
+            );
+          }} />)}
         </div>
         )}
 
@@ -8266,18 +8359,21 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
       {stand.map(({ flight, ranked, rest }) => (
         <div key={flight.id}>
           {(tournament.flights || []).length > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color || C.gold}18` }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color || C.gold }} /><span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color || C.gold }}>{flight.name}</span></div>}
-          {[...ranked.slice(0, 3), ...(ranked.length === 0 ? rest.slice(0, 3).map(r => ({ ...r, place: null })) : [])].map((r, i) => {
-            const rr = r.team.rounds[idx];
+          <LiveBoard items={[...ranked.slice(0, 3), ...(ranked.length === 0 ? rest.slice(0, 3).map(r => ({ ...r, place: null })) : [])].map(r => ({ id: r.team.id, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
+            const r = it.r; const rr = r.team.rounds[idx];
             return (
-              <div key={r.team.id} role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={(e) => { e.stopPropagation(); onOpen && onOpen(r.team.id); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: cols, padding: '6px 14px', alignItems: 'center', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none', cursor: 'pointer' }}>
-                <span style={{ fontSize: 13, color: r.place === 1 ? C.gold : C.bunker, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}</span>
-                <span style={{ fontSize: 13, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+              <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={(e) => { e.stopPropagation(); onOpen && onOpen(r.team.id); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: cols, padding: '6px 14px', alignItems: 'center', cursor: 'pointer' }}>
+                <span style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: r.place === 1 ? C.gold : C.bunker, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, color: C.ivory, fontWeight: r.place === 1 && r.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+                  <LiveFlash flash={flash} />
+                </span>
                 <span style={{ fontSize: 11, color: C.bunker, textAlign: 'center' }}>{r.thru > 0 ? r.thru : '–'}</span>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 13, textAlign: 'right', color: r.thru === 0 ? C.bunker : toParColor(r.netToPar) }}>{r.thru === 0 ? '–' : fmtToPar(r.netToPar)}</span>
                 <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, textAlign: 'right', color: C.ivoryDim }}>{rr && rr.thru > 0 ? fmtToPar(rr.grossToPar) : '–'}</span>
               </div>
             );
-          })}
+          }} />
           {ranked.length > 3 && <div style={{ padding: '5px 14px 8px', fontSize: 10, color: C.bunker }}>+{ranked.length - 3} more in {flight.name}</div>}
         </div>
       ))}
@@ -8529,6 +8625,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
   const head = (label, right) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: C.turfLight, borderTop: `1px solid ${C.turfBorder}` }}><span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: C.gold }}>{label}</span>{right && <span style={{ fontSize: 11, color: C.ivoryDim, textAlign: 'right' }}>{right}</span>}</div>;
   const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? C.goldBright : C.ivoryDim, borderColor: tone === 'warn' ? `${C.gold}66` : C.turfBorder }}>{txt}</div>;
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
+  const liveIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
   // ---------- Gross ----------
   const grossTab = (
     <>
@@ -8541,7 +8638,8 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
           <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, padding: '5px 12px', background: C.pineDark, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: C.bunker }}>
             <span>#</span><span>Team</span><span style={{ textAlign: 'right' }}>{dayName(0).slice(0, 3)}</span><span style={{ textAlign: 'right' }}>{model.hasR2 ? dayName(1).slice(0, 3) : ''}</span><span style={{ textAlign: 'right' }}>Total</span>
           </div>
-          {teams.map(t => {
+          <LiveBoard items={teams.map(t => { const ar = t.rounds[liveIdx]; return { id: t.id, thru: ar ? ar.thru : 0, val: ar ? ar.grossToPar : 0, leader: t.gross.rank === 1 && ar && ar.thru > 0, t }; })} renderRow={(it, { change, flash }) => {
+            const t = it.t;
             const g = t.gross, r2 = t.rounds[1];
             const sunday = !model.hasR2 ? '' : g.r2Done ? (g.capped ? `${g.posted2}*` : String(g.r2)) : (r2 && r2.thru > 0 ? `${r2.thru}h` : '–');
             const total = g.total != null ? String(g.total) : ((g.r1Done || (t.rounds[0] && t.rounds[0].thru > 0)) ? fmtToPar(g.totalToPar) : '–');
@@ -8549,10 +8647,11 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
             if (model.hasR2 && g.cap != null && !g.r2Done) sub = `Can improve by ${g.cap}; ${g.floor} is the lowest ${dayName(1)} score that counts`;
             else if (g.capped) sub = `Improved ${g.improvedBy}; only ${g.cap} counts (${g.r2} shot, ${g.posted2} posted)`;
             return (
-              <div key={t.id} role="button" tabIndex={0} aria-label={`Scorecard for ${t.name}`} onClick={() => onPickTeam && onPickTeam(t.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(t.id); } }} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, alignItems: 'center', padding: '9px 12px', borderTop: `1px solid ${C.turfBorder}`, cursor: 'pointer' }}>
-                <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: g.rank === 1 ? C.gold : C.bunker }}>{g.tied ? 'T' : ''}{g.rank}</span>
+              <div role="button" tabIndex={0} aria-label={`Scorecard for ${t.name}`} onClick={() => onPickTeam && onPickTeam(t.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(t.id); } }} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
+                <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: g.rank === 1 ? C.gold : C.bunker }}>{g.tied ? 'T' : ''}{g.rank}<LiveChange change={change} /></span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                  <LiveFlash flash={flash} />
                   {sub && <div style={{ fontSize: 10.5, color: C.ivoryDim, lineHeight: 1.3 }}>{sub}</div>}
                 </div>
                 <span style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: C.ivory }}>{g.r1Done ? g.r1 : (t.rounds[0] && t.rounds[0].thru > 0 ? `${t.rounds[0].thru}h` : '–')}</span>
@@ -8560,7 +8659,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
                 <span style={{ textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 14, color: C.ivory }}>{total}</span>
               </div>
             );
-          })}
+          }} />
         </div>
       ))}
       <div style={{ fontSize: 11, color: C.bunker }}>{te.improveRule ? `* Posted score is raised to the lowest allowed score. ` : ''}"h" means holes played.</div>
@@ -8580,14 +8679,17 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
       {netStand.map(({ flight, ranked, rest }) => (ranked.length + rest.length === 0 ? null : (
         <div key={flight.id} style={box}>
           {head(flight.id === '_all' ? 'All teams' : flight.name)}
-          {[...ranked, ...rest.map(r => ({ ...r, place: null }))].map(r => (
-            <div key={r.team.id} role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto auto', gap: 8, alignItems: 'center', padding: '9px 12px', borderTop: `1px solid ${C.turfBorder}`, cursor: 'pointer' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : C.bunker }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}</span>
-              <span style={{ fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+          <LiveBoard items={[...ranked, ...rest.map(r => ({ ...r, place: null }))].map(r => ({ id: r.team.id + ':' + netView, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
+            const r = it.r;
+            return (
+            <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto auto', gap: 8, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
+              <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : C.bunker }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
+              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span><LiveFlash flash={flash} /></span>
               <span style={{ fontSize: 11, color: C.bunker }}>{r.thru > 0 ? (r.complete ? 'F' : `thru ${netView === 'total' ? r.thru : r.thru}`) : ''}</span>
               <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, minWidth: 54, textAlign: 'right', color: r.thru === 0 ? C.bunker : r.netToPar < 0 ? C.emerald : r.netToPar > 0 ? C.flagRed : C.ivory }}>{r.thru === 0 ? '–' : (r.complete ? `${r.net} ` : '') + `(${fmtToPar(r.netToPar)})`}</span>
             </div>
-          ))}
+            );
+          }} />
         </div>
       )))}
     </>
