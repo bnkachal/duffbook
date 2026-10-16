@@ -1,5 +1,6 @@
 import { storage, signUpAdmin, signInAdmin, resetAdminPassword, signOutAdmin, onAdminAuthChange, registerTournamentInOwnerIndex, getOwnerTournamentIndex } from './firebase';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import matchbookLanding from './assets/images/matchbook-landing.jpg';
 import matchbookBunker from './assets/images/matchbook-bunker.jpg';
 import matchbookCourse from './assets/images/matchbook-course.jpg';
@@ -3950,7 +3951,7 @@ function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wi
     border: `2.5px solid ${C.gold}`, color: C.pineDark,
     boxShadow: '0 18px 50px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.7)',
   } : { background: P.paper, border: `2.5px solid ${C.gold}`, color: P.ink, boxShadow: '0 18px 50px rgba(0,0,0,0.6)' };
-  return (
+  const node = (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: vh, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', padding: 'max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left))' }}>
       <div ref={scrimRef} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.62)' }} onClick={requestClose} />
       <div ref={padRef} style={{ position: 'relative', width: '100%', maxWidth: wide, ...(fill ? { height: '100%', overflow: 'hidden' } : { maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }), borderRadius: 20, boxSizing: 'border-box', WebkitOverflowScrolling: 'touch', ...paperStyle }}>
@@ -3958,6 +3959,7 @@ function DrawerFrame({ onClose, paper = true, origin = 'badge', fill = false, wi
       </div>
     </div>
   );
+  return (typeof document !== 'undefined' && document.body) ? createPortal(node, document.body) : node;
 }
 
 /* The hole someone is "up to": one past the furthest hole that anyone they are scoring has a score for (0-based).
@@ -4703,7 +4705,7 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose, onEnter
   const recvOn = (h) => strokesOnHole(strokeMap[playerId] || 0, state.strokeIndex || [], h);
   const dcol = (d, thruN) => thruN === 0 ? P.ink3 : d < 0 ? SC_GREEN : d > 0 ? SC_RED : SC_INK;
   const tile = (lbl, val, color) => <div style={{ flex: 1, background: '#FFF', border: '1px solid #D8D0BC', borderRadius: 10, padding: '8px 10px' }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#6B6455' }}>{lbl}</div><div style={{ ...SC_MONO, fontWeight: 700, fontSize: 18, color }}>{val}</div></div>;
-  const lab = (bg, color, text, w = 700) => <div style={{ width: 40, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 8, boxSizing: 'border-box' }}>{text}</div>;
+  const lab = (bg, color, text, w = 700) => <div style={{ width: 46, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.3, display: 'flex', alignItems: 'center', paddingLeft: 6, whiteSpace: 'nowrap', boxSizing: 'border-box' }}>{text}</div>;
   const flex = { flexGrow: 1, flexBasis: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
   return (
     <DrawerFrame origin="tap" onClose={onClose}>{(close) => (
