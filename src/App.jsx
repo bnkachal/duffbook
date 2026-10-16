@@ -658,6 +658,7 @@ function defaultRound(index) {
     customBets: [],
     awards: [],
     awardsPresentationActive: false,
+    roundFinalized: false,
     presence: {},
     flowGroups: [], scoreUpdatedAt: {}, submittedPlayers: [], nineHoleTotals: {},
     started: false,
@@ -2930,6 +2931,14 @@ function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
   );
 }
 
+function FlightBar({ flight }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', margin: '6px -4px 0', background: `${flight.color}18`, borderRadius: 8 }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color, flexShrink: 0 }} />
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color }}>{flight.name}</span>
+    </div>
+  );
+}
 // ---- Live boards: rows slide to their new place when ranks change, the leader is gold, and a row flashes when a score lands ----
 function useFlipList(depKey) {
   const ref = useRef(null);
@@ -3004,7 +3013,8 @@ function SpectatorScreen({ roundCode, onExit }) {
   const [spectatorName, setSpectatorName] = useState(() => { try { return localStorage.getItem('db:spectator-name') || ''; } catch (e) { return ''; } });
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const chatEndRef = useRef(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSeenTs, setChatSeenTs] = useState(() => Date.now());
 
   useEffect(() => {
     const unsubT = storage.subscribe(tournamentKey(roundCode), true, (res) => {
@@ -3019,7 +3029,7 @@ function SpectatorScreen({ roundCode, onExit }) {
     return () => { if (typeof unsubT === 'function') unsubT(); if (typeof unsubC === 'function') unsubC(); };
   }, [roundCode]);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat.length]);
+  useEffect(() => { if (chatOpen) setChatSeenTs(Date.now()); }, [chatOpen, chat.length]);
 
   if (loading) return <div style={{ minHeight: '100vh', background: C.pine, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.ivoryDim, fontFamily: 'Inter, sans-serif' }}>Loading…</div>;
   if (!tournament || !tournament.spectatorsEnabled) {
@@ -3051,6 +3061,8 @@ function SpectatorScreen({ roundCode, onExit }) {
   const pairRaw = pairKey === 'scramble' ? computeScramble(state) : pairKey === 'shamble' ? computeShamble(state) : pairKey === 'bestBall' ? computeBestBall(state) : [];
   const pairNet = pairKey === 'bestBall' && useNet;
   const pairRows = [...pairRaw].sort((a, b) => (pairNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
+  const pairBoth = pairKey === 'bestBall' && !!state.handicapsEnabled;
+  const pairGrid = pairBoth ? '18px 1fr 30px 42px 42px 44px' : '18px 1fr 30px 50px 44px';
   const rcStand = ryderCup ? computeRyderCupStandings(tournament) : null;
   const sideNames = (ids) => (ids || []).map(id => (state.players.find(p => p.id === id) || {}).name).filter(Boolean).map(pgaName).join(' & ') || '?';
   const matchRows = gms.matchplay?.enabled && !teamMode ? computeMatchplay(state).results.map(m => {
@@ -3063,15 +3075,19 @@ function SpectatorScreen({ roundCode, onExit }) {
   }) : [];
   const stblRows = gms.stableford?.enabled && !teamMode ? (() => { const r = computeStableford(state, holeScoreFn(state, gms.stableford.net ?? true)); return state.players.map(p => ({ id: p.id, name: p.name, ...r.totals[p.id] })).sort((x, y) => y.points - x.points); })() : [];
 
-  const sendSpectatorChat = () => {
-    const text = chatText.trim();
-    if (!text) return;
-    if (!spectatorName.trim()) { setNamePromptOpen(true); return; }
-    const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: null, authorName: `${spectatorName} · Spectator`, text, ts: Date.now() };
+  const postSpectatorChat = (text, name) => {
+    const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: null, authorName: `${name} · Spectator`, text, ts: Date.now() };
     const next = [...chat, msg].slice(-150);
     setChat(next);
-    setChatText('');
     (async () => { try { await storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })();
+  };
+  // Returns false when the message was held back (no name yet), so the box keeps the typed text.
+  const sendSpectatorChat = (text) => {
+    const t = (text || '').trim();
+    if (!t) return false;
+    if (!spectatorName.trim()) { setNamePromptOpen(true); return false; }
+    postSpectatorChat(t, spectatorName);
+    return true;
   };
 
   const saveSpectatorName = () => {
@@ -3149,11 +3165,13 @@ function SpectatorScreen({ roundCode, onExit }) {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, WebkitOverflowScrolling: 'touch', overflowY: 'auto', padding: 16 }}>
+        {!(teamMode || pairKey) && (
         <div style={{ textAlign: 'center', marginBottom: 20, padding: '18px 0', background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}` }}>
           <div style={{ fontSize: 11, color: C.bunker, textTransform: 'uppercase', letterSpacing: 1 }}>{heroCaption}</div>
           <div style={{ fontSize: 20, fontWeight: 700, marginTop: 4 }}>{heroLabel}</div>
           {heroValue && <div style={{ fontSize: 32, fontWeight: 700, color: C.gold, marginTop: 2 }}>{heroValue}</div>}
         </div>
+        )}
 
         {rcStand && (
         <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
@@ -3197,21 +3215,37 @@ function SpectatorScreen({ roundCode, onExit }) {
         ) : pairKey && pairRows.length > 0 ? (
         <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
           <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Teams</div>
+          <div style={{ display: 'grid', gridTemplateColumns: pairGrid, gap: 4, padding: '5px 14px', background: C.pineDark, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: C.bunker }}>
+            <span>#</span><span>Team</span><span style={{ textAlign: 'center' }}>Thru</span>
+            {pairBoth ? <><span style={{ textAlign: 'right' }}>Gross</span><span style={{ textAlign: 'right' }}>Net</span><span style={{ textAlign: 'right' }}>Strokes</span></> : <><span style={{ textAlign: 'right' }}>Score</span><span style={{ textAlign: 'right' }}>Strokes</span></>}
+          </div>
           {splitByFlight(pairRows, pr => playerFlight((pr.playerIds || [])[0]), (rows) => <LiveBoard items={rows.map((pr, i) => ({ id: pr.pairId, thru: pr.thru, val: pairNet ? pr.netToPar : pr.toPar, leader: i === 0 && pr.thru > 0, pr }))} renderRow={(it, { change, flash, index }) => {
-            const pr = it.pr; const v = it.val;
+            const pr = it.pr; const started = pr.thru > 0;
+            const tone = (v) => !started ? C.bunker : v < 0 ? C.emerald : v > 0 ? C.flagRed : C.ivory;
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: '22px 1fr 40px 60px', padding: '9px 14px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: pairGrid, gap: 4, padding: '9px 14px', alignItems: 'center' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: 13, color: index === 0 ? C.gold : C.bunker, fontWeight: index === 0 ? 700 : 400 }}>{index + 1}<LiveChange change={change} /></span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13, color: C.ivory, fontWeight: index === 0 && pr.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pr.pairName}</span>
+                  <span style={{ display: 'block', fontSize: 13, lineHeight: 1.25, color: C.ivory, fontWeight: index === 0 && started ? 700 : 400, overflowWrap: 'anywhere' }}>{pr.pairName}</span>
                   <LiveFlash flash={flash} />
                 </span>
-                <span style={{ fontSize: 11, color: C.bunker }}>{pr.thru === 0 ? '—' : pr.thru}</span>
-                <span style={{ fontWeight: 600, fontSize: 13, textAlign: 'right', color: pr.thru === 0 ? C.bunker : v < 0 ? C.emerald : v > 0 ? C.flagRed : C.bunker }}>{pr.thru === 0 ? '—' : fmtToPar(v)}</span>
+                <span style={{ fontSize: 11, color: C.bunker, textAlign: 'center' }}>{started ? pr.thru : '—'}</span>
+                {pairBoth ? (
+                  <>
+                    <span style={{ fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(pr.toPar) }}>{started ? fmtToPar(pr.toPar) : '—'}</span>
+                    <span style={{ fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(pr.netToPar) }}>{started ? fmtToPar(pr.netToPar) : '—'}</span>
+                    <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10.5, textAlign: 'right', color: C.ivoryDim, lineHeight: 1.35 }}>{started ? <>{pr.totalScore}<br />{pr.netTotal}</> : '—'}</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(pr.toPar) }}>{started ? fmtToPar(pr.toPar) : '—'}</span>
+                    <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, textAlign: 'right', color: C.ivoryDim }}>{started ? pr.totalScore : '—'}</span>
+                  </>
+                )}
               </div>
             );
           }} />)}
-          <div style={{ padding: '6px 14px 10px', fontSize: 10.5, color: C.bunker }}>{pairKey === 'scramble' ? 'Scramble' : pairKey === 'shamble' ? 'Shamble' : 'Best ball'} team scores{pairNet ? ', net' : ', gross'}</div>
+          <div style={{ padding: '6px 14px 10px', fontSize: 10.5, color: C.bunker }}>{pairKey === 'scramble' ? 'Scramble' : pairKey === 'shamble' ? 'Shamble' : 'Best ball'} team scores{pairBoth ? '. Strokes show gross over net.' : (pairNet ? ', net' : ', gross')}</div>
         </div>
         ) : rcStand ? null : (
         <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden', marginBottom: 20 }}>
@@ -3256,25 +3290,11 @@ function SpectatorScreen({ roundCode, onExit }) {
           <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 20, textAlign: 'center' }}>Skins are being tracked — check back for results as holes finish.</div>
         )}
 
-        <div style={{ background: C.turf, borderRadius: 16, border: `1px solid ${C.turfBorder}`, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: C.ivoryDim, borderBottom: `1px solid ${C.turfBorder}` }}>Chat</div>
-          <div style={{ maxHeight: 220, overflowY: 'auto', padding: '8px 14px' }}>
-            {chat.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.bunker, padding: '10px 0' }}>No messages yet.</div>
-            ) : chat.map(m => (
-              <div key={m.id} style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: m.authorName?.includes('Spectator') ? C.blueBright : C.gold }}>{m.authorName}</span>
-                <span style={{ fontSize: 13, color: C.ivory, marginLeft: 6 }}>{m.text}</span>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
-          <div style={{ display: 'flex', gap: 8, padding: '10px 14px', borderTop: `1px solid ${C.turfBorder}` }}>
-            <input value={chatText} onChange={e => setChatText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendSpectatorChat(); }} placeholder="Say something…" style={{ flex: 1, background: C.pineDark, border: `1px solid ${C.turfBorder}`, borderRadius: 8, padding: '8px 10px', color: C.ivory, fontSize: 13, outline: 'none' }} />
-            <button onClick={sendSpectatorChat} style={{ background: C.gold, border: 'none', borderRadius: 8, padding: '8px 14px', color: C.pineDark, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>Send</button>
-          </div>
-        </div>
+        <div style={{ height: 80 }} />
       </div>
+
+      <ChatFab onClick={() => setChatOpen(true)} unread={chatOpen ? 0 : chat.filter(m => m.ts > chatSeenTs && m.authorName !== `${spectatorName} · Spectator`).length} bottom={24} />
+      {chatOpen && <ChatModal state={state} chat={chat} whoami={null} hidePicker sendChat={sendSpectatorChat} onClose={() => setChatOpen(false)} isMine={(m) => !!spectatorName && m.authorName === `${spectatorName} · Spectator`} />}
 
       {namePromptOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setNamePromptOpen(false)}>
@@ -4512,7 +4532,7 @@ function roundRange(state, scores, from, to) {
   return { par, yds: hasYds ? yds : null, score: n ? score : null, n, d: score - playedPar };
 }
 const scDelta = (d) => d === 0 ? 'E' : d > 0 ? `+${d}` : `−${Math.abs(d)}`;
-function RoundCardHome({ state, whoami, thru, toPar }) {
+function RoundCardHome({ state, whoami, thru, toPar, onOpen }) {
   const [expanded, setExpanded] = useState(false);
   const [overUnder, setOverUnder] = useState('gross');
   const [bar, setBar] = useState({ sx: 0, tw: 1 });
@@ -4541,7 +4561,7 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
     if (ci >= 0) { let x = 0; for (let k = 0; k <= ci; k++) x += widths[k]; el.scrollLeft = Math.max(0, x - (el.clientWidth - LW) + 8); }
     syncBar();
   }, [thru, numHoles]);
-  const label = (bg, color, node, weight = 700) => <div style={{ position: 'sticky', left: 0, zIndex: 2, width: LW, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: weight, letterSpacing: 0.8, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: 12, boxSizing: 'border-box' }}>{node}</div>;
+  const label = (bg, color, node, weight = 700) => <div style={{ position: 'sticky', left: 0, zIndex: 2, width: LW, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: weight, letterSpacing: 0.8, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: 12, boxSizing: 'border-box', whiteSpace: 'nowrap', overflow: 'hidden' }}>{node}</div>;
   const cell = (k, c, content, extra = {}) => <div key={k} style={{ width: c.type === 'hole' ? 32 : 40, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...extra }}>{content}</div>;
   // The +/- row can show strokes over or under par as shot (gross) or after the strokes you receive (net).
   const canNet = !!state.handicapsEnabled && anyStroke;
@@ -4558,7 +4578,7 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
   });
   const lastRun = runs.length ? (() => { const t = runs[runs.length - 1]; return t; })() : null;
   return (
-    <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
+    <div onClick={(e) => { if (onOpen && !e.target.closest('button')) onOpen(); }} style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 14, overflow: 'hidden', marginBottom: 12, cursor: onOpen ? 'pointer' : 'default' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 6px 14px' }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: C.bunker, whiteSpace: 'nowrap' }}>{canNet ? 'Round' : 'Your round'}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -4596,13 +4616,13 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
             </div>
           )}
           <div style={{ display: 'flex', height: 40, background: SC_CREAM }}>
-            {label(SC_CREAM, SC_INK, 'SCORE', 800)}
+            {label(SC_CREAM, SC_INK, net ? 'NET' : 'SCORE', 800)}
             {cols.map((c, k) => c.type === 'hole'
-              ? cell(k, c, <><ScoreMark score={scores[c.i] ?? null} par={state.pars?.[c.i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, whoami.id, c.i)} /></>, { position: 'relative' })
-              : cell(k, c, <span style={{ ...SC_MONO, fontSize: 13.5, fontWeight: 800, color: SC_INK }}>{roundRange(state, scores, c.from, c.to).score ?? '–'}</span>, { background: '#E8E1CC' }))}
+              ? cell(k, c, <><ScoreMark score={scores[c.i] == null ? null : scores[c.i] - (net ? recv(c.i) : 0)} par={state.pars?.[c.i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, whoami.id, c.i)} /></>, { position: 'relative' })
+              : cell(k, c, <span style={{ ...SC_MONO, fontSize: 13.5, fontWeight: 800, color: SC_INK }}>{(() => { const rr = roundRange(state, scores, c.from, c.to); if (rr.score == null) return '–'; if (!net) return rr.score; let sub = 0; for (let h = c.from; h < c.to; h++) if (scores[h] != null) sub += recv(h); return rr.score - sub; })()}</span>, { background: '#E8E1CC' }))}
           </div>
-          <div style={{ display: 'flex', height: 21, background: C.turf }}>
-            {label(C.turf, C.bunker, net ? 'NET +/−' : '+/−', 700)}
+          <div style={{ display: 'flex', height: 26, background: C.turf }}>
+            {label(C.turf, C.bunker, '+/−', 700)}
             {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10.5, fontWeight: 600, color: runs[k] == null ? 'transparent' : runs[k] < 0 ? C.emerald : runs[k] > 0 ? C.flagRed : C.ivoryDim }}>{runs[k] == null ? '' : scDelta(runs[k])}</span>))}
           </div>
         </div>
@@ -4616,11 +4636,17 @@ function RoundCardHome({ state, whoami, thru, toPar }) {
           {bar.tw < 1 && <span style={{ fontSize: 9.5, color: C.goldBright, fontWeight: 600 }}>Swipe for all {numHoles} ›</span>}
         </div>
       </div>
+      {onOpen && (
+        <button onClick={onOpen} aria-label="Open full scorecard" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'transparent', border: 'none', borderTop: `1px solid ${C.turfBorder}`, padding: '10px 14px', color: C.goldBright, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          <span>Tap for the full scorecard</span><ChevronRight size={15} />
+        </button>
+      )}
     </div>
   );
 }
 /* Opens when a player taps someone on the leaderboard. Read-only; front and back nine stacked so nothing scrolls sideways. */
-function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
+function PlayerCardDrawer({ state, stats, tournament, playerId, onClose, onEnter, enterLabel }) {
+  const [view, setView] = useState('gross');
   const player = state.players.find(p => p.id === playerId);
   const stat = (stats || []).find(s => s.id === playerId);
   if (!player) return null;
@@ -4632,6 +4658,9 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
   const nines = numHoles > 9 ? [[0, 9, 'OUT'], [9, numHoles, 'IN']] : [[0, numHoles, 'TOT']];
   const strokeMap = allocStrokeMap(state);
   const anyStroke = Array.from({ length: numHoles }, (_, h) => strokeDotsFor(state, strokeMap, playerId, h)).some(Boolean);
+  const canNet = !!state.handicapsEnabled && anyStroke;
+  const net = canNet && view === 'net';
+  const recvOn = (h) => strokesOnHole(strokeMap[playerId] || 0, state.strokeIndex || [], h);
   const dcol = (d, thruN) => thruN === 0 ? C.bunker : d < 0 ? SC_GREEN : d > 0 ? SC_RED : SC_INK;
   const tile = (lbl, val, color) => <div style={{ flex: 1, background: '#FFF', border: '1px solid #D8D0BC', borderRadius: 10, padding: '8px 10px' }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#6B6455' }}>{lbl}</div><div style={{ ...SC_MONO, fontWeight: 700, fontSize: 18, color }}>{val}</div></div>;
   const lab = (bg, color, text, w = 700) => <div style={{ width: 46, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.8, display: 'flex', alignItems: 'center', paddingLeft: 8, boxSizing: 'border-box' }}>{text}</div>;
@@ -4654,6 +4683,11 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
           {state.handicapsEnabled && tile('NET', stat && stat.thru > 0 ? fmtToPar(stat.netToPar) : '–', stat ? dcol(stat.netToPar, stat.thru) : C.bunker)}
           {tile('THRU', stat ? stat.thru : 0, SC_INK)}
         </div>
+        {canNet && (
+          <div role="group" aria-label="Show gross or net scores" style={{ display: 'flex', background: '#E8E1CC', borderRadius: 10, padding: 3, marginBottom: 12 }}>
+            {[['gross', 'Gross'], ['net', 'Net']].map(([k, l]) => <button key={k} onClick={() => setView(k)} aria-pressed={view === k} style={{ flex: 1, border: 'none', borderRadius: 8, padding: '7px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: view === k ? C.gold : 'transparent', color: view === k ? C.pineDark : '#6B6455' }}>{l}</button>)}
+          </div>
+        )}
         {nines.map(([from, to, tot]) => {
           const idxs = Array.from({ length: to - from }, (_, k) => from + k);
           const r = roundRange(state, scores, from, to);
@@ -4684,15 +4718,19 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose }) {
                 </div>
               )}
               <div style={{ display: 'flex', height: 42, background: '#FFF', borderTop: '1px solid #CFC7B2' }}>
-                {lab('#FFF', SC_INK, 'SCORE', 800)}
-                {idxs.map(i => <div key={i} style={{ ...flex, position: 'relative' }}><ScoreMark score={scores[i] ?? null} par={state.pars?.[i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, playerId, i)} /></div>)}
-                <div style={{ ...flex, background: '#F1ECDC', ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{r.score ?? '–'}</div>
+                {lab('#FFF', SC_INK, net ? 'NET' : 'SCORE', 800)}
+                {idxs.map(i => <div key={i} style={{ ...flex, position: 'relative' }}><ScoreMark score={scores[i] == null ? null : scores[i] - (net ? recvOn(i) : 0)} par={state.pars?.[i] ?? 4} /><StrokeDots n={strokeDotsFor(state, strokeMap, playerId, i)} /></div>)}
+                <div style={{ ...flex, background: '#F1ECDC', ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{r.score == null ? '–' : (net ? r.score - idxs.reduce((a, i) => a + (scores[i] != null ? recvOn(i) : 0), 0) : r.score)}</div>
               </div>
             </div>
           );
         })}
         <div style={{ padding: '2px 4px 8px' }}><ScoreLegend light strokes={anyStroke} /></div>
-        <div style={{ fontSize: 11, color: '#6B6455', lineHeight: 1.4, padding: '0 4px' }}>Read-only. Tap another player on the leaderboard to see their card.</div>
+        {onEnter ? (
+          <button onClick={onEnter} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: C.gold, color: C.pineDark, border: 'none', borderRadius: 12, padding: '13px 0', fontSize: 14, fontWeight: 800, cursor: 'pointer', marginTop: 4 }}>Go to hole-by-hole entry{enterLabel ? <span style={{ fontWeight: 600, opacity: 0.75 }}>· {enterLabel}</span> : null}</button>
+        ) : (
+          <div style={{ fontSize: 11, color: '#6B6455', lineHeight: 1.4, padding: '0 4px' }}>Read-only. Tap another player on the leaderboard to see their card.</div>
+        )}
       </>
     )}</DrawerFrame>
   );
@@ -5588,6 +5626,7 @@ function GuideCard({ title, steps, onDismiss, cta }) {
 }
 
 function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction, onOpenTeamEvent }) {
+  const [myCardOpen, setMyCardOpen] = useState(false);
   const now = useNow(5000);
   const teCfg = getTeamEvent(tournament || {});
   const [adminGuideSeen, markAdminGuide] = useSeenFlag('guide-admin');
@@ -5636,6 +5675,10 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   // Pair formats (Scramble / Captain's choice) show a pair leaderboard on Home. If no pairs are set up yet there is nothing to rank,
   // so Home falls back to the normal player leaderboard instead of showing no leaderboard at all.
   const isPairFormatHome = state.matchFormat === 'captain-choice' || !!state.games?.scramble?.enabled;
+  const flightsHome = tournament && Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? tournament.flights : null;
+  // Rows are split into one block per flight (each ranked on its own) whenever the tournament has flights.
+  const groupByFlight = (rows, flightIdOf) => !flightsHome ? [{ flight: null, rows }] : [...flightsHome.map(f => ({ flight: f, rows: rows.filter(r => flightIdOf(r) === f.id) })), { flight: { id: '__none', name: 'Everyone else', color: C.bunker }, rows: rows.filter(r => !flightsHome.some(f => f.id === flightIdOf(r))) }].filter(g => g.rows.length > 0);
+  const playerFlightHome = (id) => (state.players.find(p => p.id === id) || {}).flightId;
   const homePairRows = (() => {
     if (!isPairFormatHome) return [];
     let pairs = [];
@@ -5652,6 +5695,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
     pairs.sort((a, b) => a.toPar - b.toPar);
     return pairs;
   })();
+  const bbGrid = state.handicapsEnabled ? '20px 1fr 84px 74px' : '20px 1fr 90px';
+  const hasPairBoardHome = (state.games?.bestBall?.enabled && bbResultsEarly.length > 0) || (state.games?.shamble?.enabled && shambleResultsEarly.length > 0) || (isPairFormatHome && homePairRows.length > 0);
   const multiRound = tournament && tournament.rounds.length > 1;
   const ryderCup = tournament ? computeRyderCupStandings(tournament) : null;
   const tournamentStandings = multiRound ? aggregateStatsAcrossRounds(tournament, tournament.players.map(p => p.id))
@@ -5672,6 +5717,49 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <HeaderBanner src={matchbookBunker} title={state.roundName} sub={tournament ? tournament.name : 'Live round'} height={220} />
+      <div style={{ padding: '0 16px', marginTop: -2 }}>
+        <button onClick={onOpenRules} style={{ background: 'transparent', border: 'none', padding: '6px 0', color: C.goldBright, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'underline', textUnderlineOffset: 4, textAlign: 'left' }}>
+          <FileText size={15} color={C.goldBright} />Tournament Rules<ChevronRight size={14} color={C.goldBright} />
+        </button>
+      </div>
+      {myCardOpen && whoami && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={whoami.id} onClose={() => setMyCardOpen(false)} onEnter={() => { setMyCardOpen(false); onOpenDrawer(); }} enterLabel={`Hole ${groupHole + 1}`} />}
+      <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <IconBadge icon={Flag} color={C.gold} />
+            <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{state.roundName}</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24 }}>Hole {groupHole + 1}</div></div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {whoami && (whoami.handicapIndex != null ? (
+              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
+                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
+                {getCourseHandicap(whoami, state) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {getCourseHandicap(whoami, state)}</div>}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px', border: `1px dashed ${C.turfBorder}` }}>
+                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
+                <div style={{ fontSize: 10, color: C.bunker }}>not set</div>
+              </div>
+            ))}
+            {me && (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>You · {useNet ? 'net' : 'gross'}</div>
+                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24, lineHeight: 1, color: me.thru === 0 ? C.ivoryDim : (useNet ? me.netToPar : me.toPar) < 0 ? C.emerald : (useNet ? me.netToPar : me.toPar) > 0 ? C.flagRed : C.ivoryDim }}>{me.thru === 0 ? '–' : fmtToPar(useNet ? me.netToPar : me.toPar)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+        {meFrontBack && (meFrontBack.frontScored > 0 || meFrontBack.backScored > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 1fr', gap: '2px 10px', paddingTop: 8, borderTop: `1px solid ${C.turfBorder}`, fontSize: 11 }}>
+            <span></span><span style={{ color: C.bunker, fontWeight: 600 }}>Gross</span><span style={{ color: C.bunker, fontWeight: 600 }}>Net</span>
+            <span style={{ color: C.bunker }}>F9</span><span style={{ color: C.ivory }}>{meFrontBack.frontScored > 0 ? meFrontBack.frontGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.frontNet != null ? meFrontBack.frontNet : '—'}</span>
+            <span style={{ color: C.bunker }}>B9</span><span style={{ color: C.ivory }}>{meFrontBack.backScored > 0 ? meFrontBack.backGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.backNet != null ? meFrontBack.backNet : '—'}</span>
+          </div>
+        )}
+        {state.courseEstimated && <div style={{ fontSize: 10.5, color: C.goldBright, fontWeight: 600 }}>Course details are estimated</div>}
+      </div>
+
       {(() => {
         const myScores = whoami ? (state.scores[whoami.id] || {}) : {};
         let thru = 0, toPar = 0;
@@ -5683,11 +5771,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const nextHole = whoami ? (() => { for (let i = 0; i < state.numHoles; i++) { if (myScores[i] == null) return i; } return null; })() : 0;
         return (
           <div style={{ padding: '0 16px', marginTop: 10 }}>
-            <div onClick={onOpenRules} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 10, padding: '10px 14px', marginBottom: 12, cursor: 'pointer' }}>
-              <FileText size={15} color={C.gold} />
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: C.ivoryDim, flex: 1 }}>Tournament Rules</span>
-              <ChevronRight size={14} color={C.bunker} />
-            </div>
+            {whoami && <RoundCardHome state={state} whoami={whoami} thru={thru} toPar={toPar} onOpen={() => setMyCardOpen(true)} />}
             {isAdmin && (() => {
               const g0 = state.games || {};
               const missing = state.handicapsEnabled ? state.players.filter(p => isNaN(parseFloat(p.handicapIndex))) : [];
@@ -5698,7 +5782,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 : `No handicap index for ${missing.map(p => p.name.split(' ')[0]).join(', ')}. Net scores match gross until you add one (Round setup → Players).`;
               return <div role="note" style={{ background: `rgba(${GOLD_RGB},0.10)`, border: `1px solid rgba(${GOLD_RGB},0.35)`, borderRadius: 12, padding: '9px 12px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: C.goldBright }}>{msg}</div>;
             })()}
-            {whoami && <RoundCardHome state={state} whoami={whoami} thru={thru} toPar={toPar} />}
 
             {(() => {
               const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
@@ -5742,6 +5825,128 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </div>
         );
       })()}
+      {!teCfg.enabled && state.games?.bestBall?.enabled && bbResultsEarly.length > 0 && (() => {
+        const bbResults = bbResultsEarly;
+        return (
+          <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
+            <SectionHeader title="Best Ball" sub="pair scores · tap for details" icon={Trophy} iconColor={C.blue} />
+            <div style={{ display: 'grid', gridTemplateColumns: bbGrid, gap: 6, padding: '4px 0 2px', fontSize: 9, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: C.bunker }}>
+              <span>#</span><span>Team</span><span style={{ textAlign: 'right' }}>Gross</span>{state.handicapsEnabled && <span style={{ textAlign: 'right' }}>Net</span>}
+            </div>
+            {groupByFlight(bbResults, pr => playerFlightHome((pr.playerIds || [])[0])).map(g => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>{g.flight && <FlightBar flight={g.flight} />}{g.rows.map((pair, i) => {
+              const started = pair.thru > 0;
+              const isLeader = i === 0 && started;
+              const chg = bestBallPositionChanges[pair.pairId];
+              return (
+                <div key={pair.pairId} className={chg ? 'row-glow' : ''} style={{ display: 'grid', gridTemplateColumns: bbGrid, gap: 6, alignItems: 'center', padding: '10px 6px', margin: '0 -6px', borderRadius: 8, background: isLeader ? C.goldLight : 'transparent', borderTop: i > 0 || g.flight ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 800, color: isLeader ? C.gold : C.bunker }}>{i + 1}{chg === 'up' && <ChevronUp size={11} color={C.emerald} />}{chg === 'down' && <ChevronDown size={11} color={C.flagRed} />}</span>
+                  <div style={{ minWidth: 0 }}>
+                    {pair.players.map(p => <div key={p.id} style={{ fontSize: 13, lineHeight: 1.3, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isLeader ? 700 : 400 }}>{pgaName(p.name)}</div>)}
+                    <div style={{ fontSize: 10, color: C.bunker, marginTop: 3 }}>{started ? `thru ${pair.thru}` : 'not started'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 22, lineHeight: 1, color: started ? C.flagRed : C.bunker }}>{started ? fmtToPar(pair.toPar) : '–'}</div>
+                    {started && <div style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace', marginTop: 4 }}>{pair.totalScore} strokes</div>}
+                  </div>
+                  {state.handicapsEnabled && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 18, lineHeight: 1, color: started ? C.emerald : C.bunker }}>{started ? fmtToPar(pair.netToPar) : '–'}</div>
+                      {started && <div style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace', marginTop: 4 }}>{pair.netTotal} strokes</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}</React.Fragment>))}
+          </button>
+        );
+      })()}
+
+      {state.games?.shamble?.enabled && shambleResultsEarly.length > 0 && (() => {
+        const shResults = shambleResultsEarly;
+        return (
+          <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
+            <SectionHeader title="Shamble" sub={`lowest total wins · ${state.games.shamble.net ? 'net' : 'gross'}`} icon={Trophy} iconColor={C.blue} />
+            {groupByFlight(shResults, pr => playerFlightHome((pr.playerIds || (pr.players || []).map(p => p.id) || [])[0])).map(g => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>{g.flight && <FlightBar flight={g.flight} />}{g.rows.map((pair, i) => {
+              const half = Math.ceil(pair.players.length / 2);
+              const leftPlayers = pair.players.slice(0, half);
+              const rightPlayers = pair.players.slice(half);
+              const isLeader = i === 0 && pair.thru > 0;
+              const nameRow = (player, align) => (
+                <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 0 }}>
+                  {align === 'left' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
+                  <span style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name.split(' ')[0]}</span>
+                  {align === 'right' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
+                </div>
+              );
+              return (
+                <div key={pair.pairId} className={shamblePositionChanges[pair.pairId] ? 'row-glow' : ''} style={{ padding: '10px 6px', margin: '0 -6px', borderRadius: 8, background: isLeader ? C.goldLight : 'transparent', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isLeader && <Trophy size={11} color={C.gold} style={{ flexShrink: 0 }} />}
+                      {pair.pairName}
+                      {shamblePositionChanges[pair.pairId] === 'up' && <ChevronUp size={12} color={C.emerald} style={{ flexShrink: 0 }} />}
+                      {shamblePositionChanges[pair.pairId] === 'down' && <ChevronDown size={12} color={C.flagRed} style={{ flexShrink: 0 }} />}
+                    </span>
+                    <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftPlayers.map(p => nameRow(p, 'left'))}</div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: C.gold, lineHeight: 1 }}>{pair.thru === 0 ? '—' : pair.totalScore}</div>
+                      {pair.thru > 0 && <div style={{ fontSize: 9, color: C.bunker, marginTop: 1 }}>{fmtToPar(pair.toPar)}</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightPlayers.map(p => nameRow(p, 'right'))}</div>
+                  </div>
+                </div>
+              );
+            })}</React.Fragment>))}
+          </button>
+        );
+      })()}
+      {(() => {
+        const pairs = homePairRows;
+        if (pairs.length === 0) return null;
+        return (
+          <div style={{ ...cardBtn, background: C.turf }}>
+            <SectionHeader title="Leaderboard" sub="pair scores · tap for full board" icon={Trophy} iconColor={C.gold} />
+            {groupByFlight(pairs, pr => playerFlightHome((pr.players[0] || {}).id)).map(g => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>{g.flight && <FlightBar flight={g.flight} />}{g.rows.map((pr, i) => (
+              <div key={pr.id} onClick={() => setActiveTab('leaderboard')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 6px', margin: '0 -6px', borderRadius: 8, background: i === 0 && pr.thru > 0 ? C.goldLight : 'transparent', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none', cursor: 'pointer' }}>
+                <span style={{ fontSize: 12, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400, width: 16 }}>{i + 1}</span>
+                <div style={{ display: 'flex', gap: 3 }}>{pr.players.slice(0, 2).map(p => <Chip key={p.id} color={pc(p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>)}</div>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ivory, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pr.name}</span>
+                <span style={{ fontSize: 11, color: C.bunker }}>Thru {pr.thru}</span>
+                <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, color: pr.thru === 0 ? C.bunker : pr.toPar < 0 ? C.emerald : pr.toPar > 0 ? C.flagRed : C.bunker }}>{pr.thru === 0 ? '–' : fmtToPar(pr.toPar)}</span>
+              </div>
+            ))}</React.Fragment>))}
+          </div>
+        );
+      })()}
+
+      {teCfg.enabled && tournament && <TeamLeaderboardCard tournament={tournament} onOpen={onOpenTeamEvent} />}
+      {!teCfg.enabled && !hasPairBoardHome && (
+        Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? (
+          <FlightedLeaderboard
+            leaderboard={leaderboard}
+            flights={tournament.flights}
+            useNet={useNet}
+            fmtToPar={fmtToPar}
+            onTap={() => setActiveTab('leaderboard')}
+            presence={state.presence}
+            now={now}
+          />
+        ) : (
+          <ScrollingLeaderboard
+            leaderboard={leaderboard}
+            stats={stats}
+            useNet={useNet}
+            fmtToPar={fmtToPar}
+            onTap={() => setActiveTab('leaderboard')}
+            presence={state.presence}
+            now={now}
+          />
+        )
+      )}
+
       {(() => {
         const liveCount = Object.values(state.presence || {}).filter(ts => now - ts < 100000).length;
         const lastUpdateTs = Math.max(0, ...Object.values(state.scoreUpdatedAt || {}));
@@ -5783,43 +5988,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           <ChevronRight size={16} color={C.goldBright} style={{ flexShrink: 0 }} />
         </button>
       )}
-
-      <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <IconBadge icon={Flag} color={C.gold} />
-            <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{state.roundName}</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24 }}>Hole {groupHole + 1}</div></div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {whoami && (whoami.handicapIndex != null ? (
-              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
-                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
-                {getCourseHandicap(whoami, state) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {getCourseHandicap(whoami, state)}</div>}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px', border: `1px dashed ${C.turfBorder}` }}>
-                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
-                <div style={{ fontSize: 10, color: C.bunker }}>not set</div>
-              </div>
-            ))}
-            {me && (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>You · {useNet ? 'net' : 'gross'}</div>
-                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24, lineHeight: 1, color: me.thru === 0 ? C.ivoryDim : (useNet ? me.netToPar : me.toPar) < 0 ? C.emerald : (useNet ? me.netToPar : me.toPar) > 0 ? C.flagRed : C.ivoryDim }}>{me.thru === 0 ? '–' : fmtToPar(useNet ? me.netToPar : me.toPar)}</div>
-              </div>
-            )}
-          </div>
-        </div>
-        {meFrontBack && (meFrontBack.frontScored > 0 || meFrontBack.backScored > 0) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 1fr', gap: '2px 10px', paddingTop: 8, borderTop: `1px solid ${C.turfBorder}`, fontSize: 11 }}>
-            <span></span><span style={{ color: C.bunker, fontWeight: 600 }}>Gross</span><span style={{ color: C.bunker, fontWeight: 600 }}>Net</span>
-            <span style={{ color: C.bunker }}>F9</span><span style={{ color: C.ivory }}>{meFrontBack.frontScored > 0 ? meFrontBack.frontGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.frontNet != null ? meFrontBack.frontNet : '—'}</span>
-            <span style={{ color: C.bunker }}>B9</span><span style={{ color: C.ivory }}>{meFrontBack.backScored > 0 ? meFrontBack.backGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.backNet != null ? meFrontBack.backNet : '—'}</span>
-          </div>
-        )}
-        {state.courseEstimated && <div style={{ fontSize: 10.5, color: C.goldBright, fontWeight: 600 }}>Course details are estimated</div>}
-      </div>
 
       {layoutPrefs.yourMatch !== false && (ryderCup || state.games?.matchplay?.enabled) && (() => {
         const matches = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
@@ -6029,95 +6197,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </div>
       )}
 
-      {!teCfg.enabled && state.games?.bestBall?.enabled && bbResultsEarly.length > 0 && (() => {
-        const bbResults = bbResultsEarly;
-        return (
-          <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
-            <SectionHeader title="Best Ball" sub="pair scores · tap for details" icon={Trophy} iconColor={C.blue} />
-            {bbResults.map((pair, i) => {
-              const diffStr = pair.thru === 0 ? '–' : fmtToPar(pair.toPar);
-              const diffColor = pair.toPar < 0 ? C.emerald : pair.toPar > 0 ? C.flagRed : C.bunker;
-              const half = Math.ceil(pair.playerStats.length / 2);
-              const leftStats = pair.playerStats.slice(0, half);
-              const rightStats = pair.playerStats.slice(half);
-              const nameRow = (ps, align) => {
-                const player = pair.players.find(p => p.id === ps.id);
-                const shortName = ps.name.split(' ').length > 1 ? `${ps.name.split(' ')[0]} ${ps.name.split(' ').slice(-1)[0][0]}` : ps.name;
-                return (
-                  <div key={ps.id} style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 0 }}>
-                    {align === 'left' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(ps.name)}</Chip>}
-                    <span style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortName}</span>
-                    <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: ps.thru === 0 ? C.bunker : ps.toPar < 0 ? C.emerald : ps.toPar > 0 ? C.flagRed : C.bunker, flexShrink: 0 }}>{ps.thru === 0 ? '—' : fmtToPar(ps.toPar)}</span>
-                    {align === 'right' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(ps.name)}</Chip>}
-                  </div>
-                );
-              };
-              const isLeader = i === 0 && pair.thru > 0;
-              return (
-                <div key={pair.pairId} className={bestBallPositionChanges[pair.pairId] ? 'row-glow' : ''} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {isLeader && <Trophy size={11} color={C.gold} style={{ flexShrink: 0 }} />}
-                      {pair.pairName}
-                      {bestBallPositionChanges[pair.pairId] === 'up' && <ChevronUp size={12} color={C.emerald} style={{ flexShrink: 0 }} />}
-                      {bestBallPositionChanges[pair.pairId] === 'down' && <ChevronDown size={12} color={C.flagRed} style={{ flexShrink: 0 }} />}
-                    </span>
-                    <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftStats.map(ps => nameRow(ps, 'left'))}</div>
-                    <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 22, color: diffColor, lineHeight: 1, textAlign: 'center' }}>{diffStr}</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightStats.map(ps => nameRow(ps, 'right'))}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </button>
-        );
-      })()}
-
-      {state.games?.shamble?.enabled && shambleResultsEarly.length > 0 && (() => {
-        const shResults = shambleResultsEarly;
-        return (
-          <button onClick={() => setActiveTab('leaderboard')} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch' }}>
-            <SectionHeader title="Shamble" sub={`lowest total wins · ${state.games.shamble.net ? 'net' : 'gross'}`} icon={Trophy} iconColor={C.blue} />
-            {shResults.map((pair, i) => {
-              const half = Math.ceil(pair.players.length / 2);
-              const leftPlayers = pair.players.slice(0, half);
-              const rightPlayers = pair.players.slice(half);
-              const isLeader = i === 0 && pair.thru > 0;
-              const nameRow = (player, align) => (
-                <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: align === 'right' ? 'flex-end' : 'flex-start', minWidth: 0 }}>
-                  {align === 'left' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
-                  <span style={{ fontSize: 12, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name.split(' ')[0]}</span>
-                  {align === 'right' && <Chip color={pc(player)} style={{ width: 16, height: 16, fontSize: 6, flexShrink: 0 }}>{initials(player.name)}</Chip>}
-                </div>
-              );
-              return (
-                <div key={pair.pairId} className={shamblePositionChanges[pair.pairId] ? 'row-glow' : ''} style={{ padding: '10px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.ivoryDim, marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {isLeader && <Trophy size={11} color={C.gold} style={{ flexShrink: 0 }} />}
-                      {pair.pairName}
-                      {shamblePositionChanges[pair.pairId] === 'up' && <ChevronUp size={12} color={C.emerald} style={{ flexShrink: 0 }} />}
-                      {shamblePositionChanges[pair.pairId] === 'down' && <ChevronDown size={12} color={C.flagRed} style={{ flexShrink: 0 }} />}
-                    </span>
-                    <span style={{ color: C.bunker, flexShrink: 0, marginLeft: 8 }}>Thru {pair.thru}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{leftPlayers.map(p => nameRow(p, 'left'))}</div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 20, color: C.gold, lineHeight: 1 }}>{pair.thru === 0 ? '—' : pair.totalScore}</div>
-                      {pair.thru > 0 && <div style={{ fontSize: 9, color: C.bunker, marginTop: 1 }}>{fmtToPar(pair.toPar)}</div>}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>{rightPlayers.map(p => nameRow(p, 'right'))}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </button>
-        );
-      })()}
       {isAdmin && (() => {
         const totalPlayers = state.players.length;
         const donePlayers = stats.filter(s => s.thru >= state.numHoles).length;
@@ -6140,25 +6219,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 
       {layoutPrefs.kos !== false && <KoSBracketCard tournament={tournament} onOpen={onOpenKoS} />}
 
-      {(() => {
-        const pairs = homePairRows;
-        if (pairs.length === 0) return null;
-        return (
-          <div style={{ ...cardBtn, background: C.turf }}>
-            <SectionHeader title="Leaderboard" sub="pair scores · tap for full board" icon={Trophy} iconColor={C.gold} />
-            {pairs.map((pr, i) => (
-              <div key={pr.id} onClick={() => setActiveTab('leaderboard')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: i > 0 ? `1px solid ${C.turfBorder}` : 'none', cursor: 'pointer' }}>
-                <span style={{ fontSize: 12, color: i === 0 ? C.gold : C.bunker, fontWeight: i === 0 ? 700 : 400, width: 16 }}>{i + 1}</span>
-                <div style={{ display: 'flex', gap: 3 }}>{pr.players.slice(0, 2).map(p => <Chip key={p.id} color={pc(p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(p.name)}</Chip>)}</div>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.ivory, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pr.name}</span>
-                <span style={{ fontSize: 11, color: C.bunker }}>Thru {pr.thru}</span>
-                <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, color: pr.thru === 0 ? C.bunker : pr.toPar < 0 ? C.emerald : pr.toPar > 0 ? C.flagRed : C.bunker }}>{pr.thru === 0 ? '–' : fmtToPar(pr.toPar)}</span>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
       {tournament.bettingEnabled !== false && tournament.auction?.saved && Array.isArray(tournament.auction.teams) && tournament.auction.teams.length > 0 && (() => {
         const au = tournament.auction;
         const pots = auctionPots(au, tournament);
@@ -6176,31 +6236,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </button>
         );
       })()}
-
-      {teCfg.enabled && tournament && <TeamLeaderboardCard tournament={tournament} onOpen={onOpenTeamEvent} />}
-      {!teCfg.enabled && !(isPairFormatHome && homePairRows.length > 0) && (
-        Array.isArray(tournament.flights) && tournament.flights.length >= 2 ? (
-          <FlightedLeaderboard
-            leaderboard={leaderboard}
-            flights={tournament.flights}
-            useNet={useNet}
-            fmtToPar={fmtToPar}
-            onTap={() => setActiveTab('leaderboard')}
-            presence={state.presence}
-            now={now}
-          />
-        ) : (
-          <ScrollingLeaderboard
-            leaderboard={leaderboard}
-            stats={stats}
-            useNet={useNet}
-            fmtToPar={fmtToPar}
-            onTap={() => setActiveTab('leaderboard')}
-            presence={state.presence}
-            now={now}
-          />
-        )
-      )}
 
       {layoutPrefs.standings !== false && !ryderCup && !teCfg.enabled && multiRound && tournamentStandings.length > 0 && (
         <div style={{ ...cardBtn, cursor: 'default', background: `${C.blueBright}14`, border: `1px solid ${C.blueBright}44` }}>
@@ -6248,17 +6283,17 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 }
 
 /* ============================== CHAT ============================== */
-function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded }) {
+function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded, isMine, hidePicker }) {
   const [text, setText] = useState('');
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [chat.length]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : 'calc(100vh - 230px)' }}>
-      {!whoami && <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />}
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+      {!whoami && !hidePicker && <IdentityPicker state={state} onPick={onPick} onAddSelf={onAddSelf} />}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
         {chat.length === 0 && <div style={{ color: C.ivoryDim, fontSize: 13, textAlign: 'center', marginTop: 30 }}>No messages yet — say something to the group.</div>}
-        {chat.map(m => { const mine = whoami && m.authorId === whoami.id; return (
-          <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '70%' }}>
+        {chat.map(m => { const mine = isMine ? isMine(m) : (whoami && m.authorId === whoami.id); return (
+          <div key={m.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '82%', minWidth: 0 }}>
             {!mine && <div style={{ fontSize: 10, color: C.ivoryDim, marginBottom: 2, marginLeft: 4 }}>{m.authorName}</div>}
             <div style={{ background: mine ? C.gold : C.turf, color: mine ? C.pineDark : C.ivory, border: mine ? 'none' : `1px solid ${C.turfBorder}`, borderRadius: 14, padding: '8px 12px', fontSize: 14, wordBreak: 'break-word' }}>{m.text}</div>
             <div style={{ fontSize: 9, color: C.bunker, marginTop: 2, textAlign: mine ? 'right' : 'left', marginLeft: mine ? 0 : 4, marginRight: mine ? 4 : 0, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtClockTime(m.ts)}</div>
@@ -6267,8 +6302,8 @@ function ChatTab({ state, chat, whoami, onPick, onAddSelf, sendChat, embedded })
         <div ref={endRef} />
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && text.trim()) { sendChat(text.trim()); setText(''); } }} placeholder="Message the group…" style={{ ...inputStyle, flex: 1 }} />
-        <button onClick={() => { if (text.trim()) { sendChat(text.trim()); setText(''); } }} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer' }}><Send size={18} /></button>
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && text.trim()) { if (sendChat(text.trim()) !== false) setText(''); } }} placeholder="Message the group…" style={{ ...inputStyle, flex: 1 }} />
+        <button aria-label="Send message" onClick={() => { if (text.trim()) { if (sendChat(text.trim()) !== false) setText(''); } }} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.pineDark, cursor: 'pointer' }}><Send size={18} /></button>
       </div>
     </div>
   );
@@ -6316,25 +6351,48 @@ function ChatToasts({ chat, players }) {
   );
 }
 
-function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose }) {
+function ChatModal({ state, chat, whoami, onPick, onAddSelf, sendChat, onClose, isMine, hidePicker }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.78)', zIndex: 45 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        position: 'fixed', top: '50%', left: 0, transform: 'translateY(-50%)',
+      <div role="dialog" aria-label="Group chat" onClick={e => e.stopPropagation()} style={{
+        position: 'fixed', top: 0, bottom: 0, left: 0,
         background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderLeft: 'none',
-        borderRadius: '0 50% 50% 0', width: 'min(88vw, 400px)', height: '82vh', maxHeight: 640,
-        display: 'flex', flexDirection: 'column', padding: '20px 64px 16px 16px', boxSizing: 'border-box',
+        borderRadius: '0 20px 20px 0', width: 'min(92vw, 420px)', height: '100dvh',
+        display: 'flex', flexDirection: 'column', boxSizing: 'border-box',
+        padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 14px) 16px',
         boxShadow: '8px 0 30px rgba(0,0,0,0.4)',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexShrink: 0 }}>
           <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 18, textTransform: 'uppercase', letterSpacing: 0.4 }}>Group chat</div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer' }}><X size={20} /></button>
+          <button onClick={onClose} aria-label="Close chat" style={{ background: 'transparent', border: 'none', color: C.ivory, cursor: 'pointer', padding: 6 }}><X size={20} /></button>
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ChatTab state={state} chat={chat} whoami={whoami} onPick={onPick} onAddSelf={onAddSelf} sendChat={sendChat} embedded />
+          <ChatTab state={state} chat={chat} whoami={whoami} onPick={onPick} onAddSelf={onAddSelf} sendChat={sendChat} embedded isMine={isMine} hidePicker={hidePicker} />
         </div>
       </div>
     </div>
+  );
+}
+
+// The round chat button that opens the chat drawer. Shared by players and spectators.
+function ChatFab({ onClick, unread, bottom = 90 }) {
+  return (
+    <button onClick={onClick} aria-label="Group chat" style={{
+      position: 'fixed', bottom: `calc(env(safe-area-inset-bottom, 0px) + ${bottom}px)`, left: 16, width: 50, height: 50, borderRadius: '50%',
+      background: C.turf, border: `2px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: '0 4px 14px rgba(0,0,0,0.35)', cursor: 'pointer', zIndex: 30,
+    }}>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4.5 4v-4H5a2 2 0 0 1-2-2V6z" fill={C.gold} stroke={C.goldBright} strokeWidth="1" />
+        <circle cx="8.2" cy="9" r="0.9" fill={C.pineDark} /><circle cx="12" cy="7.6" r="0.9" fill={C.pineDark} /><circle cx="15.8" cy="9" r="0.9" fill={C.pineDark} />
+        <circle cx="9.6" cy="12" r="0.9" fill={C.pineDark} /><circle cx="14.4" cy="12" r="0.9" fill={C.pineDark} /><circle cx="12" cy="14.5" r="0.9" fill={C.pineDark} />
+      </svg>
+      {unread > 0 && (
+        <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 19, height: 19, borderRadius: 999, background: C.flagRed, color: '#fff', border: `2px solid ${C.pine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, padding: '0 4px', boxSizing: 'border-box' }}>
+          {Math.min(unread, 99)}{unread > 99 ? '+' : ''}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -8626,6 +8684,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
   const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? C.goldBright : C.ivoryDim, borderColor: tone === 'warn' ? `${C.gold}66` : C.turfBorder }}>{txt}</div>;
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
   const liveIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+  const NET_GRID = '24px 1fr 30px 42px 42px 44px';
   // ---------- Gross ----------
   const grossTab = (
     <>
@@ -8675,18 +8734,27 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
         {model.rounds.slice(0, 2).map((r, i) => viewBtn(i, r.name || `Round ${i + 1}`))}
         {model.rounds.length > 1 && viewBtn('total', '2-day')}
       </div>
-      {note(`Best ball net, each player at ${te.netPct}% of course handicap. Net ties are split.`)}
+      {note(`Best ball net, each player at ${te.netPct}% of course handicap. Net ties are split. Strokes show gross over net.`)}
       {netStand.map(({ flight, ranked, rest }) => (ranked.length + rest.length === 0 ? null : (
         <div key={flight.id} style={box}>
           {head(flight.id === '_all' ? 'All teams' : flight.name)}
+          <div style={{ display: 'grid', gridTemplateColumns: NET_GRID, gap: 4, padding: '5px 12px', background: C.pineDark, fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: C.bunker }}>
+            <span>#</span><span>Team</span><span style={{ textAlign: 'center' }}>Thru</span><span style={{ textAlign: 'right' }}>Gross</span><span style={{ textAlign: 'right' }}>Net</span><span style={{ textAlign: 'right' }}>Strokes</span>
+          </div>
           <LiveBoard items={[...ranked, ...rest.map(r => ({ ...r, place: null }))].map(r => ({ id: r.team.id + ':' + netView, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
             const r = it.r;
+            const rds = (netView === 'total' ? r.team.rounds : [r.team.rounds[netView]]).filter(rd => rd && rd.thru > 0);
+            const gTop = rds.reduce((a, rd) => a + rd.grossToPar, 0), gStr = rds.reduce((a, rd) => a + rd.gross, 0), nStr = rds.reduce((a, rd) => a + rd.net, 0);
+            const started = r.thru > 0;
+            const tone = (v) => !started ? C.bunker : v < 0 ? C.emerald : v > 0 ? C.flagRed : C.ivory;
             return (
-            <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto auto', gap: 8, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
+            <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: NET_GRID, gap: 4, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : C.bunker }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
-              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, color: C.ivory, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span><LiveFlash flash={flash} /></span>
-              <span style={{ fontSize: 11, color: C.bunker }}>{r.thru > 0 ? (r.complete ? 'F' : `thru ${netView === 'total' ? r.thru : r.thru}`) : ''}</span>
-              <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 16, minWidth: 54, textAlign: 'right', color: r.thru === 0 ? C.bunker : r.netToPar < 0 ? C.emerald : r.netToPar > 0 ? C.flagRed : C.ivory }}>{r.thru === 0 ? '–' : (r.complete ? `${r.net} ` : '') + `(${fmtToPar(r.netToPar)})`}</span>
+              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, lineHeight: 1.25, color: C.ivory, overflowWrap: 'anywhere' }}>{r.team.name}</span><LiveFlash flash={flash} /></span>
+              <span style={{ fontSize: 11, color: C.bunker, textAlign: 'center' }}>{started ? (r.complete ? 'F' : r.thru) : '–'}</span>
+              <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(gTop) }}>{started ? fmtToPar(gTop) : '–'}</span>
+              <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(r.netToPar) }}>{started ? fmtToPar(r.netToPar) : '–'}</span>
+              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10.5, textAlign: 'right', color: C.ivoryDim, lineHeight: 1.35 }}>{started ? <>{gStr}<br />{nStr}</> : '–'}</span>
             </div>
             );
           }} />
@@ -9372,17 +9440,15 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
   );
 }
 
-function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards, isAdmin }) {
+function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpenAwards, hasAwards, isAdmin, tournament, finalized, scoresIn, pendingCount, onFinalize, onPlayAwards }) {
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
-  const final = [...stats].sort((a, b) => (useNet ? a.netToPar - b.netToPar : a.toPar - b.toPar));
-  const champion = final[0];
+  const bettingOn = !tournament || tournament.bettingEnabled !== false;
+  const flights = tournament && Array.isArray(tournament.flights) ? tournament.flights.filter(f => f && f.id) : [];
   const ranked = [...state.players].sort((a, b) => (ledger[b.id]?.netPosition || 0) - (ledger[a.id]?.netPosition || 0));
   const bigWinner = ranked[0], bigLoser = ranked[ranked.length - 1];
   const totalSettled = state.players.reduce((sum, p) => sum + Math.abs(ledger[p.id]?.netPosition || 0), 0) / 2;
-  // Front/back split, computed locally to this screen rather than in the
-  // shared computeStats() — keeps this addition contained to exactly where
-  // it's needed instead of changing a function used all over the app.
+  // Front/back split, computed locally to this screen rather than in the shared computeStats().
   const nineTotal = (p, from, to) => {
     let strokes = 0, par = 0, thru = 0, netStrokes = 0;
     const ch = getCourseHandicap(p, state);
@@ -9396,6 +9462,46 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
     if (thru === 0) return null;
     return useNet ? (netStrokes - par) : (strokes - par);
   };
+  // Final standings follow the game being played: teams for a team event or a pair game, otherwise players.
+  // Every row carries gross and net so both can be shown. When the tournament has flights, rows are grouped by flight and ranked within each.
+  const showNet = !!state.handicapsEnabled && !isHandicapFreeFormat;
+  const te = tournament ? getTeamEvent(tournament) : null;
+  const teamMode = !!(te && te.enabled && te.teams.some(t => (t.playerIds || []).length > 0));
+  const gms = state.games || {};
+  const pairKey = !teamMode ? (gms.scramble?.enabled ? 'scramble' : gms.shamble?.enabled ? 'shamble' : gms.bestBall?.enabled ? 'bestBall' : null) : null;
+  const flightOfPlayer = (id) => (state.players.find(p => p.id === id) || {}).flightId;
+  const byFlight = (rows) => {
+    if (flights.length < 2) return [{ flight: null, rows }];
+    const groups = flights.map(f => ({ flight: f, rows: rows.filter(r => r.flightId === f.id) }));
+    const other = rows.filter(r => !flights.some(f => f.id === r.flightId));
+    if (other.length) groups.push({ flight: { id: '__none', name: 'Everyone else', color: C.bunker }, rows: other });
+    return groups.filter(g => g.rows.length > 0);
+  };
+  const rankRows = (rows, key) => { const sorted = [...rows].sort((a, b) => a[key] - b[key]); return sorted.map((r, i) => ({ ...r, place: i + 1, tied: sorted.some((o, j) => j !== i && o[key] === r[key] && r.thru > 0) })); };
+  const rankKey = showNet && useNet ? 'netToPar' : 'toPar';
+  let kind = 'player', sections = [];
+  if (teamMode) {
+    kind = 'team';
+    const model = teamEventModel(tournament);
+    const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+    sections = teamEventNetStandings(model, tournament, idx).map(({ flight, ranked: rk, rest }) => ({
+      flight: flight.id === '_all' ? null : flight,
+      rows: [...rk, ...rest.map(r => ({ ...r, place: null }))].map(r => { const rd = r.team.rounds[idx] || {}; return { id: r.team.id, name: r.team.name, thru: r.thru, toPar: rd.thru > 0 ? rd.grossToPar : 0, netToPar: r.netToPar, grossStr: rd.gross, netStr: rd.net, place: r.place, tied: r.tied, sub: null }; }),
+    })).filter(g => g.rows.length > 0);
+  } else if (pairKey) {
+    kind = 'team';
+    const raw = pairKey === 'scramble' ? computeScramble(state) : pairKey === 'shamble' ? computeShamble(state) : computeBestBall(state);
+    const rows = raw.map(pr => ({ id: pr.pairId, name: pr.pairName, thru: pr.thru, toPar: pr.toPar, netToPar: pr.netToPar != null ? pr.netToPar : pr.toPar, grossStr: pr.totalScore, netStr: pr.netTotal, flightId: flightOfPlayer((pr.playerIds || [])[0]), sub: null }));
+    sections = byFlight(rows).map(g => ({ flight: g.flight, rows: rankRows(g.rows, pairKey === 'bestBall' ? rankKey : 'toPar') }));
+  } else {
+    const rows = stats.map(p => ({ id: p.id, name: pgaName(p.name), player: p, thru: p.thru, toPar: p.toPar, netToPar: p.netToPar, grossStr: p.strokes, netStr: p.strokes + (p.netToPar - p.toPar), flightId: p.flightId, sub: `F ${nineTotal(p, 0, 9) != null ? fmtToPar(nineTotal(p, 0, 9)) : '—'} · B ${nineTotal(p, 9, state.numHoles) != null ? fmtToPar(nineTotal(p, 9, state.numHoles)) : '—'}` }));
+    sections = byFlight(rows).map(g => ({ flight: g.flight, rows: rankRows(g.rows, rankKey) }));
+  }
+  const showNetCol = showNet && (kind !== 'team' || pairKey !== 'scramble') && !(pairKey === 'shamble');
+  const bestRow = (() => { let best = null; sections.forEach(sec => { const r = sec.rows.find(x => x.thru > 0); if (r && (!best || r[rankKey] < best[rankKey])) best = r; }); return best; })();
+  const tone = (v, thru) => thru === 0 ? C.bunker : v < 0 ? C.emerald : v > 0 ? C.flagRed : C.ivory;
+  const grid = showNetCol ? '20px 1fr 46px 46px' : '20px 1fr 52px';
+  const canPlayAwards = isLastRound && hasAwards && finalized && scoresIn;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,9,17,0.85)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.pine, color: C.ivory, border: `1px solid ${C.turfBorder}`, borderRadius: 20, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', padding: 22, textAlign: 'center' }}>
@@ -9403,46 +9509,74 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
         <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 26, textTransform: 'uppercase', marginBottom: 4 }}>{isLastRound ? 'Tournament complete' : 'Round complete'}</div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 18 }}>{state.roundName}</div>
 
-        {champion && (
+        {bestRow && (
           <div style={{ ...rowCard, justifyContent: 'center', gap: 12, marginBottom: 14, background: C.turfLight, border: `1px solid ${C.gold}` }}>
-            <Chip color={pc(champion)}>{initials(champion.name)}</Chip>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>Champion</div>
-              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 16 }}>{pgaName(champion.name)} · {fmtToPar(useNet ? champion.netToPar : champion.toPar)}</div>
+            {bestRow.player ? <Chip color={pc(bestRow.player)}>{initials(bestRow.player.name)}</Chip> : <Trophy size={26} color={C.goldBright} />}
+            <div style={{ textAlign: 'left', minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{kind === 'team' ? 'Top team' : 'Champion'}</div>
+              <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{bestRow.name}</div>
+              <div style={{ fontSize: 12, color: C.ivoryDim, marginTop: 2 }}>Gross {fmtToPar(bestRow.toPar)}{showNetCol ? ` · Net ${fmtToPar(bestRow.netToPar)}` : ''}</div>
             </div>
           </div>
         )}
 
         <div style={{ textAlign: 'left', marginBottom: 14 }}>
-          <SectionHeader title="Final standings" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {final.map((p, i) => {
-              const front = nineTotal(p, 0, 9);
-              const back = nineTotal(p, 9, state.numHoles);
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '4px 0' }}>
-                  <span style={{ width: 16, color: C.ivoryDim }}>{i + 1}</span>
-                  <Chip color={pc(p)}>{initials(p.name)}</Chip>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</div>
-                    <div style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace' }}>F {front != null ? fmtToPar(front) : '—'} · B {back != null ? fmtToPar(back) : '—'}</div>
-                  </div>
-                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, color: (useNet ? p.netToPar : p.toPar) < 0 ? C.flagRed : C.ivory }}>{fmtToPar(useNet ? p.netToPar : p.toPar)}</span>
-                </div>
-              );
-            })}
+          <SectionHeader title={kind === 'team' ? 'Final standings · teams' : 'Final standings'} />
+          <div style={{ display: 'grid', gridTemplateColumns: grid, gap: 6, fontSize: 9, letterSpacing: 0.6, textTransform: 'uppercase', color: C.bunker, fontWeight: 700, padding: '0 0 4px' }}>
+            <span>#</span><span>{kind === 'team' ? 'Team' : 'Player'}</span>
+            {showNetCol ? <><span style={{ textAlign: 'right' }}>Gross</span><span style={{ textAlign: 'right' }}>Net</span></> : <span style={{ textAlign: 'right' }}>Score</span>}
           </div>
+          {sections.map((sec, si) => (
+            <div key={sec.flight ? sec.flight.id : 'all'} style={{ marginTop: si > 0 ? 8 : 0 }}>
+              {sec.flight && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: `${sec.flight.color}18`, borderRadius: 8, marginBottom: 2 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: sec.flight.color }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: sec.flight.color }}>{sec.flight.name}</span>
+                </div>
+              )}
+              {sec.rows.map(r => (
+                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: grid, gap: 6, alignItems: 'center', fontSize: 13, padding: '6px 0', borderTop: `1px solid ${C.turfBorder}` }}>
+                  <span style={{ color: r.place === 1 ? C.gold : C.ivoryDim, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ overflowWrap: 'anywhere', lineHeight: 1.25, fontWeight: r.place === 1 ? 700 : 400 }}>{r.name}</div>
+                    {(r.sub || r.thru > 0) && <div style={{ fontSize: 10, color: C.bunker, fontFamily: 'IBM Plex Mono, monospace' }}>{r.sub || `${r.grossStr} gross${showNetCol && r.netStr != null ? ` · ${r.netStr} net` : ''}`}</div>}
+                  </div>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, textAlign: 'right', color: tone(r.toPar, r.thru) }}>{r.thru > 0 ? fmtToPar(r.toPar) : '–'}</span>
+                  {showNetCol && <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, textAlign: 'right', color: tone(r.netToPar, r.thru) }}>{r.thru > 0 ? fmtToPar(r.netToPar) : '–'}</span>}
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+        {bettingOn && totalSettled > 0 && (
+          <>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
           {bigWinner && <div style={{ ...rowCard, flex: 1, flexDirection: 'column', alignItems: 'flex-start', minWidth: 130 }}><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Big winner</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, color: C.goldBright }}>{pgaName(bigWinner.name)}</div><div style={{ fontSize: 12, color: C.goldBright }}>{fmtMoney(ledger[bigWinner.id]?.netPosition || 0)}</div></div>}
           {bigLoser && <div style={{ ...rowCard, flex: 1, flexDirection: 'column', alignItems: 'flex-start', minWidth: 130 }}><div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase' }}>Took the L</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 18, color: C.flagRed }}>{pgaName(bigLoser.name)}</div><div style={{ fontSize: 12, color: C.flagRed }}>{fmtMoney(ledger[bigLoser.id]?.netPosition || 0)}</div></div>}
-        </div>
+            </div>
         <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 18 }}>${totalSettled.toFixed(totalSettled % 1 ? 2 : 0)} settled across the group so far — check Settle for who pays whom.</div>
+          </>
+        )}
+
+        {isAdmin && (
+          <div style={{ background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: 12, marginBottom: 12, textAlign: 'left' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: finalized ? C.emerald : C.ivory, marginBottom: 4 }}>{finalized ? 'Round marked complete' : 'Complete this round'}</div>
+            <div style={{ fontSize: 12, color: C.ivoryDim, lineHeight: 1.45, marginBottom: 8 }}>
+              {finalized
+                ? (scoresIn ? 'All scores are in, so players can play the awards from this screen.' : `${pendingCount} player${pendingCount === 1 ? ' has' : 's have'} not finished or submitted. Players can play the awards once every score is in.`)
+                : (scoresIn ? 'All scores are in. Completing the round lets players play the awards themselves.' : `${pendingCount} player${pendingCount === 1 ? ' has' : 's have'} not finished or submitted yet. You can still complete the round. Players can play the awards once every score is in.`)}
+            </div>
+            <GhostButton onClick={() => onFinalize(!finalized)} style={{ width: '100%', padding: '10px 0', textAlign: 'center' }}>{finalized ? 'Reopen round' : 'Mark round complete'}</GhostButton>
+          </div>
+        )}
 
         {isAdmin && isLastRound && hasAwards && (
-          <GoldButton onClick={onOpenAwards} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>🎬 Show Awards</GoldButton>
+          <GoldButton onClick={onOpenAwards} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>🎬 Show Awards to everyone</GoldButton>
         )}
+        {!isAdmin && isLastRound && hasAwards && (canPlayAwards
+          ? <GoldButton onClick={onPlayAwards} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>🎬 Play awards</GoldButton>
+          : <div style={{ fontSize: 12, color: C.ivoryDim, marginBottom: 12, lineHeight: 1.45 }}>Awards unlock when the organizer completes the round and every score is in.</div>)}
         {state.handicapsEnabled && (
           <a href="https://www.ghin.com" target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', background: C.turf, border: `1px solid ${C.turfBorder}`, borderRadius: 12, padding: '12px 0', color: C.ivory, marginBottom: 10, fontSize: 13 }}>
             <span style={{ width: 22, height: 22, borderRadius: 999, background: '#00558C', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>G</span>
@@ -10926,28 +11060,7 @@ export default function RoGreen() {
 
       {hasPlayers && <ChatToasts chat={chat} players={tournament.players} />}
 
-      {hasPlayers && (
-        <button onClick={openChat} aria-label="Group chat" style={{
-          position: 'fixed', bottom: 90, left: 16, width: 50, height: 50, borderRadius: '50%',
-          background: C.turf, border: `2px solid ${C.turfBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.35)', cursor: 'pointer', zIndex: 30,
-        }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4.5 4v-4H5a2 2 0 0 1-2-2V6z" fill={C.gold} stroke={C.goldBright} strokeWidth="1" />
-            <circle cx="8.2" cy="9" r="0.9" fill={C.pineDark} />
-            <circle cx="12" cy="7.6" r="0.9" fill={C.pineDark} />
-            <circle cx="15.8" cy="9" r="0.9" fill={C.pineDark} />
-            <circle cx="9.6" cy="12" r="0.9" fill={C.pineDark} />
-            <circle cx="14.4" cy="12" r="0.9" fill={C.pineDark} />
-            <circle cx="12" cy="14.5" r="0.9" fill={C.pineDark} />
-          </svg>
-          {chat.length > chatSeenLen && (
-            <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 19, height: 19, borderRadius: 999, background: C.flagRed, color: '#fff', border: `2px solid ${C.pine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, padding: '0 4px' }}>
-              {Math.min(chat.length - chatSeenLen, 99)}{chat.length - chatSeenLen > 99 ? '+' : ''}
-            </span>
-          )}
-        </button>
-      )}
+      {hasPlayers && <ChatFab onClick={openChat} unread={Math.max(0, chat.length - chatSeenLen)} />}
 
       {setupOpen && isAdmin && (
         <SetupModal tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => setSetupOpen(false)} roundCode={roundCode} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} startRound={startRound} resetScores={resetScores} onPreview={() => { setSetupOpen(false); setPreviewMode(true); setActiveTab('home'); setDrawerOpen(true); }} onAddRound={addRound} onSwitchRound={switchRound} />
@@ -10985,7 +11098,11 @@ export default function RoGreen() {
       {roundCompleteOpen && (() => {
         const awardResults = computeAwards(state, tournament, ledger);
         return (
-          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} isAdmin={viewAsAdmin} onOpenAwards={() => { setRoundCompleteOpen(false); updateRound(r => ({ ...r, awardsPresentationActive: true })); }} />
+          <RoundCompleteModal state={state} stats={stats} ledger={ledger} isLastRound={isLastRound} tournament={tournament} onClose={() => setRoundCompleteOpen(false)} hasAwards={awardResults.length > 0} isAdmin={viewAsAdmin}
+            finalized={!!state.roundFinalized} scoresIn={state.players.length > 0 && state.players.every(p => (Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(p.id)) || (stats.find(x => x.id === p.id) || {}).thru >= state.numHoles)} pendingCount={state.players.filter(p => !((Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(p.id)) || (stats.find(x => x.id === p.id) || {}).thru >= state.numHoles)).length}
+            onFinalize={(v) => updateRound(r => ({ ...r, roundFinalized: v }))}
+            onPlayAwards={() => { setRoundCompleteOpen(false); setAwardsOpen(true); }}
+            onOpenAwards={() => { setRoundCompleteOpen(false); updateRound(r => ({ ...r, awardsPresentationActive: true })); }} />
         );
       })()}
       {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => { setAwardsOpen(false); if (viewAsAdmin) updateRound(r => ({ ...r, awardsPresentationActive: false })); }} />}
