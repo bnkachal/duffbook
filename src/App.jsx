@@ -5645,16 +5645,16 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const meFrontBack = (() => {
     if (!whoami) return null;
     const scores = Array.from({ length: state.numHoles }, (_, i) => state.scores[whoami.id]?.[i]);
-    const front = scores.slice(0, 9), back = scores.slice(9, 18);
-    const frontGross = front.reduce((a, b) => a + (b || 0), 0), backGross = back.reduce((a, b) => a + (b || 0), 0);
-    const frontScored = front.filter(s => s != null).length, backScored = back.filter(s => s != null).length;
-    const ch = me?.courseHandicap;
-    const frontHcp = ch != null ? Math.ceil(ch / 2) : null, backHcp = ch != null ? Math.floor(ch / 2) : null;
-    return {
-      frontGross, backGross, frontScored, backScored,
-      frontNet: frontHcp != null && frontScored > 0 ? frontGross - frontHcp : null,
-      backNet: backHcp != null && backScored > 0 ? backGross - backHcp : null,
+    const sm = allocStrokeMap(state);
+    const recvAt = (i) => strokesOnHole(sm[whoami.id] || 0, state.strokeIndex || [], i);
+    const part = (from, to) => {
+      let gross = 0, scored = 0, recv = 0;
+      for (let i = from; i < Math.min(to, scores.length); i++) { if (scores[i] == null) continue; gross += scores[i]; scored++; recv += recvAt(i); }
+      return { gross, scored, net: scored > 0 && state.handicapsEnabled ? gross - recv : null };
     };
+    const f = part(0, 9), bk = part(9, 18);
+    return { frontGross: f.gross, backGross: bk.gross, frontScored: f.scored, backScored: bk.scored, frontNet: f.net, backNet: bk.net,
+      totalGross: f.scored + bk.scored > 0 ? f.gross + bk.gross : null, totalNet: f.net != null || bk.net != null ? (f.net || 0) + (bk.net || 0) : null };
   })();
   const isHandicapFreeFormat = state.matchFormat === 'captain-choice' || state.games?.scramble?.enabled;
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
@@ -5723,41 +5723,50 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         </button>
       </div>
       {myCardOpen && whoami && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={whoami.id} onClose={() => setMyCardOpen(false)} onEnter={() => { setMyCardOpen(false); onOpenDrawer(); }} enterLabel={`Hole ${groupHole + 1}`} />}
-      <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <IconBadge icon={Flag} color={C.gold} />
-            <div><div style={{ fontSize: 11, color: C.ivoryDim, textTransform: 'uppercase' }}>{state.roundName}</div><div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24 }}>Hole {groupHole + 1}</div></div>
+      <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ ...homeCard, flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer', gap: 0, padding: '10px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 20, lineHeight: 1.1, whiteSpace: 'nowrap' }}>Hole {groupHole + 1}</span>
+            <span style={{ fontSize: 10, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{state.roundName}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {whoami && (whoami.handicapIndex != null ? (
-              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px' }}>
-                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: C.emerald, lineHeight: 1.1 }}>{whoami.handicapIndex}</div>
-                {getCourseHandicap(whoami, state) != null && <div style={{ fontSize: 8, color: C.bunker }}>CH {getCourseHandicap(whoami, state)}</div>}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', background: C.pine, borderRadius: 10, padding: '4px 10px', border: `1px dashed ${C.turfBorder}` }}>
-                <div style={{ fontSize: 8, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.6 }}>HCP</div>
-                <div style={{ fontSize: 10, color: C.bunker }}>not set</div>
-              </div>
-            ))}
-            {me && (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: C.ivoryDim, textTransform: 'uppercase', letterSpacing: 0.4 }}>You · {useNet ? 'net' : 'gross'}</div>
-                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 24, lineHeight: 1, color: me.thru === 0 ? C.ivoryDim : (useNet ? me.netToPar : me.toPar) < 0 ? C.emerald : (useNet ? me.netToPar : me.toPar) > 0 ? C.flagRed : C.ivoryDim }}>{me.thru === 0 ? '–' : fmtToPar(useNet ? me.netToPar : me.toPar)}</div>
-              </div>
-            )}
-          </div>
+          {whoami && (whoami.handicapIndex != null ? (
+            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, background: C.pine, borderRadius: 9, padding: '4px 9px', flexShrink: 0 }}>
+              <span style={{ fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.7, fontWeight: 700 }}>HCP</span>
+              <b style={{ fontSize: 14, color: C.emerald }}>{whoami.handicapIndex}</b>
+              {getCourseHandicap(whoami, state) != null && <span style={{ fontSize: 9, color: C.bunker }}>CH {getCourseHandicap(whoami, state)}</span>}
+            </span>
+          ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, background: C.pine, borderRadius: 9, padding: '4px 9px', border: `1px dashed ${C.turfBorder}`, flexShrink: 0 }}>
+              <span style={{ fontSize: 9, color: C.bunker, textTransform: 'uppercase', letterSpacing: 0.7, fontWeight: 700 }}>HCP</span>
+              <span style={{ fontSize: 10, color: C.bunker }}>not set</span>
+            </span>
+          ))}
         </div>
-        {meFrontBack && (meFrontBack.frontScored > 0 || meFrontBack.backScored > 0) && (
-          <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 1fr', gap: '2px 10px', paddingTop: 8, borderTop: `1px solid ${C.turfBorder}`, fontSize: 11 }}>
-            <span></span><span style={{ color: C.bunker, fontWeight: 600 }}>Gross</span><span style={{ color: C.bunker, fontWeight: 600 }}>Net</span>
-            <span style={{ color: C.bunker }}>F9</span><span style={{ color: C.ivory }}>{meFrontBack.frontScored > 0 ? meFrontBack.frontGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.frontNet != null ? meFrontBack.frontNet : '—'}</span>
-            <span style={{ color: C.bunker }}>B9</span><span style={{ color: C.ivory }}>{meFrontBack.backScored > 0 ? meFrontBack.backGross : '—'}</span><span style={{ color: C.ivory }}>{meFrontBack.backNet != null ? meFrontBack.backNet : '—'}</span>
-          </div>
-        )}
-        {state.courseEstimated && <div style={{ fontSize: 10.5, color: C.goldBright, fontWeight: 600 }}>Course details are estimated</div>}
+        {me && (() => {
+          const started = me.thru > 0;
+          const showNetRow = !!state.handicapsEnabled && !isHandicapFreeFormat;
+          const fb = meFrontBack || {};
+          const cell = (v, color, mono, bold = true) => <span style={{ textAlign: 'center', padding: '3px 0', fontSize: 12, fontWeight: bold ? 700 : 600, color, fontFamily: mono ? 'IBM Plex Mono, monospace' : 'inherit', fontVariantNumeric: 'tabular-nums' }}>{v == null ? '—' : v}</span>;
+          const head = (t) => <span style={{ textAlign: 'center', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.6, color: C.bunker, fontWeight: 700, padding: '5px 0 1px' }}>{t}</span>;
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '46px repeat(4, 1fr)', marginTop: 6, borderTop: `1px solid ${C.turfBorder}` }}>
+              <span />{head('To par')}{head('F9')}{head('B9')}{head('Total')}
+              <span style={{ alignSelf: 'center', fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: C.flagRed }}>GROSS</span>
+              {cell(started ? fmtToPar(me.toPar) : '—', C.flagRed)}
+              {cell(fb.frontScored > 0 ? fb.frontGross : null, C.flagRed, true)}
+              {cell(fb.backScored > 0 ? fb.backGross : null, C.flagRed, true)}
+              {cell(fb.totalGross, C.flagRed, true)}
+              {showNetRow && <>
+                <span style={{ alignSelf: 'center', fontSize: 10, fontWeight: 800, letterSpacing: 0.5, color: C.emerald }}>NET</span>
+                {cell(started ? fmtToPar(me.netToPar) : '—', C.emerald)}
+                {cell(fb.frontNet, C.emerald, true)}
+                {cell(fb.backNet, C.emerald, true)}
+                {cell(fb.totalNet, C.emerald, true)}
+              </>}
+            </div>
+          );
+        })()}
+        {state.courseEstimated && <div style={{ fontSize: 10.5, color: C.goldBright, fontWeight: 600, marginTop: 6 }}>Course details are estimated</div>}
       </div>
 
       {(() => {
