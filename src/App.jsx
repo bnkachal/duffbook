@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
   MessageCircle, Swords, Shuffle, Copy, LogOut, Loader2, Home, Ticket, KeyRound,
   Calendar, User, ChevronsUpDown, RefreshCw, Share2, Target, Zap, TrendingUp,
-  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText, Users,
+  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText, Users, HelpCircle, Phone,
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
@@ -678,7 +678,7 @@ function defaultRound(index) {
 function defaultTournament() {
   const r0 = defaultRound(0);
   return {
-    name: '', adminPin: null,
+    name: '', adminPin: null, adminInvites: [], organizer: null,
     players: [], flights: [], handicapsEnabled: false, bettingEnabled: BRAND.bettingDefault,
     spectatorsEnabled: false, spectatorShowBetting: false, rules: '',
     entryFee: 0, payoutSplit: [50, 30, 20], groupScoreEntry: false,
@@ -2236,6 +2236,54 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
 }
 
 /* ============================== NAV ============================== */
+/* Enter-score button, lives in the middle of the bottom bar on every tab. */
+function EnterHero({ state, whoami, isAdmin, tournament, onEnter, onReview }) {
+  const myScores = whoami ? (state.scores[whoami.id] || {}) : {};
+  let thru = 0;
+  for (let i = 0; i < state.numHoles; i++) { if (myScores[i] != null) thru++; }
+  const nextHole = whoami ? (() => { for (let i = 0; i < state.numHoles; i++) { if (myScores[i] == null) return i; } return null; })() : 0;
+  const groupHole = currentHoleIndex(state, whoami, isAdmin, tournament?.groupScoreEntry);
+  const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
+  const badgeState = !whoami ? 'start' : isSubmitted ? 'done' : thru === 0 ? 'start' : nextHole == null ? 'review' : 'progress';
+  const handleTap = badgeState === 'review' || badgeState === 'done' ? onReview : onEnter;
+  const isDone = badgeState === 'done';
+  const accent = P.green;
+  const ringR = 33, circ = 2 * Math.PI * ringR;
+  const pct = isDone ? 1 : (whoami ? Math.min(1, thru / state.numHoles) : 0);
+  const beacon = { position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${P.red}`, animation: 'beaconPulse 2.4s ease-out infinite', pointerEvents: 'none' };
+  const lbl = { fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 800, color: '#0F3B21', lineHeight: 1.15, letterSpacing: 0.3, position: 'relative' };
+  const label = isDone ? 'Scores submitted. Review scorecard' : badgeState === 'review' ? 'Review scorecard' : `Enter score for hole ${groupHole + 1}`;
+  return (
+    <div style={{ flex: '0 0 92px', position: 'relative', height: 44 }}>
+      <div data-coach="enter" role="button" tabIndex={0} aria-label={label} onClick={handleTap} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTap(); } }} style={{ position: 'absolute', left: '50%', marginLeft: -38, bottom: -2, width: 76, height: 76, zIndex: 5, cursor: 'pointer' }}>
+        {!isDone && <div style={beacon} />}
+        {!isDone && <div style={{ ...beacon, animationDelay: '0.8s' }} />}
+        <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+          <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(31,107,58,0.16)" strokeWidth="4" />
+          <circle cx="38" cy="38" r={ringR} fill="none" stroke={accent} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+        </svg>
+        <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: 'linear-gradient(160deg, #E9F6EC, #BCDDC7)', border: `2.5px solid ${accent}`, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', overflow: 'hidden' }}>
+          <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <line x1="0" y1="14" x2="58" y2="14" stroke={P.red} strokeWidth="1" opacity="0.7" />
+            {[24, 34, 44].map(y => <line key={`h${y}`} x1="0" y1={y} x2="58" y2={y} stroke="#1F6B3A" strokeWidth="0.8" opacity="0.55" />)}
+            {[14, 24, 34, 44].map(x => <line key={`v${x}`} x1={x} y1="0" x2={x} y2="58" stroke="#1F6B3A" strokeWidth="0.8" opacity="0.55" />)}
+          </svg>
+          {isDone ? (
+            <Check size={26} color={P.green} strokeWidth={3.5} style={{ position: 'relative' }} />
+          ) : badgeState === 'review' ? (
+            <span style={{ ...lbl, fontSize: 9 }}>REVIEW</span>
+          ) : (
+            <>
+              <span style={{ ...lbl, fontSize: 8, letterSpacing: 0.8 }}>ENTER</span>
+              <span style={{ ...lbl, fontSize: groupHole + 1 >= 10 ? 10.5 : 12, letterSpacing: 0, lineHeight: 1.05, whiteSpace: 'nowrap' }}>HOLE {groupHole + 1}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NavBtn({ icon: Icon, label, active, onClick, hero, badge }) {
   return (
     <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? '#7A5C0F' : P.ink3, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 8, position: 'relative', boxShadow: active ? `0 0 14px rgba(${GOLD_RGB},0.14)` : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
@@ -3432,7 +3480,7 @@ function Landing({ onCreate, onJoin, onLoadDemo, myTournaments, onQuickJoin, joi
     </div>
   );
 }
-function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
+function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName, onHelper }) {
   const [selected, setSelected] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
   const [newName, setNewName] = useState(deviceName || '');
@@ -3515,6 +3563,7 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
         ))}
       </div>
       <button onClick={() => setAddingNew(true)} data-testid="not-on-list-btn" style={{ background: 'transparent', border: `1px dashed ${P.rule}`, borderRadius: 12, padding: '12px 16px', color: P.ink3, fontSize: 13, cursor: 'pointer', textAlign: 'center', flexShrink: 0 }}>I'm not on the list</button>
+      {onHelper && <button onClick={onHelper} data-testid="helper-btn" style={{ marginTop: 10, minHeight: 52, boxSizing: 'border-box', padding: '0 14px', border: `2px solid ${C.gold}`, borderRadius: 12, background: '#FFFDF6', color: P.ink, fontWeight: 700, fontSize: 14.5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}><span>I'm helping run this, not playing</span><ChevronRight size={16} color={'#7A5C0F'} /></button>}
     </div>
   );
 }
@@ -5765,7 +5814,7 @@ function GuideCard({ title, steps, onDismiss, cta }) {
   );
 }
 
-function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction, onOpenTeamEvent }) {
+function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, onOpenMyPosition, phase, guidanceEnabled, onOpenChat, onOpenRoundComplete, tournament, onSwitchRound, onOpenRoundFlow, onOpenKoS, onOpenStandings, onWolfChoice, layoutPrefs, onOpenDrawer, onOpenRules, onOpenDrawerReview, onOpenAuction, onOpenTeamEvent, onOpenHelp }) {
   const [myCardOpen, setMyCardOpen] = useState(false);
   const now = useNow(5000);
   const teCfg = getTeamEvent(tournament || {});
@@ -5857,9 +5906,19 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <HeaderBanner src={matchbookBunker} title={state.roundName} sub={tournament ? tournament.name : 'Live round'} height={220} />
       <div style={{ padding: 0, marginTop: -2 }}>
-        <button onClick={onOpenRules} style={{ background: 'transparent', border: 'none', padding: '6px 0', color: '#7A5C0F', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'underline', textUnderlineOffset: 4, textAlign: 'left' }}>
-          <FileText size={15} color={'#7A5C0F'} />Tournament Rules<ChevronRight size={14} color={'#7A5C0F'} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <button onClick={onOpenRules} style={{ background: 'transparent', border: 'none', minHeight: 44, padding: 0, color: '#7A5C0F', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'underline', textUnderlineOffset: 4, textAlign: 'left' }}>
+            <FileText size={15} color={'#7A5C0F'} />Tournament Rules<ChevronRight size={14} color={'#7A5C0F'} />
+          </button>
+          <button onClick={onOpenRoundFlow} style={{ background: 'transparent', border: 'none', minHeight: 44, padding: 0, color: '#7A5C0F', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'underline', textUnderlineOffset: 4, textAlign: 'right' }}>
+            <Flag size={15} color={'#7A5C0F'} />Round Flow<ChevronRight size={14} color={'#7A5C0F'} />
+          </button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button onClick={onOpenHelp} aria-label="Need help? Contact the organizers" style={{ minHeight: 36, boxSizing: 'border-box', padding: '0 14px', borderRadius: 999, border: 'none', background: 'rgba(32,35,29,0.07)', color: P.ink, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <HelpCircle size={15} color={P.ink} />Need help?
+          </button>
+        </div>
       </div>
       {myCardOpen && whoami && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={whoami.id} onClose={() => setMyCardOpen(false)} onEnter={() => { setMyCardOpen(false); onOpenDrawer(); }} enterLabel={`Hole ${groupHole + 1}`} />}
       <div role="button" tabIndex={0} aria-label={`Hole ${groupHole + 1}. Open scorecard`} onClick={onOpenDrawer} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDrawer(); } }} style={{ padding: '4px 0 0', cursor: 'pointer' }}>
@@ -5938,45 +5997,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               return <div role="note" style={{ background: `rgba(${GOLD_RGB},0.10)`, border: `1px solid rgba(${GOLD_RGB},0.35)`, borderRadius: 12, padding: '9px 12px', marginBottom: 12, fontSize: 12, lineHeight: 1.4, color: '#7A5C0F' }}>{msg}</div>;
             })()}
 
-            {(() => {
-              const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
-              const badgeState = !whoami ? 'start' : isSubmitted ? 'done' : thru === 0 ? 'start' : nextHole == null ? 'review' : 'progress';
-              const handleTap = badgeState === 'review' || badgeState === 'done' ? onOpenDrawerReview : onOpenDrawer;
-              const isDone = badgeState === 'done';
-              const accent = isDone ? P.green : C.blue;
-              const ringR = 33, circ = 2 * Math.PI * ringR;
-              const pct = isDone ? 1 : (whoami ? Math.min(1, thru / state.numHoles) : 0);
-              const offset = circ * (1 - pct);
-              const beacon = { position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite', pointerEvents: 'none' };
-              const lbl = { fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 800, color: '#14261B', lineHeight: 1.15, letterSpacing: 0.3, position: 'relative' };
-              return (
-                <div data-coach="enter" onClick={handleTap} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
-                  {!isDone && <div style={beacon} />}
-                  {!isDone && <div style={{ ...beacon, animationDelay: '0.8s' }} />}
-                  <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
-                    <circle cx="38" cy="38" r={ringR} fill="none" stroke="rgba(32,35,29,0.08)" strokeWidth="4" />
-                    <circle cx="38" cy="38" r={ringR} fill="none" stroke={accent} strokeWidth="4" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
-                  </svg>
-                  <div style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: `linear-gradient(160deg, ${P.ink}, #E4E1D8)`, border: `2.5px solid ${accent}`, boxShadow: '0 4px 16px rgba(0,0,0,0.45), inset 0 1px 2px rgba(32,35,29,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', overflow: 'hidden' }}>
-                    <svg viewBox="0 0 58 58" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-                      <line x1="0" y1="14" x2="58" y2="14" stroke={P.red} strokeWidth="1" opacity="0.6" />
-                      {[24, 34, 44].map(y => <line key={`h${y}`} x1="0" y1={y} x2="58" y2={y} stroke={C.gold} strokeWidth="0.8" opacity="0.5" />)}
-                      {[14, 24, 34, 44].map(x => <line key={`v${x}`} x1={x} y1="0" x2={x} y2="58" stroke={C.gold} strokeWidth="0.8" opacity="0.5" />)}
-                    </svg>
-                    {isDone ? (
-                      <Check size={26} color={P.green} strokeWidth={3.5} style={{ position: 'relative' }} />
-                    ) : badgeState === 'review' ? (
-                      <span style={{ ...lbl, fontSize: 9 }}>REVIEW</span>
-                    ) : (
-                      <>
-                        <span style={{ ...lbl, fontSize: 8, letterSpacing: 0.8 }}>ENTER</span>
-                        <span style={{ ...lbl, fontSize: groupHole + 1 >= 10 ? 10.5 : 12, letterSpacing: 0, lineHeight: 1.05, whiteSpace: 'nowrap' }}>HOLE {groupHole + 1}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         );
       })()}
@@ -6244,7 +6264,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         );
       })()}
 
-      {layoutPrefs.payout !== false && positionCard}
+      {layoutPrefs.payout !== false && tournament?.bettingEnabled !== false && positionCard}
 
       {layoutPrefs.wolf !== false && state.games?.wolf?.enabled && (() => {
         const myGroup = whoami ? (state.flowGroups || []).find(g => (g.playerIds || []).includes(whoami.id)) : (state.flowGroups || [])[0];
@@ -7093,116 +7113,130 @@ function RosterImportModal({ flights, existingPlayerCount, hasScores, onApply, o
   );
 }
 
-function PlayersSection({ state, newPlayerName, setNewPlayerName, addPlayer, removePlayer, flights, onOpenImport, updateTournament, assignFlight, autoFlights }) {
-  const hasPlayers = state.players.length >= 2;
-  const flightsOn = flights && flights.length > 0;
+function PlayersSection({ state, tournament, newPlayerName, setNewPlayerName, addPlayer, removePlayer, flights, onOpenImport, updateTournament, assignFlight, autoFlights, setPlayerField, addFlight, renameFlight, removeFlight, inputRef }) {
+  const [editingId, setEditingId] = useState(null);
+  const [askOpen, setAskOpen] = useState(null);
+  const hcOn = !!state.handicapsEnabled;
+  const flightsOn = !!(flights && flights.length > 0);
+  const teeOptions = Array.isArray(state.courseTeeBoxes) ? state.courseTeeBoxes : [];
+  const teesOn = tournament ? (tournament.teesEnabled === true || (tournament.teesEnabled == null && state.players.some(p => p.teeName))) : false;
+  const showAsk = askOpen == null ? state.players.length === 0 : askOpen;
+  const flightsUnnamed = flightsOn && tournament && !tournament.flightsNamed && flights.every(f => ['Red', 'Blue'].includes(f.name));
+  const setTop = (patch) => updateTournament(p => ({ ...p, ...patch }));
+  const rename = (id, name) => updateTournament(p => ({ ...p, players: p.players.map(x => x.id === id ? { ...x, name } : x), rounds: p.rounds.map(r => (Array.isArray(r.roundPlayers) && r.roundPlayers.some(rp => rp && rp.id === id)) ? { ...r, roundPlayers: r.roundPlayers.map(rp => rp && rp.id === id ? { ...rp, name } : rp) } : r) }));
+  const yn = (label, sub, on, onYes, onNo, extra) => (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 12 }}>
+        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 14.5 }}>{label}</div><div style={{ fontSize: 11.5, color: P.ink2, marginTop: 1 }}>{sub}</div></div>
+        <div style={{ display: 'flex', flexShrink: 0, border: `1px solid ${P.rule}`, borderRadius: 10, overflow: 'hidden' }}>
+          <button onClick={onYes} aria-pressed={on} style={{ minWidth: 52, minHeight: 44, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: on ? '#1F6B3A' : 'transparent', color: on ? '#fff' : P.ink }}>Yes</button>
+          <button onClick={onNo} aria-pressed={!on} style={{ minWidth: 52, minHeight: 44, border: 'none', borderLeft: `1px solid ${P.rule}`, cursor: 'pointer', fontWeight: 700, fontSize: 13, background: !on ? P.ink : 'transparent', color: !on ? '#F3ECDA' : P.ink }}>No</button>
+        </div>
+      </div>
+      {extra}
+    </div>
+  );
+  const chip = (txt, on, color, onClick) => <button key={txt} onClick={onClick} style={{ fontSize: 11.5, padding: '6px 10px', minHeight: 32, borderRadius: 8, border: `1px solid ${on ? (color || C.gold) : P.rule}`, background: on ? (color || C.gold) : 'transparent', color: on ? onColor(color || C.gold) : P.ink2, cursor: 'pointer', fontWeight: 600 }}>{txt}</button>;
+  const summaryChip = (txt, on) => <span key={txt} style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: on ? 'rgba(31,107,58,0.12)' : 'rgba(32,35,29,0.07)', color: on ? '#1F6B3A' : P.ink3 }}>{txt} {on ? 'on' : 'off'}</span>;
   return (
     <Accordion title="Players & Teams" badge={state.players.length} defaultOpen>
-      <div style={{ fontSize: 11, color: P.ink2, marginBottom: 10 }}>The roster is shared across every round of the trip.</div>
+      <div style={{ fontSize: 11, color: P.ink2, marginBottom: 10 }}>The roster is shared across every round of the trip. Handicap, tee and flight are optional, so you can add names first and fill the rest in later.</div>
+
+      {showAsk ? (
+        <div style={{ padding: 12, background: 'rgba(32,35,29,0.06)', borderRadius: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F' }}>Before you add players</div>
+          <div style={{ fontSize: 12.5, color: P.ink2, margin: '4px 0 10px', lineHeight: 1.4 }}>Three quick questions. They decide which boxes show on each player. You can change any answer later.</div>
+          {yn('Use handicaps?', 'Net scores from each index', hcOn, () => setTop({ handicapsEnabled: true }), () => setTop({ handicapsEnabled: false }))}
+          {yn('Different tees?', 'Players can play different tee boxes', teesOn, () => setTop({ teesEnabled: true }), () => setTop({ teesEnabled: false }),
+            teesOn && teeOptions.length < 2 ? <div style={{ fontSize: 11.5, color: '#7A5C0F', padding: '6px 4px 0' }}>This course lists fewer than two tee boxes. Pick a course with several in Round setup and the tee choices appear on each player.</div> : null)}
+          {yn('Use flights?', 'Separate leaderboards or teams', flightsOn, () => { if (!flightsOn) updateTournament(p => ({ ...p, flights: defaultRedBlueFlights() })); }, () => updateTournament(p => ({ ...p, flights: [], flightsNamed: false })))}
+          {state.players.length > 0 && <button onClick={() => setAskOpen(false)} style={{ minHeight: 40, width: '100%', background: 'transparent', border: `1px solid ${P.rule}`, borderRadius: 10, color: P.ink, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Done</button>}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {summaryChip('Handicaps', hcOn)}{summaryChip('Tees', teesOn)}{summaryChip('Flights', flightsOn)}
+          <button onClick={() => setAskOpen(true)} style={{ minHeight: 32, background: 'transparent', border: 'none', color: '#7A5C0F', fontWeight: 700, fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>Change</button>
+        </div>
+      )}
+
+      {flightsOn && (
+        <div style={{ padding: 12, marginBottom: 12, background: flightsUnnamed ? '#FFFDF6' : P.paper, border: flightsUnnamed ? `2px solid ${C.gold}` : `1px solid ${P.rule}`, borderRadius: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 14.5 }}>{flightsUnnamed ? 'Name your flights' : 'Flights and teams'}</div>
+          <div style={{ fontSize: 12, color: P.ink2, margin: '2px 0 10px', lineHeight: 1.4 }}>Red vs Blue, USA vs Europe, Flight A and B. Players pick from these on their own row.</div>
+          {flights.map(f => (
+            <div key={f.id} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 999, background: f.color, flexShrink: 0 }} />
+              <input value={f.name} onChange={e => { renameFlight(f.id, e.target.value); if (tournament && !tournament.flightsNamed) setTop({ flightsNamed: true }); }} aria-label={`Name for ${f.name}`} style={{ ...inputStyle, flex: 1, minHeight: 44 }} />
+              {flights.length > 1 && <button onClick={() => removeFlight(f.id)} aria-label={`Remove ${f.name}`} style={{ background: 'transparent', border: 'none', color: P.red, cursor: 'pointer', minWidth: 36, minHeight: 44 }}><Trash2 size={16} /></button>}
+            </div>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <button onClick={addFlight} style={{ minHeight: 44, background: 'transparent', border: 'none', color: '#1F6B3A', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ Add another</button>
+            {state.players.length >= 2 && <button onClick={autoFlights} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: P.ink2, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}><Shuffle size={14} /> Auto-balance by handicap</button>}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
         {state.players.map(p => {
           const flight = (flights || []).find(f => f.id === p.flightId);
+          const ch = hcOn ? getCourseHandicap(p, state) : null;
+          const editing = editingId === p.id;
+          const hasIdx = !isNaN(parseFloat(p.handicapIndex));
+          const missing = (hcOn && !hasIdx) || (teesOn && teeOptions.length >= 2 && !p.teeName) || (flightsOn && !p.flightId);
           return (
-            <div key={p.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: '10px 10px' }}>
+            <div key={p.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, padding: '10px 10px', border: editing ? `1.5px solid ${C.gold}` : undefined }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
                   <Chip color={pc(p)}>{initials(p.name)}</Chip>
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{pgaName(p.name)}</span>
-                    {flight && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: P.ink2 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: flight.color, flexShrink: 0 }} />{flight.name}</span>}
-                  </div>
+                  {editing
+                    ? <input value={p.name} onChange={e => rename(p.id, e.target.value)} aria-label="Player name" autoFocus style={{ ...inputStyle, flex: 1, minHeight: 40, fontSize: 15 }} />
+                    : <div style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{pgaName(p.name)}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 11, color: P.ink2 }}>
+                          {hcOn && (hasIdx ? <span>HCP {p.handicapIndex} · CH {ch}</span> : <span style={{ color: '#7A5C0F' }}>+ handicap</span>)}
+                          {teesOn && p.teeName && <span>{p.teeName}</span>}
+                          {flight && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 7, height: 7, borderRadius: 999, background: flight.color, flexShrink: 0 }} />{flight.name}</span>}
+                          {!editing && missing && !hcOn && !flight && null}
+                        </span>
+                      </div>}
                 </div>
-                <button onClick={() => removePlayer(p.id)} style={{ background: 'transparent', border: 'none', color: P.red, cursor: 'pointer', flexShrink: 0 }}><Trash2 size={16} /></button>
+                {!editing && <button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} style={{ background: 'transparent', border: 'none', color: P.ink2, cursor: 'pointer', minWidth: 40, minHeight: 40, flexShrink: 0, fontSize: 12, fontWeight: 700, textDecoration: 'underline' }}>Edit</button>}
               </div>
-              {flightsOn && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  {flights.map(f => (
-                    <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? onColor(f.color) : P.ink2, cursor: 'pointer', flexShrink: 0 }}>{f.name}</button>
-                  ))}
-                </div>
+              {editing && (
+                <>
+                  {hcOn && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <label style={{ fontSize: 11.5, color: P.ink2, width: 56 }}>Index</label>
+                      <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" title="Plus-handicap? Enter as negative, e.g. -2 for +2" style={{ ...inputStyle, width: 80, minHeight: 40 }} />
+                      <span style={{ fontSize: 12, color: P.ink2 }}>Course handicap <b style={{ color: P.ink }}>{ch}</b></span>
+                    </div>
+                  )}
+                  {hcOn && <div style={{ fontSize: 11, color: P.ink3 }}>Plus-handicap? Enter it as negative, e.g. type -2 for a +2.</div>}
+                  {teesOn && teeOptions.length >= 2 && (
+                    <div><div style={{ fontSize: 11.5, color: P.ink2, marginBottom: 4 }}>Tees</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>{teeOptions.map(tee => chip(tee.teeName, p.teeName === tee.teeName, null, () => setPlayerField(p.id, 'teeName', tee.teeName)))}</div></div>
+                  )}
+                  {flightsOn && (
+                    <div><div style={{ fontSize: 11.5, color: P.ink2, marginBottom: 4 }}>Flight or team</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>{flights.map(f => chip(f.name, p.flightId === f.id, f.color, () => assignFlight(p.id, f.id)))}</div></div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => { if (window.confirm(`Remove ${p.name}? Their scores for every round are deleted.`)) { removePlayer(p.id); setEditingId(null); } }} style={{ minHeight: 40, padding: '0 14px', borderRadius: 10, border: `1.5px solid ${P.red}`, background: 'transparent', color: P.red, fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Trash2 size={14} />Remove</button>
+                    <button onClick={() => setEditingId(null)} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: 'none', background: C.gold, color: '#14261B', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Done</button>
+                  </div>
+                </>
               )}
             </div>
           );
         })}
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <input value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayer(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
-        <button onClick={addPlayer} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer' }}><UserPlus size={18} /></button>
+        <input ref={inputRef} value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayer(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
+        <button onClick={addPlayer} aria-label="Add player" style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer' }}><UserPlus size={18} /></button>
       </div>
-      <button onClick={onOpenImport} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', background: 'transparent', border: `1px dashed ${P.rule}`, color: '#7A5C0F', borderRadius: 10, padding: '10px 0', cursor: 'pointer', fontSize: 12, marginBottom: 14 }}>
+      <button onClick={onOpenImport} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', background: 'transparent', border: `1px dashed ${P.rule}`, color: '#7A5C0F', borderRadius: 10, padding: '10px 0', cursor: 'pointer', fontSize: 12, marginBottom: 6 }}>
         <UserPlus size={14} /> Import roster from CSV or XLSX
       </button>
-
-      {hasPlayers && updateTournament && (
-        <div style={{ borderTop: `1px solid ${P.rule}`, paddingTop: 12 }}>
-          <ToggleRow label="Use teams / flights" sub="Assign players to Red vs Blue, USA vs Europe, etc." enabled={flightsOn} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
-          {flightsOn && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                {flights.map(f => (
-                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 999, padding: '4px 10px' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: f.color }} />
-                    <span style={{ fontSize: 12, color: P.ink }}>{f.name}</span>
-                  </div>
-                ))}
-              </div>
-              <button onClick={autoFlights} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${P.rule}`, color: P.ink, borderRadius: 10, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}><Shuffle size={14} /> Auto-balance by handicap</button>
-              <div style={{ fontSize: 11, color: P.ink2, marginTop: 8 }}>Tap a team name on each player above to assign them.</div>
-            </div>
-          )}
-        </div>
-      )}
       <div style={{ fontSize: 11, color: P.ink2, marginTop: 8 }}>Players can also add themselves once they join with the round code.</div>
-    </Accordion>
-  );
-}
-function HandicapsFlightsSection({ state, updateTournament, setPlayerField, autoFlights, addFlight, renameFlight, removeFlight, assignFlight, defaultOpen }) {
-  const canConfigure = state.players.length >= 1;
-  return (
-    <Accordion title="Handicaps & flights" badge={state.handicapsEnabled || state.flights.length ? 'on' : 'off'} defaultOpen={defaultOpen}>
-      {!canConfigure ? <div style={{ color: P.ink2, fontSize: 13 }}>Add players first.</div> : (
-        <>
-          <ToggleRow label="Use handicaps" sub="Net scoring, GHIN-style Course Handicap from each player's index" enabled={state.handicapsEnabled} onToggle={() => updateTournament(p => ({ ...p, handicapsEnabled: !p.handicapsEnabled }))} />
-          {state.handicapsEnabled && <div style={{ fontSize: 11, color: P.ink3, marginBottom: 8 }}>Plus-handicap? Enter it as negative — e.g. type -2 for a +2.</div>}
-          {state.handicapsEnabled && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-              {state.players.map(p => {
-                const ch = getCourseHandicap(p, state);
-                const teeOptions = Array.isArray(state.courseTeeBoxes) ? state.courseTeeBoxes : [];
-                return (
-                  <div key={p.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{pgaName(p.name)}</span></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" title="Plus-handicap? Enter as negative — e.g. -2 for +2" style={{ ...inputStyle, width: 64, padding: '6px 8px' }} />
-                        <span style={{ fontSize: 11, color: P.ink2, minWidth: 50 }}>CH {ch}</span>
-                      </div>
-                    </div>
-                    {teeOptions.length >= 2 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                        {teeOptions.map(tee => (
-                          <button key={tee.teeName} onClick={() => setPlayerField(p.id, 'teeName', tee.teeName)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: `1px solid ${p.teeName === tee.teeName ? C.gold : P.rule}`, background: p.teeName === tee.teeName ? C.gold : 'transparent', color: p.teeName === tee.teeName ? '#14261B' : P.ink2, cursor: 'pointer' }}>{tee.teeName}</button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <ToggleRow label="Use flights / teams" sub="Separate leaderboards, or Red vs Blue for team match play" enabled={state.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
-          {state.flights.length > 0 && (
-            <div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                {state.flights.map(f => <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 999, padding: '4px 8px' }}><span style={{ width: 8, height: 8, borderRadius: 999, background: f.color }} /><input value={f.name} onChange={e => renameFlight(f.id, e.target.value)} style={{ background: 'transparent', border: 'none', color: P.ink, fontSize: 12, width: 70 }} /><button onClick={() => removeFlight(f.id)} style={{ background: 'transparent', border: 'none', color: P.ink2, cursor: 'pointer' }}><X size={12} /></button></div>)}
-                <button onClick={addFlight} style={{ background: 'transparent', border: `1px dashed ${P.rule}`, borderRadius: 999, padding: '4px 10px', color: P.ink2, fontSize: 12, cursor: 'pointer' }}>+ flight</button>
-              </div>
-              <button onClick={autoFlights} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${P.rule}`, color: P.ink, borderRadius: 10, padding: '8px 12px', fontSize: 12, cursor: 'pointer', marginBottom: 10 }}><Shuffle size={14} /> Auto-balance by handicap</button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{state.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', flexWrap: 'wrap' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{pgaName(p.name)}</span></div><div style={{ display: 'flex', gap: 4 }}>{state.flights.map(f => <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? onColor(f.color) : P.ink2, cursor: 'pointer' }}>{f.name}</button>)}</div></div>)}</div>
-            </div>
-          )}
-        </>
-      )}
     </Accordion>
   );
 }
@@ -7867,8 +7901,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
             <option value="split9">Split 9 Singles (partners swap at the turn)</option>
           </select>
         </Field>
-        <PlayersSection state={state} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} flights={tournament.flights} onOpenImport={() => setImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} />
-        <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} />
+        <PlayersSection state={state} tournament={tournament} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} flights={tournament.flights} onOpenImport={() => setImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} setPlayerField={setPlayerField} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} />
         <Accordion title="Betting" badge={tournament.bettingEnabled === false ? 'off' : 'on'}>
           <ToggleRow
             label="Allow betting on this trip"
@@ -8190,17 +8223,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
       {stepKey === 'players' && simple && (
         <div>
-          <div style={{ fontSize: 12, color: P.ink2, marginBottom: 14 }}>Type a name, tap +, repeat. You can add handicaps in a moment.</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-            {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: P.red, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <input ref={playerInputRef} value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayerLocal(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
-            <button onClick={addPlayerLocal} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer' }}><UserPlus size={18} /></button>
-          </div>
-          <button onClick={() => setWizardImportOpen(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', background: 'transparent', border: `1px dashed ${P.rule}`, color: '#7A5C0F', borderRadius: 10, padding: '10px 0', cursor: 'pointer', fontSize: 12, marginBottom: 6 }}>
-            <UserPlus size={14} /> Have a roster? Import from CSV or Excel
-          </button>
+          <PlayersSection state={state} tournament={tournament} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayerLocal} removePlayer={removePlayerLocal} flights={tournament.flights} onOpenImport={() => setWizardImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} setPlayerField={setPlayerField} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} inputRef={playerInputRef} />
           <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} label="Next" />
           {wizardImportOpen && <RosterImportModal flights={tournament.flights} existingPlayerCount={tournament.players.length} hasScores={false} onApply={applyImportedPlayers} onClose={() => setWizardImportOpen(false)} />}
         </div>
@@ -8208,31 +8231,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 
       {stepKey === 'players' && !simple && (
         <div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-            {tournament.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', padding: '8px 10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 14 }}>{pgaName(p.name)}</span></div><button onClick={() => removePlayerLocal(p.id)} style={{ background: 'transparent', border: 'none', color: P.red, cursor: 'pointer' }}><Trash2 size={16} /></button></div>)}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <input ref={playerInputRef} value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addPlayerLocal(); }} placeholder="Add a player" style={{ ...inputStyle, flex: 1 }} />
-            <button onClick={addPlayerLocal} style={{ background: C.gold, border: 'none', borderRadius: 10, width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer' }}><UserPlus size={18} /></button>
-          </div>
-          <button onClick={() => setWizardImportOpen(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', background: 'transparent', border: `1px dashed ${P.rule}`, color: '#7A5C0F', borderRadius: 10, padding: '10px 0', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>
-            <UserPlus size={14} /> Import roster from CSV or XLSX
-          </button>
-
-          <ToggleRow label="Track handicaps" sub="Net scoring from each player's index" enabled={tournament.handicapsEnabled} onToggle={() => updateTournament(p => ({ ...p, handicapsEnabled: !p.handicapsEnabled }))} />
-          {tournament.handicapsEnabled && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10, marginLeft: 4 }}>
-              {tournament.players.map(p => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13, flex: 1 }}>{pgaName(p.name)}</span>
-                  <input type="number" step="0.1" value={p.handicapIndex} onChange={e => setPlayerField(p.id, 'handicapIndex', e.target.value)} placeholder="Index" title="Plus-handicap? Enter as negative — e.g. -2 for +2" style={{ ...inputStyle, width: 70, padding: '6px 8px' }} />
-                </div>
-              ))}
-            </div>
-          )}
-          <ToggleRow label="Use flights / teams" sub="Red vs Blue, auto-balanced by handicap" enabled={tournament.flights.length > 0} onToggle={() => updateTournament(p => ({ ...p, flights: p.flights.length ? [] : defaultRedBlueFlights() }))} />
-          {tournament.flights.length > 0 && <GhostButton onClick={autoFlights} style={{ marginBottom: 10 }}>Auto-balance now</GhostButton>}
-
+          <PlayersSection state={state} tournament={tournament} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayerLocal} removePlayer={removePlayerLocal} flights={tournament.flights} onOpenImport={() => setWizardImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} setPlayerField={setPlayerField} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} inputRef={playerInputRef} />
           <WizardNextButton onClick={goNext} disabled={tournament.players.length === 0} />
           {wizardImportOpen && <RosterImportModal flights={tournament.flights} existingPlayerCount={tournament.players.length} hasScores={false} onApply={(players) => {
             const newPlayers = players.map((p, i) => ({ id: `p_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`, name: p.name, color: CHIP_COLORS[i % CHIP_COLORS.length], handicapIndex: p.handicapIndex || '', flightId: p.flightId || null, ...importedPlayerExtras(p) }));
@@ -8254,7 +8253,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
       {stepKey === 'handicaps' && (
         <div>
           <div style={{ fontSize: 12, color: P.ink2, marginBottom: 14 }}>Optional — turn on handicaps and/or flights now, or skip and set it up later from Settings.</div>
-          <HandicapsFlightsSection state={state} updateTournament={updateTournament} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} defaultOpen />
+          <PlayersSection state={state} tournament={tournament} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayerLocal} removePlayer={removePlayerLocal} flights={tournament.flights} onOpenImport={() => setWizardImportOpen(true)} updateTournament={updateTournament} assignFlight={assignFlight} autoFlights={autoFlights} setPlayerField={setPlayerField} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} />
           <WizardNextButton onClick={goNext} label={subKey ? 'Done' : undefined} />
         </div>
       )}
@@ -8446,6 +8445,132 @@ function NotificationsModal({ prefs, setPrefs, onClose }) {
 }
 
 /* ============================== BECOME ADMIN / DEVICE PROFILE ============================== */
+
+/* ---------- Helpers who run the tournament: invite links + contacts ---------- */
+function newInviteToken() {
+  try { const a = new Uint8Array(12); crypto.getRandomValues(a); return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 16); } catch (e) { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+}
+function adminContacts(tournament) {
+  const list = [];
+  const org = tournament.organizer;
+  if (org && (org.phone || org.email)) list.push({ key: 'org', name: org.name || 'Organizer', role: 'Organizer', phone: org.phone, email: org.email, playing: org.playing === true ? true : (org.playing === false ? false : null) });
+  (tournament.adminInvites || []).filter(i => i && (i.phone || i.email)).forEach(i => list.push({ key: i.id, name: i.name, role: 'Co-admin', phone: i.phone, email: i.email, playing: i.playing === true }));
+  return [...list.filter(c => c.playing === false), ...list.filter(c => c.playing !== false)];
+}
+function smsHref(phone, body) { return `sms:${String(phone).replace(/[^\d+]/g, '')}?&body=${encodeURIComponent(body)}`; }
+function HelpSheet({ tournament, isAdmin, onClose, onOpenChat, onManage }) {
+  const contacts = adminContacts(tournament);
+  const quiet = contacts.filter(c => c.playing === false);
+  const btn = { flex: 1, minHeight: 48, borderRadius: 12, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', cursor: 'pointer' };
+  const card = (c, first) => (
+    <div key={c.key} style={{ padding: 12, border: first ? '2px solid #1F6B3A' : `1px solid ${P.rule}`, borderRadius: 14, marginBottom: 10, background: first ? '#fff' : 'transparent' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 999, background: first ? '#1F6B3A' : C.gold, color: first ? '#fff' : '#14261B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>{initials(c.name)}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div>
+          <div style={{ fontSize: 11.5, color: P.ink2 }}>{c.role}{c.playing === false ? ' · not playing' : c.playing ? ' · playing, may be slow to answer' : ''}</div>
+        </div>
+        {first && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1F6B3A', background: 'rgba(31,107,58,0.12)', borderRadius: 999, padding: '3px 9px' }}>Best first call</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {c.phone && <a href={smsHref(c.phone, `Hi ${c.name.split(' ')[0]}, I need help with ${tournament.name || 'the tournament'}.`)} style={{ ...btn, background: first ? '#1F6B3A' : 'transparent', color: first ? '#fff' : '#1F6B3A', border: '1.5px solid #1F6B3A' }}><MessageCircle size={16} />Text</a>}
+        {c.phone && <a href={`tel:${String(c.phone).replace(/[^\d+]/g, '')}`} style={{ ...btn, color: '#1F6B3A', border: '1.5px solid #1F6B3A' }}><Phone size={16} />Call</a>}
+        {c.email && <a href={`mailto:${c.email}?subject=${encodeURIComponent('Help with ' + (tournament.name || 'the tournament'))}`} style={{ ...btn, color: '#1F6B3A', border: '1.5px solid #1F6B3A' }}><Mail size={16} />Email</a>}
+      </div>
+    </div>
+  );
+  return (
+    <DrawerSheet onClose={onClose}>{(close) => (<>
+      <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 22 }}>Need help?</div>
+      <div style={{ fontSize: 13, color: P.ink2, margin: '4px 0 14px', lineHeight: 1.4 }}>Reach the people running {tournament.name || 'this tournament'}.{quiet.length > 0 ? ' Admins who are not playing are first because they can answer right away.' : ''}</div>
+      {contacts.length === 0 && <div style={{ padding: 14, border: `1px dashed ${P.rule}`, borderRadius: 12, fontSize: 13, color: P.ink2, lineHeight: 1.5, marginBottom: 12 }}>No contact details yet. Ask in the group chat.{isAdmin ? ' Add yours below so players can reach you.' : ''}</div>}
+      {quiet.length > 0 && quiet.map((c, i) => card(c, i === 0))}
+      {quiet.length > 0 && contacts.length > quiet.length && <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', margin: '4px 0 6px' }}>Also running the event (playing)</div>}
+      {contacts.filter(c => c.playing !== false).map(c => card(c, false))}
+      <button onClick={() => { close(); onOpenChat(); }} style={{ width: '100%', minHeight: 46, borderRadius: 12, border: `1px solid ${P.rule}`, background: 'transparent', color: P.ink, fontWeight: 600, fontSize: 14, cursor: 'pointer', marginTop: 4 }}>Ask in the group chat</button>
+      {isAdmin && <button onClick={() => { close(); onManage(); }} style={{ width: '100%', minHeight: 44, background: 'transparent', border: 'none', color: '#7A5C0F', fontWeight: 700, fontSize: 13, cursor: 'pointer', textDecoration: 'underline', marginTop: 4 }}>Edit contacts and helpers</button>}
+      <div style={{ fontSize: 11.5, color: P.ink3, textAlign: 'center', marginTop: 8 }}>Text opens your messages app with the tournament name filled in.</div>
+    </>)}</DrawerSheet>
+  );
+}
+function AdminTeamModal({ tournament, updateTournament, roundCode, onClose }) {
+  const org = tournament.organizer || {};
+  const [oName, setOName] = useState(org.name || '');
+  const [oPhone, setOPhone] = useState(org.phone || '');
+  const [oEmail, setOEmail] = useState(org.email || '');
+  const [oPlaying, setOPlaying] = useState(org.playing !== false);
+  const [hName, setHName] = useState(''); const [hPhone, setHPhone] = useState(''); const [hEmail, setHEmail] = useState(''); const [hPlaying, setHPlaying] = useState(false);
+  const [msg, setMsg] = useState('');
+  const invites = tournament.adminInvites || [];
+  const fld = { ...inputStyle, marginBottom: 8, fontSize: 15 };
+  const lbl = { fontSize: 11, fontWeight: 600, color: P.ink2, marginBottom: 3, display: 'block' };
+  const saveOrg = () => { updateTournament(prev => ({ ...prev, organizer: { name: oName.trim(), phone: oPhone.trim(), email: oEmail.trim(), playing: oPlaying } })); setMsg('Saved'); setTimeout(() => setMsg(''), 1600); };
+  const linkFor = (inv) => `${window.location.origin}?code=${roundCode}&invite=${inv.token}`;
+  const sendInvite = async (inv) => {
+    const link = linkFor(inv);
+    const text = `${inv.name.split(' ')[0]}, you're helping run ${tournament.name || 'our tournament'} on ${BRAND.name}. Tap to open as an admin: ${link}`;
+    try {
+      if (inv.phone) { window.location.href = smsHref(inv.phone, text); }
+      else if (navigator.share) { await navigator.share({ title: 'Admin invite', text, url: link }); }
+      else { await navigator.clipboard.writeText(link); setMsg('Link copied'); setTimeout(() => setMsg(''), 1600); }
+    } catch (e) { /* cancelled */ }
+  };
+  const addHelper = () => {
+    if (!hName.trim()) return;
+    const inv = { id: 'a_' + Date.now().toString(36), token: newInviteToken(), name: hName.trim(), phone: hPhone.trim(), email: hEmail.trim(), playing: hPlaying, createdAt: Date.now() };
+    updateTournament(prev => ({ ...prev, adminInvites: [...(prev.adminInvites || []), inv] }));
+    setHName(''); setHPhone(''); setHEmail(''); setHPlaying(false);
+    sendInvite(inv);
+  };
+  const remove = (id) => updateTournament(prev => ({ ...prev, adminInvites: (prev.adminInvites || []).filter(i => i.id !== id) }));
+  const togglePlaying = (id) => updateTournament(prev => ({ ...prev, adminInvites: (prev.adminInvites || []).map(i => i.id === id ? { ...i, playing: !i.playing } : i) }));
+  return (
+    <DrawerSheet onClose={onClose}>{(close) => (<>
+      <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 22 }}>Admins and helpers</div>
+      <div style={{ fontSize: 12.5, color: P.ink2, margin: '4px 0 14px', lineHeight: 1.45 }}>Players tap Need help? to reach these people. A helper you invite gets one personal link. Tapping it makes them an admin, with no PIN and no name to pick.</div>
+
+      <div style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 14, padding: 12, marginBottom: 14 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>You (organizer)</div>
+        <label style={lbl}>Name</label><input value={oName} onChange={e => setOName(e.target.value)} placeholder="Your name" style={fld} />
+        <label style={lbl}>Mobile number for texts</label><input value={oPhone} onChange={e => setOPhone(e.target.value)} placeholder="(555) 000-0000" inputMode="tel" style={fld} />
+        <label style={lbl}>Email</label><input value={oEmail} onChange={e => setOEmail(e.target.value)} placeholder="you@example.com" inputMode="email" style={fld} />
+        <ToggleRow label="I'm playing too" sub="Admins who are not playing are listed first in Need help" enabled={oPlaying} onToggle={() => setOPlaying(v => !v)} />
+        <GoldButton onClick={saveOrg} style={{ width: '100%', marginTop: 8 }}>Save my contact</GoldButton>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', margin: '0 0 8px' }}>Helpers ({invites.length})</div>
+      {invites.length === 0 && <div style={{ fontSize: 12.5, color: P.ink3, marginBottom: 10 }}>No helpers yet.</div>}
+      {invites.map(inv => (
+        <div key={inv.id} style={{ padding: '10px 12px', background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 12, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>{inv.name}</div>
+              <div style={{ fontSize: 11.5, color: P.ink2 }}>{inv.claimedAt ? 'Joined as admin' : 'Invite sent, not opened yet'}{inv.playing ? ' · playing' : ' · not playing'}</div>
+            </div>
+            <button onClick={() => togglePlaying(inv.id)} style={{ minHeight: 36, padding: '0 10px', borderRadius: 8, border: `1px solid ${P.rule}`, background: 'transparent', color: P.ink2, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{inv.playing ? 'Playing' : 'Not playing'}</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={() => sendInvite(inv)} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: '1.5px solid #1F6B3A', background: 'transparent', color: '#1F6B3A', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>{inv.claimedAt ? 'Share link again' : 'Send invite again'}</button>
+            <button onClick={() => { if (window.confirm(`Remove ${inv.name} as an admin? Their link stops working.`)) remove(inv.id); }} style={{ minHeight: 40, padding: '0 14px', borderRadius: 10, border: `1.5px solid ${P.red}`, background: 'transparent', color: P.red, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Remove</button>
+          </div>
+        </div>
+      ))}
+
+      <div style={{ background: P.paper, border: `2px solid ${C.gold}`, borderRadius: 14, padding: 12, margin: '12px 0' }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Invite a helper</div>
+        <label style={lbl}>Name</label><input value={hName} onChange={e => setHName(e.target.value)} placeholder="Mary Ortiz" style={fld} />
+        <label style={lbl}>Mobile number (the invite goes here by text)</label><input value={hPhone} onChange={e => setHPhone(e.target.value)} placeholder="(555) 000-0000" inputMode="tel" style={fld} />
+        <label style={lbl}>Email (optional, shown in Need help)</label><input value={hEmail} onChange={e => setHEmail(e.target.value)} placeholder="mary@example.com" inputMode="email" style={fld} />
+        <ToggleRow label="Playing in this tournament" sub="Leave off for pro shop staff or friends who only help run it" enabled={hPlaying} onToggle={() => setHPlaying(v => !v)} />
+        <GoldButton onClick={addHelper} disabled={!hName.trim()} style={{ width: '100%', marginTop: 8 }}>Create and send invite</GoldButton>
+        <div style={{ fontSize: 11.5, color: P.ink3, marginTop: 8, lineHeight: 1.45 }}>Opens your messages app with the link filled in. No mobile number? The share sheet opens instead.</div>
+      </div>
+
+      {tournament.adminPin && <div style={{ fontSize: 12, color: P.ink2, lineHeight: 1.5, padding: '4px 2px 10px' }}><b>Backup:</b> if a link will not open, the helper can join with the round code, tap "I'm helping run this", and enter PIN <b style={{ letterSpacing: 1.5, color: '#7A5C0F' }}>{tournament.adminPin}</b>.</div>}
+      {msg && <div role="status" style={{ textAlign: 'center', fontSize: 12.5, color: P.green, fontWeight: 700 }}>{msg}</div>}
+    </>)}</DrawerSheet>
+  );
+}
 function BecomeAdminModal({ onSubmit, onClose }) {
   const [pin, setPin] = useState(''); const [err, setErr] = useState(false);
   return (
@@ -8552,6 +8677,67 @@ function LayoutPreferencesModal({ prefs, onToggle, onClose }) {
 
 /* ============================== MEMBER-MEMBER SCREENS ============================== */
 /* Home card for a Member-Member event: today's net standings by flight, best three per flight. Tap for everything. */
+// How a team's strokes are worked out: each partner's course handicap, times the allowance, rounded. Shown to players and used by the admin check.
+function teamStrokeRows(tournament, team) {
+  const te = getTeamEvent(tournament); const r0 = tournament.rounds[0]; if (!r0) return [];
+  const view = getRoundView({ ...tournament, handicapsEnabled: true }, r0.id);
+  return (team.playerIds || []).map(id => (tournament.players || []).find(p => p.id === id)).filter(Boolean).map(p => {
+    const course = getCourseHandicap(p, view);
+    const scaled = (parseFloat(course) || 0) * te.netPct / 100;
+    const strokes = getPlayingHandicap(p, view, { type: 'percentage', percent: te.netPct });
+    return { id: p.id, name: p.name, course, scaled, strokes, hasIndex: !isNaN(parseFloat(p.handicapIndex)) };
+  });
+}
+function StrokesChip({ tournament, team, strong }) {
+  const [open, setOpen] = useState(false);
+  const rows = teamStrokeRows(tournament, team);
+  if (rows.length < 2) return null;
+  const go = (e) => { e.stopPropagation(); e.preventDefault(); setOpen(true); };
+  return (
+    <>
+      <span role="button" tabIndex={0} aria-label={`How ${team.name} strokes are worked out`} onClick={go} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') go(e); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 28, boxSizing: 'border-box', padding: '0 9px', marginTop: 3, borderRadius: 999, border: `1.5px solid ${strong ? '#7A5C0F' : 'rgba(122,92,15,0.55)'}`, background: '#FFFDF6', fontSize: 11, fontWeight: 700, color: '#7A5C0F', cursor: 'pointer' }}>Strokes {rows.map(r => r.strokes).join(' + ')}<ChevronRight size={11} /></span>
+      {open && <TeamStrokesSheet tournament={tournament} team={team} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+function TeamStrokesSheet({ tournament, team, onClose }) {
+  const te = getTeamEvent(tournament);
+  const rows = teamStrokeRows(tournament, team);
+  const r0 = tournament.rounds[0];
+  const view = getRoundView({ ...tournament, handicapsEnabled: true }, (tournament.rounds.find(r => r.id === tournament.activeRoundId) || r0).id);
+  const n = view.numHoles || 18; const si = Array.isArray(view.strokeIndex) && view.strokeIndex.length === n ? view.strokeIndex : null;
+  const phs = rows.map(r => r.strokes);
+  const avg = phs.length ? phs.reduce((a, b) => a + b, 0) / phs.length : 0;
+  const gap = phs.length === 2 ? Math.abs(phs[0] - phs[1]) : 0;
+  const gets = (ph, h) => { const base = Math.floor(ph / n), extra = ph % n; return base + ((si ? si[h] : h + 1) <= extra ? 1 : 0); };
+  const flight = (tournament.flights || []).find(f => f.id === team.netFlightId);
+  const mono = { fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, textAlign: 'right' };
+  return (
+    <DrawerSheet onClose={onClose}>{() => (<>
+      <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 21 }}>{team.name}</div>
+      <div style={{ fontSize: 12.5, color: P.ink2, margin: '2px 0 12px' }}>{flight ? `${flight.name} · ` : ''}handicap allowance {te.netPct}%</div>
+      <div style={{ border: `1px solid ${P.rule}`, borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 52px 56px 62px', gap: 4, padding: '7px 12px', background: 'rgba(32,35,29,0.07)', fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: P.ink3 }}><span>Player</span><span style={{ textAlign: 'right' }}>Course</span><span style={{ textAlign: 'right' }}>× {te.netPct}%</span><span style={{ textAlign: 'right' }}>Strokes</span></div>
+        {rows.map(r => (
+          <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 52px 56px 62px', gap: 4, padding: '10px 12px', alignItems: 'center', borderTop: `1px solid ${P.rule}` }}>
+            <span style={{ fontWeight: 600, fontSize: 14, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(r.name)}{!r.hasIndex && <span style={{ color: '#7A5C0F', fontSize: 11 }}> no index</span>}</span>
+            <span style={mono}>{r.course}</span><span style={mono}>{r.scaled.toFixed(1)}</span><span style={{ ...mono, color: '#1F6B3A' }}>{r.strokes}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <div style={{ flex: 1, background: 'rgba(31,107,58,0.1)', borderRadius: 12, padding: '8px 12px' }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: P.ink2 }}>Team average</div><div style={{ ...mono, textAlign: 'left', fontSize: 20, color: '#1F6B3A' }}>{avg.toFixed(1)}</div><div style={{ fontSize: 10.5, color: P.ink2 }}>places the team in a flight</div></div>
+        <div style={{ flex: 1, background: 'rgba(201,162,75,0.2)', borderRadius: 12, padding: '8px 12px' }}><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: P.ink2 }}>Partner gap</div><div style={{ ...mono, textAlign: 'left', fontSize: 20, color: gap > te.maxSpread && te.maxSpread > 0 ? P.red : '#7A5C0F' }}>{gap}</div><div style={{ fontSize: 10.5, color: P.ink2 }}>{te.maxSpread > 0 ? `limit is ${te.maxSpread}` : 'no limit set'}</div></div>
+      </div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', margin: '14px 0 6px' }}>Strokes by hole</div>
+      <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(${n}, 1fr)`, gap: 1, alignItems: 'center', fontSize: 9, color: P.ink3, textAlign: 'center' }}>
+        <span style={{ textAlign: 'left' }}>Hole</span>{Array.from({ length: n }, (_, h) => <span key={h}>{h + 1}</span>)}
+        {rows.map(r => (<React.Fragment key={r.id}><span style={{ textAlign: 'left', color: P.ink, fontSize: 10, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap' }}>{r.name.split(' ')[0]}</span>{Array.from({ length: n }, (_, h) => { const g = gets(r.strokes, h); return <span key={h} style={{ height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: g > 1 ? 11 : 7, height: g > 1 ? 11 : 7, borderRadius: 999, background: g > 0 ? '#1F6B3A' : 'rgba(32,35,29,0.12)', color: '#fff', fontSize: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{g > 1 ? g : ''}</span></span>; })}</React.Fragment>))}
+      </div>
+      <div style={{ fontSize: 12, color: P.ink2, marginTop: 12, lineHeight: 1.45 }}>Each hole counts the better net score of the two partners. A dot is a hole where that player gets a stroke.</div>
+    </>)}</DrawerSheet>
+  );
+}
 function TeamLeaderboardCard({ tournament, onOpen }) {
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
   const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
@@ -8581,6 +8767,7 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
                 <span style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: r.place === 1 ? '#7A5C0F' : P.ink3, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13, color: P.ink, fontWeight: r.place === 1 && r.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
+                  <StrokesChip tournament={tournament} team={r.team} strong={r.place === 1} />
                   <LiveFlash flash={flash} />
                 </span>
                 <span style={{ fontSize: 11, color: P.ink3, textAlign: 'center' }}>{r.thru > 0 ? r.thru : '–'}</span>
@@ -8615,6 +8802,8 @@ function TeamEventSetup({ tournament, updateTournament }) {
   const [pickA, setPickA] = useState('');
   const [pickB, setPickB] = useState('');
   const [msg, setMsg] = useState('');
+  const [openSec, setOpenSec] = useState({ teams: true });
+  const [pairsDismissed, setPairsDismissed] = useState(false);
   const te = getTeamEvent(tournament);
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
   const players = tournament.players || [];
@@ -8629,6 +8818,16 @@ function TeamEventSetup({ tournament, updateTournament }) {
   const help = (t) => <div style={{ fontSize: 12.5, color: P.ink2, lineHeight: 1.45, marginBottom: 8 }}>{t}</div>;
   const row = (label, control) => <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13, marginTop: 8 }}><span>{label}</span>{control}</div>;
   const hasBetting = tournament.bettingEnabled !== false;
+  const sec = (id, title, badge, body) => (
+    <div style={{ ...box, padding: 0 }}>
+      <button onClick={() => setOpenSec(o => ({ ...o, [id]: !o[id] }))} aria-expanded={!!openSec[id]} style={{ width: '100%', minHeight: 48, padding: '0 12px', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, color: P.ink, textAlign: 'left' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}><span style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 15 }}>{title}</span>{badge != null && badge !== '' && <span style={{ fontSize: 11, color: '#7A5C0F', background: 'rgba(32,35,29,0.08)', borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' }}>{badge}</span>}</span>
+        {openSec[id] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+      </button>
+      {openSec[id] && <div style={{ padding: '2px 12px 12px', borderTop: `1px solid ${P.rule}` }}>{body}</div>}
+    </div>
+  );
+  const bbPairs = (() => { const src = tournament.rounds.map(r => (r.games && r.games.bestBall && r.games.bestBall.pairs) || []).find(ps => ps.some(p => (p.playerIds || []).length === 2)); if (!src) return 0; const have = new Set((te.teams || []).map(t => teamSig(t.playerIds))); return src.filter(p => (p.playerIds || []).length === 2 && !have.has(teamSig(p.playerIds))).length; })();
   const inTeam = new Set(te.teams.flatMap(t => t.playerIds || []));
   const free = players.filter(p => !inTeam.has(p.id));
   const addTeam = () => { if (!pickA || !pickB || pickA === pickB) return; setTe({ teams: [...te.teams, { id: 'team_' + Date.now() + '_' + te.teams.length, name: '', playerIds: [pickA, pickB] }] }); setPickA(''); setPickB(''); };
@@ -8662,8 +8861,8 @@ function TeamEventSetup({ tournament, updateTournament }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
       {msg && <div role="status" style={{ fontSize: 12.5, color: P.green }}>{msg}</div>}
-      <div style={box}>
-        {lab(`Teams (${te.teams.length})`)}
+      {sec('teams', 'Teams', te.teams.length, (<>
+        
         {te.teams.length === 0 && help('Add each pair of partners. They keep the same partner every round. Players already on a team are hidden from the lists.')}
         {te.teams.map(t => (
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${P.rule}` }}>
@@ -8676,18 +8875,27 @@ function TeamEventSetup({ tournament, updateTournament }) {
           <select aria-label="Partner two" value={pickB} onChange={e => setPickB(e.target.value)} style={{ ...sel, flex: 1 }}><option value="">Partner 2</option>{free.filter(p => p.id !== pickA).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <GoldButton onClick={addTeam} disabled={!pickA || !pickB} style={{ padding: '0 14px' }}>Add</GoldButton>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><GhostButton onClick={importPairs}>Use my Best Ball pairs</GhostButton></div>
+        {bbPairs > 0 && !pairsDismissed && te.teams.length === 0 && (
+          <div style={{ marginTop: 10, padding: '10px 12px', background: '#FFFDF6', border: `2px solid ${C.gold}`, borderRadius: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5 }}>Found {bbPairs} Best Ball pair{bbPairs === 1 ? '' : 's'} from before</div>
+            <div style={{ fontSize: 12, color: P.ink2, margin: '3px 0 8px', lineHeight: 1.4 }}>Team Event replaces the Best Ball game while it is on. Import the pairs once and they become your teams here.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <GoldButton onClick={importPairs} style={{ flex: 1, padding: '10px 0' }}>{`Import ${bbPairs} team${bbPairs === 1 ? '' : 's'}`}</GoldButton>
+              <GhostButton onClick={() => setPairsDismissed(true)}>Not now</GhostButton>
+            </div>
+          </div>
+        )}
         {free.length > 0 && te.teams.length > 0 && <div style={{ fontSize: 12, color: '#7A5C0F', marginTop: 8 }}>{free.length} player{free.length === 1 ? ' is' : 's are'} not on a team: {free.map(p => p.name).join(', ')}</div>}
-      </div>
+      </>))}
 
-      <div style={box}>
-        {lab('Ironwood Member-Member preset')}
+      {sec('preset', 'Ironwood preset', null, (<>
+        
         {help('One tap sets every rule to the Member-Member 2026 format: 90% allowance, net double bogey maximum, back-nine countback, net and gross flights, 5 / 5 + 2 per stroke Sunday limit, 10% expenses, 50/50 days, $20 mulligans, 10 stroke partner limit. You can still change any of them afterwards.')}
         <GoldButton onClick={() => { setTe(IRONWOOD_PRESET); setMsg('Ironwood Member-Member settings applied.'); }} style={{ width: '100%', padding: '10px 0' }}>Apply Ironwood settings</GoldButton>
-      </div>
+      </>))}
 
-      <div style={box}>
-        {lab('Lock handicaps by day')}
+      {sec('lock', 'Lock handicaps by day', `${model.rounds.slice(0, 2).filter((rd, i) => { const rr = tournament.rounds[i]; return !!(rr && rr.handicapsLocked && Array.isArray(rr.roundPlayers) && rr.roundPlayers.length > 0); }).length} of 2 locked`, (<>
+        
         {help('Freezes the handicaps used for a finished day, so a later Handicap Committee change only affects the days after it. Lock Saturday before you adjust anyone.')}
         {model.rounds.slice(0, 2).map((rd, i) => {
           const rr = tournament.rounds[i]; const locked = !!(rr && rr.handicapsLocked && Array.isArray(rr.roundPlayers) && rr.roundPlayers.length > 0);
@@ -8704,10 +8912,40 @@ function TeamEventSetup({ tournament, updateTournament }) {
             </div>
           );
         })}
-      </div>
+      </>))}
 
-      <div style={box}>
-        {lab('Scoring')}
+      {sec('hcheck', 'Handicap check', tooFar.length ? `${tooFar.length} warning${tooFar.length === 1 ? '' : 's'}` : (te.teams.length ? 'all good' : null), (<>
+        {help(`Allowance ${te.netPct}% · partner gap limit ${te.maxSpread > 0 ? te.maxSpread : 'off'} · net flights come from the average of each team's two playing handicaps. Change a handicap in Players and this table updates.`)}
+        {te.teams.length === 0 && <div style={{ fontSize: 12.5, color: P.ink3 }}>Add teams to see their strokes here.</div>}
+        {te.teams.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 34px 40px 34px 62px', gap: 4, padding: '6px 4px', fontSize: 9.5, fontWeight: 700, letterSpacing: 0.7, textTransform: 'uppercase', color: P.ink3, borderBottom: `2px solid ${P.ink}` }}><span>Team</span><span style={{ textAlign: 'right' }}>A</span><span style={{ textAlign: 'right' }}>B</span><span style={{ textAlign: 'right' }}>Avg</span><span style={{ textAlign: 'right' }}>Gap</span><span style={{ textAlign: 'right' }}>Flight</span></div>
+        )}
+        {te.teams.map(t => {
+          const rows = teamStrokeRows(tournament, t); const ph = rows.map(r => r.strokes);
+          const avg = ph.length ? ph.reduce((a, b) => a + b, 0) / ph.length : 0; const gap = ph.length === 2 ? Math.abs(ph[0] - ph[1]) : 0;
+          const bad = te.maxSpread > 0 && gap > te.maxSpread;
+          const mt = model.teams.find(x => x.id === t.id); const fl = mt && (tournament.flights || []).find(f => f.id === mt.netFlightId);
+          const m = { textAlign: 'right', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600 };
+          return (
+            <div key={t.id} style={{ borderBottom: `1px solid ${P.rule}`, background: bad ? 'rgba(179,52,43,0.08)' : 'transparent' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 34px 34px 40px 34px 62px', gap: 4, padding: '9px 4px', alignItems: 'center', fontSize: 12.5 }}>
+                <span style={{ fontWeight: 600, lineHeight: 1.15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name || (t.playerIds || []).map(nameOf).join(' & ')}</span>
+                <span style={m}>{ph[0] ?? '–'}</span><span style={m}>{ph[1] ?? '–'}</span><span style={m}>{avg.toFixed(1)}</span><span style={{ ...m, fontWeight: 700, color: bad ? P.red : P.ink }}>{gap}</span><span style={{ textAlign: 'right', fontSize: 11 }}>{fl ? fl.name : '–'}</span>
+              </div>
+              {bad && (
+                <div style={{ padding: '0 4px 10px', fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5, lineHeight: 1.65 }}>
+                  {rows.map(r => <div key={r.id}>{r.name.split(' ')[0]} &nbsp;course {r.course} × {te.netPct}% = {r.scaled.toFixed(1)} → <b>{r.strokes}</b></div>)}
+                  <div>Average ({ph.join(' + ')}) ÷ 2 = <b>{avg.toFixed(1)}</b></div>
+                  <div style={{ color: P.red }}>Gap |{ph.join(' − ')}| = <b>{gap}</b>, over the limit of {te.maxSpread}</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>))}
+
+      {sec('scoring', 'Scoring', `${te.netPct}%`, (<>
+        
         {help('Each team scores best ball: the lower partner score on each hole counts. Handicaps are on for this event.')}
         {row('Net handicap allowance %', numInput(te.netPct, v => setTe({ netPct: num(v, 1, 100) })))}
         <div style={{ fontSize: 12, color: P.ink2, margin: '12px 0 6px' }}>Maximum score on a hole</div>
@@ -8715,9 +8953,9 @@ function TeamEventSetup({ tournament, updateTournament }) {
         {te.maxScore === 'overPar' && row('Strokes over par', numInput(te.maxOver, v => setTe({ maxOver: num(v, 1, 10) })))}
         {te.maxScore !== 'none' && <div style={{ fontSize: 12, color: P.ink2, marginTop: 8 }}>Score entry stops at the limit and counts only that much.</div>}
         <div style={{ marginTop: 8 }}><ToggleRow label="Break ties by back nine" sub="Back nine, then holes 10-12, 13-15 and so on, on the last round" enabled={te.countback} onToggle={() => setTe({ countback: !te.countback })} /></div>
-      </div>
+      </>))}
 
-      <div style={box}>
+      {sec('netfl', 'Net flights', te.netFlightsOn ? 'on' : 'off', (<>
         <ToggleRow label="Net flights" sub="Group teams by the average of their playing handicaps before play" enabled={te.netFlightsOn} onToggle={() => setTe({ netFlightsOn: !te.netFlightsOn })} />
         {te.netFlightsOn && (
           <>
@@ -8728,15 +8966,15 @@ function TeamEventSetup({ tournament, updateTournament }) {
             {tooFar.length > 0 && <div role="alert" style={{ marginTop: 10, fontSize: 12.5, color: P.red, lineHeight: 1.45 }}>Partners more than {te.maxSpread} strokes apart: {tooFar.map(d => `${d.t.playerIds.map(nameOf).join(' & ')} (${d.diff})`).join('; ')}</div>}
           </>
         )}
-      </div>
+      </>))}
 
-      <div style={box}>
+      {sec('grossfl', 'Gross flights', te.grossFlightsOn ? 'on' : 'off', (<>
         <ToggleRow label="Gross flights" sub={`Re-group teams by gross score after ${dayName(0)}`} enabled={te.grossFlightsOn} onToggle={() => setTe({ grossFlightsOn: !te.grossFlightsOn })} />
         {te.grossFlightsOn && (
           <>
             {help(`${r1Done} of ${te.teams.length} teams have finished ${dayName(0)}. Flights are set by gross score, best first.`)}
             {row('Number of flights', numInput(nGross, setNGross, 56))}
-            <GoldButton onClick={flightGross} disabled={r1Done === 0} style={{ width: '100%', marginTop: 10, padding: '10px 0' }}>{`Flight by ${dayName(0)} gross`}</GoldButton>
+            <GoldButton onClick={flightGross} disabled={r1Done === 0} style={{ width: '100%', marginTop: 10, padding: '10px 0' }}>{`Flight by ${dayName(0)} scores`}</GoldButton>
             {te.grossFlights.length > 0 && model.grossFlights.flatMap(g => g.teams).map(t => (
               <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: `1px solid ${P.rule}`, marginTop: 6 }}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}<span style={{ color: P.ink3 }}> · {t.gross.r1Done ? t.gross.r1 : '–'}</span></span>
@@ -8745,9 +8983,9 @@ function TeamEventSetup({ tournament, updateTournament }) {
             ))}
           </>
         )}
-      </div>
+      </>))}
 
-      <div style={box}>
+      {sec('catchup', 'Catch-up limit', te.improveRule ? 'on' : 'off', (<>
         <ToggleRow label="Catch-up limit on later rounds" sub="Caps how much a team can improve on its first-round gross score" enabled={te.improveRule} onToggle={() => setTe({ improveRule: !te.improveRule })} />
         {te.improveRule && (
           <>
@@ -8757,19 +8995,19 @@ function TeamEventSetup({ tournament, updateTournament }) {
             {row('Plus this many strokes for each stroke behind', numInput(te.trailMult, v => setTe({ trailMult: num(v, 0, 10) })))}
           </>
         )}
-      </div>
+      </>))}
 
       {hasBetting && (
-        <div style={box}>
-          {lab('Calcutta payouts')}
+        sec('calc', 'Calcutta payouts', null, (<>
+          
           {help('Applies if you run a Calcutta (Betting → Auction). Net winners are paid for each round separately.')}
           {row('Share held back for expenses %', numInput(te.expensesPct, v => setTe({ expensesPct: num(v, 0, 100) })))}
           {row(`${dayName(0)} share of payouts %`, numInput(te.daySplit[0], v => { const a = num(v, 0, 100); setTe({ daySplit: [a, 100 - a] }); }))}
           <div style={{ fontSize: 12, color: P.ink2, marginTop: 6, textAlign: 'right' }}>{dayName(1)} gets {te.daySplit[1]}%</div>
-        </div>
+        </>))
       )}
 
-      <div style={box}>
+      {sec('mull', 'Mulligans', te.mulligansOn ? 'on' : 'off', (<>
         <ToggleRow label="Sell mulligans" sub="Track who bought one so the group can see it" enabled={te.mulligansOn} onToggle={() => setTe({ mulligansOn: !te.mulligansOn })} />
         {te.mulligansOn && (
           <>
@@ -8779,7 +9017,7 @@ function TeamEventSetup({ tournament, updateTournament }) {
             </div>
           </>
         )}
-      </div>
+      </>))}
     </div>
   );
 }
@@ -8894,6 +9132,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
                 <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: g.rank === 1 ? '#7A5C0F' : P.ink3 }}>{g.tied ? 'T' : ''}{g.rank}<LiveChange change={change} /></span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                  <StrokesChip tournament={tournament} team={t} />
                   <LiveFlash flash={flash} />
                   {sub && <div style={{ fontSize: 10.5, color: P.ink2, lineHeight: 1.3 }}>{sub}</div>}
                 </div>
@@ -8934,7 +9173,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
             return (
             <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: NET_GRID, gap: 4, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? '#7A5C0F' : P.ink3 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
-              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, lineHeight: 1.25, color: P.ink, overflowWrap: 'anywhere' }}>{r.team.name}</span><LiveFlash flash={flash} /></span>
+              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, lineHeight: 1.25, color: P.ink, overflowWrap: 'anywhere' }}>{r.team.name}</span><StrokesChip tournament={tournament} team={r.team} /><LiveFlash flash={flash} /></span>
               <span style={{ fontSize: 11, color: P.ink3, textAlign: 'center' }}>{started ? (r.complete ? 'F' : r.thru) : '–'}</span>
               <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(gTop) }}>{started ? fmtToPar(gTop) : '–'}</span>
               <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(r.netToPar) }}>{started ? fmtToPar(r.netToPar) : '–'}</span>
@@ -9044,7 +9283,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   );
 }
 
-function SettingsSheet({ onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn }) {
+function SettingsSheet({ onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn, onOpenAdminTeam }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? P.red : P.ink, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${P.rule}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -9061,6 +9300,7 @@ function SettingsSheet({ onClose, onOpenTeamEvent, onOpenSetup, onOpenNotificati
         {item(FileText, 'Tournament Rules', onOpenRules)}
         {multiRound && item(ChevronsUpDown, 'Switch round', onOpenRoundSwitcher)}
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
+        {isAdmin && onOpenAdminTeam && item(Users, 'Admins and helpers', onOpenAdminTeam)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
         {isAdmin && hasPlayers && bettingOn && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
@@ -10346,6 +10586,8 @@ export default function RoGreen() {
       const params = new URLSearchParams(window.location.search);
       const urlCode = params.get('code');
       if (urlCode) {
+        const inv = params.get('invite');
+        if (inv) { try { localStorage.setItem('db:invite-' + urlCode.toUpperCase(), inv); } catch (e) {} }
         // Clean the URL without reloading
         window.history.replaceState({}, '', window.location.pathname);
         return urlCode.toUpperCase();
@@ -10388,6 +10630,9 @@ export default function RoGreen() {
   const [drawerInitialReview, setDrawerInitialReview] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [becomeAdminOpen, setBecomeAdminOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [adminTeamOpen, setAdminTeamOpen] = useState(false);
+  const viaInviteRef = useRef(false);
   const [betBuilderOpen, setBetBuilderOpen] = useState(false);
   const [kosOpen, setKosOpen] = useState(false);
   const [cardPlayerId, setCardPlayerId] = useState(null);
@@ -10577,6 +10822,21 @@ export default function RoGreen() {
       try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch (e) {}
     }
   }, [adminAccount, tournament.creatorUid, roundCode, isAdmin]);
+
+  // Invite-link admins: a personal link grants admin while that invite exists.
+  // Removing the invite in Settings revokes it on the next sync (PIN/account admins are unaffected).
+  useEffect(() => {
+    if (!roundCode || loading || !loadedRef.current) return;
+    let tok = null; try { tok = localStorage.getItem('db:invite-' + roundCode); } catch (e) {}
+    if (!tok) return;
+    const inv = (tournament.adminInvites || []).find(i => i && i.token === tok);
+    if (inv) {
+      if (!isAdmin) { setIsAdmin(true); viaInviteRef.current = true; }
+      if (!inv.claimedAt) setTournament(prev => ({ ...prev, adminInvites: (prev.adminInvites || []).map(i => i.token === tok ? { ...i, claimedAt: Date.now() } : i) }));
+    } else if (viaInviteRef.current && isAdmin) {
+      viaInviteRef.current = false; setIsAdmin(false);
+    }
+  }, [tournament.adminInvites, roundCode, loading, isAdmin]);
 
   useEffect(() => {
     if (!roundCode || !loadedRef.current) return;
@@ -10846,7 +11106,7 @@ export default function RoGreen() {
   // handleLeave: clears the active session completely. last-code is also deleted
   // so the next startup doesn't show a stale resume button for this round.
   const handleLeave = () => { try { localStorage.removeItem('db:last-code'); } catch(e) {} setRoundCode(null); setTournament(defaultTournament()); setChat([]); setIsAdmin(false); setWhoamiId(null); setPreviewMode(false); setSettingsOpen(false); loadedRef.current = false; };
-  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
+  const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { viaInviteRef.current = false; setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
   const saveDeviceProfile = (name) => { setDeviceName(name); try { localStorage.setItem('db:device-profile', JSON.stringify({ name })); } catch(e) {} };
 
   const setIdentity = (playerId) => { setWhoamiId(playerId); setJustPickedIdentity(true); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {} };
@@ -11114,12 +11374,16 @@ export default function RoGreen() {
   // Show name picker if player hasn't identified themselves yet (non-admin only)
   if (!isAdmin && !whoamiId && hasPlayers) {
     return (
-      <WhoAreYouScreen
-        players={tournament.players}
-        onPick={(id) => setIdentity(id)}
-        onAddSelf={(name) => addSelf(name)}
-        onBack={() => { setRoundCode(null); }}
-      />
+      <>
+        <WhoAreYouScreen
+          players={tournament.players}
+          onPick={(id) => setIdentity(id)}
+          onAddSelf={(name) => addSelf(name)}
+          onBack={() => { setRoundCode(null); }}
+          onHelper={() => setBecomeAdminOpen(true)}
+        />
+        {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
+      </>
     );
   }
   const h = Math.max(0, Math.min(viewHole, state.numHoles - 1));
@@ -11207,7 +11471,7 @@ export default function RoGreen() {
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 60, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
         {!hasPlayers && (
           <div style={{ textAlign: 'center', marginTop: 60, padding: '0 12px' }}>
             <Flag size={40} color={'#7A5C0F'} style={{ marginBottom: 14 }} />
@@ -11220,23 +11484,24 @@ export default function RoGreen() {
             ) : <div style={{ color: P.ink2, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenTeamEvent={(teamId) => { setTeamEventTeam(typeof teamId === 'string' ? teamId : null); setTeamEventOpen('gross'); }} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenTeamEvent={(teamId) => { setTeamEventTeam(typeof teamId === 'string' ? teamId : null); setTeamEventOpen('gross'); }} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} onOpenHelp={() => setHelpOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} onPlayerTap={setCardPlayerId} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
       </div>
 
       {hasPlayers && (
-        <div style={{ flexShrink: 0, background: P.paper, borderTop: `1px solid ${P.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '8px 8px 14px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
+        <div style={{ flexShrink: 0, position: 'relative', background: P.paper, borderTop: `1px solid ${P.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '8px 8px 14px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
           <NavBtn icon={Home} label="Home" active={activeTab === 'home'} onClick={() => setActiveTab('home')} badge={whoami ? (() => { const me = stats.find(s => s.id === whoami.id); if (!me || me.thru === 0) return null; const d = me.toPar; return d === 0 ? 'E' : d > 0 ? `+${d}` : `${d}`; })() : null} />
           {tournament.bettingEnabled !== false && <NavBtn icon={Coins} label="Bets" active={activeTab === 'bets'} onClick={() => setActiveTab('bets')} />}
+          <EnterHero state={state} whoami={whoami} isAdmin={viewAsAdmin} tournament={tournament} onEnter={() => setDrawerOpen(true)} onReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} />
           {tournament.bettingEnabled !== false && <NavBtn icon={Receipt} label="Settle" active={activeTab === 'settle'} onClick={() => setActiveTab('settle')} />}
+          <NavBtn icon={MessageCircle} label="Chat" active={chatOpen} onClick={openChat} badge={(() => { const n = Math.max(0, chat.length - chatSeenLen); return n > 0 ? String(Math.min(n, 99)) + (n > 99 ? '+' : '') : null; })()} />
         </div>
       )}
 
       {hasPlayers && <ChatToasts chat={chat} players={tournament.players} />}
 
-      {hasPlayers && <ChatFab onClick={openChat} unread={Math.max(0, chat.length - chatSeenLen)} />}
 
       {setupOpen && isAdmin && (
         <SetupModal tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => setSetupOpen(false)} roundCode={roundCode} newPlayerName={newPlayerName} setNewPlayerName={setNewPlayerName} addPlayer={addPlayer} removePlayer={removePlayer} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPar={setPar} setSI={setSI} setYardage={setYardage} setCourseField={setCourseField} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} startRound={startRound} resetScores={resetScores} onPreview={() => { setSetupOpen(false); setPreviewMode(true); setActiveTab('home'); setDrawerOpen(true); }} onAddRound={addRound} onSwitchRound={switchRound} />
@@ -11245,7 +11510,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} />
+        <SettingsSheet onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} onOpenAdminTeam={() => { setSettingsOpen(false); setAdminTeamOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -11258,6 +11523,8 @@ export default function RoGreen() {
       }} />}
       {rulesOpen && <RulesModal rules={tournament.rules} isAdmin={viewAsAdmin} adminAccount={adminAccount} onSave={(text) => updateTournament(p => ({ ...p, rules: text }))} onClose={() => setRulesOpen(false)} />}
       {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
+      {helpOpen && <HelpSheet tournament={tournament} isAdmin={viewAsAdmin} onClose={() => setHelpOpen(false)} onOpenChat={openChat} onManage={() => setAdminTeamOpen(true)} />}
+      {adminTeamOpen && viewAsAdmin && <AdminTeamModal tournament={tournament} updateTournament={updateTournament} roundCode={roundCode} onClose={() => setAdminTeamOpen(false)} />}
       {betBuilderOpen && <BetBuilderModal state={{ ...state, players: tournament.players.length > state.players.length ? tournament.players : state.players }} templates={betTemplates} editingBet={typeof betBuilderOpen === 'object' ? betBuilderOpen : null} onCreate={(bet) => { addCustomBet(bet); setBetBuilderOpen(false); }} onSave={(id, updates) => { editCustomBet(id, updates); setBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setBetBuilderOpen(false)} />}
       {tournamentBetBuilderOpen && isAdmin && <BetBuilderModal state={{ players: tournament.players, numHoles: 18, handicapsEnabled: tournament.handicapsEnabled }} templates={betTemplates} editingBet={typeof tournamentBetBuilderOpen === 'object' ? tournamentBetBuilderOpen : null} onCreate={(bet) => { addTournamentCustomBet(bet); setTournamentBetBuilderOpen(false); }} onSave={(id, updates) => { editTournamentCustomBet(id, updates); setTournamentBetBuilderOpen(false); }} onSaveTemplate={saveBetTemplate} onDeleteTemplate={deleteBetTemplate} onClose={() => setTournamentBetBuilderOpen(false)} scopeLabel="whole trip" />}
       {myPositionOpen && <MyPositionModal state={state} bets={bets} ledger={ledger} whoami={whoami} onPick={setIdentity} onAddSelf={addSelf} onClose={() => setMyPositionOpen(false)} />}
