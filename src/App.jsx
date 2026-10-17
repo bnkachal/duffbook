@@ -3488,13 +3488,14 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
   return (
     <div data-testid="who-are-you-screen" style={{ height: '100dvh', background: P.ground, color: P.ink, display: 'flex', flexDirection: 'column', padding: 20, fontFamily: "'Instrument Sans', Inter, sans-serif", overflow: 'hidden' }}>
       <FontLoader />
+      <CoachMarks steps={COACH_NAME_STEPS} />
       <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'transparent', border: 'none', color: P.ink2, cursor: 'pointer', fontSize: 13, marginBottom: 20, alignSelf: 'flex-start', flexShrink: 0, padding: 0 }}><ChevronLeft size={16} /> Different code</button>
       <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 26, letterSpacing: -0.3, marginBottom: 4, textAlign: 'center', flexShrink: 0 }}>Who are you?</div>
       <div style={{ color: P.ink3, fontSize: 13, marginBottom: 16, textAlign: 'center', flexShrink: 0 }}>Tap your name to join</div>
 
       {/* Smart suggestion banner */}
       {suggestion && (
-        <button onClick={() => setSelected(suggestion)} style={{ display: 'flex', alignItems: 'center', gap: 12, background: `linear-gradient(135deg, ${P.green}18, ${C.gold}12)`, border: `1.5px solid ${P.green}40`, borderRadius: 8, padding: '12px 16px', cursor: 'pointer', marginBottom: 12, flexShrink: 0, width: '100%', textAlign: 'left' }}>
+        <button data-coach="names" onClick={() => setSelected(suggestion)} style={{ display: 'flex', alignItems: 'center', gap: 12, background: `linear-gradient(135deg, ${P.green}18, ${C.gold}12)`, border: `1.5px solid ${P.green}40`, borderRadius: 8, padding: '12px 16px', cursor: 'pointer', marginBottom: 12, flexShrink: 0, width: '100%', textAlign: 'left' }}>
           <Chip color={pc(suggestion)} style={{ width: 38, height: 38, fontSize: 14, flexShrink: 0 }}>{initials(suggestion.name)}</Chip>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 11, color: P.green, fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Are you…</div>
@@ -3505,7 +3506,7 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName }) {
       )}
 
       {/* 2-column player grid */}
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, alignContent: 'start' }}>
+      <div data-coach="names" style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, alignContent: 'start' }}>
         {sorted.filter(p => !suggestion || p.id !== suggestion.id).map(p => (
           <button key={p.id} data-testid={`player-pick-btn-${p.id}`} onClick={() => setSelected(p)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: P.paper, border: `1.5px solid ${P.rule}`, borderRadius: 12, padding: '11px 12px', cursor: 'pointer', textAlign: 'left', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
             <Chip color={pc(p)} style={{ width: 32, height: 32, fontSize: 12, flexShrink: 0 }}>{initials(p.name)}</Chip>
@@ -4626,7 +4627,7 @@ function RoundCardHome({ state, whoami, thru, toPar, onOpen }) {
   });
   const lastRun = runs.length ? (() => { const t = runs[runs.length - 1]; return t; })() : null;
   return (
-    <div onClick={(e) => { if (onOpen && !e.target.closest('button')) onOpen(); }} style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 8, overflow: 'hidden', marginBottom: 12, cursor: onOpen ? 'pointer' : 'default' }}>
+    <div data-coach="card" onClick={(e) => { if (onOpen && !e.target.closest('button')) onOpen(); }} style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 8, overflow: 'hidden', marginBottom: 12, cursor: onOpen ? 'pointer' : 'default' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 6px 14px' }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: 'uppercase', color: P.ink3, whiteSpace: 'nowrap' }}>{canNet ? 'Round' : 'Your round'}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -5087,7 +5088,7 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, pr
   // Anyone not placed in a flight still shows up, in their own group at the bottom.
   const groups = leaderboard.some(p => !flights.some(f => f.id === p.flightId)) ? [...flights, { id: '__none', name: 'Everyone else', color: P.ink3 }] : flights;
   return (
-    <div onClick={onTap} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
+    <div data-coach="card" onClick={onTap} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${P.rule}` }}>
         <div>
           <div style={{ fontFamily: DISPLAY, fontSize: 18, fontWeight: 900, letterSpacing: -0.3, color: P.ink }}>Leaderboard</div>
@@ -5127,6 +5128,7 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, pr
           </div>
         );
       })}
+      <TapCue label="Tap to open" />
     </div>
   );
 }
@@ -5183,7 +5185,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
   const rows = shouldScroll ? [...leaderboard, ...leaderboard].slice(offset, offset + VISIBLE + 1) : leaderboard;
 
   return (
-    <div onClick={e => { onTap && onTap(e); }} onMouseDown={holdStart} onMouseUp={holdEnd} onMouseLeave={holdEnd} onTouchStart={holdStart} onTouchEnd={holdEnd} onTouchCancel={holdEnd} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
+    <div data-coach="card" onClick={e => { onTap && onTap(e); }} onMouseDown={holdStart} onMouseUp={holdEnd} onMouseLeave={holdEnd} onTouchStart={holdStart} onTouchEnd={holdEnd} onTouchCancel={holdEnd} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 8px', borderBottom: `1px solid ${P.rule}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div>
@@ -5229,6 +5231,7 @@ function ScrollingLeaderboard({ leaderboard, stats, useNet, onTap, fmtToPar, pre
           })}
         </div>
       </div>
+      <TapCue label="Tap to open" />
     </div>
   );
 }
@@ -5648,8 +5651,95 @@ function useSeenFlag(key) {
   const mark = () => { setSeen(true); try { localStorage.setItem('db:seen-' + key, '1'); } catch (e) {} };
   return [seen, mark];
 }
+
+/* ===== First-run coach marks: small spotlight + callout, shown once per device per tip ===== */
+const COACH_KEY = 'db:coach-seen';
+const readCoachSeen = () => { try { const v = JSON.parse(localStorage.getItem(COACH_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+function TapCue({ label = 'Tap to open' }) {
+  return <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 3, padding: '7px 12px 8px', borderTop: `1px solid ${P.rule}`, fontSize: 11, fontWeight: 700, color: '#7A5C0F', letterSpacing: 0.2 }}>{label}<ChevronRight size={14} /></div>;
+}
+function coachMeasure(step) {
+  if (typeof document === 'undefined') return null;
+  let els = Array.from(document.querySelectorAll(step.sel));
+  if (step.max) els = els.slice(0, step.max);
+  const vh = window.innerHeight, vw = window.innerWidth;
+  let l = 1e9, t = 1e9, r = -1e9, b = -1e9;
+  els.forEach(el => { const q = el.getBoundingClientRect(); if (q.width < 4 || q.height < 4) return; l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); });
+  if (r <= l || b <= t) return null;
+  l = Math.max(l, 0); t = Math.max(t, 0); r = Math.min(r, vw); b = Math.min(b, step.clampBottom ? vh - step.clampBottom : vh);
+  if (r <= l || b <= t + 8) return null;
+  return { l: Math.round(l), t: Math.round(t), r: Math.round(r), b: Math.round(b) };
+}
+function CoachMarks({ steps, enabled = true }) {
+  const [seen, setSeen] = useState(readCoachSeen);
+  const [cur, setCur] = useState(null);
+  const [ready, setReady] = useState(false);
+  const stepsRef = useRef(steps); stepsRef.current = steps;
+  const scrolledRef = useRef({});
+  const stepsKey = steps.map(s => s.id).join(',');
+  useEffect(() => { const t = setTimeout(() => setReady(true), 700); return () => clearTimeout(t); }, []);
+  useEffect(() => { const h = () => setSeen(readCoachSeen()); window.addEventListener('db:replay-tips', h); return () => window.removeEventListener('db:replay-tips', h); }, []);
+  useEffect(() => {
+    if (!enabled || !ready) { setCur(null); return; }
+    const tick = () => {
+      for (const s of stepsRef.current) {
+        if (seen.includes(s.id)) continue;
+        if (s.scroll && !scrolledRef.current[s.id]) {
+          const el = document.querySelector(s.sel);
+          if (el) { scrolledRef.current[s.id] = true; try { el.scrollIntoView({ block: 'start', behavior: 'auto' }); const sc = el.closest('[style*="overflow-y: auto"]'); if (sc) sc.scrollTop = Math.max(0, sc.scrollTop - 16); } catch (e) {} return; }
+        }
+        const m = coachMeasure(s);
+        if (m) { setCur(prev => (prev && prev.id === s.id && JSON.stringify(prev.rect) === JSON.stringify(m) && prev.vw === window.innerWidth && prev.vh === window.innerHeight) ? prev : { id: s.id, rect: m, vw: window.innerWidth, vh: window.innerHeight }); return; }
+      }
+      setCur(null);
+    };
+    tick();
+    const iv = setInterval(tick, 300);
+    window.addEventListener('resize', tick);
+    return () => { clearInterval(iv); window.removeEventListener('resize', tick); };
+  }, [enabled, ready, seen, stepsKey]);
+  if (!enabled || !ready || !cur) return null;
+  const step = steps.find(s => s.id === cur.id);
+  if (!step) return null;
+  const { l, t, r, b } = cur.rect;
+  const vw = cur.vw, vh = cur.vh;
+  const pad = step.pad == null ? 6 : step.pad;
+  const hole = { left: l - pad, top: t - pad, width: r - l + pad * 2, height: b - t + pad * 2 };
+  const W = Math.min(step.width || 260, vw - 24);
+  const cx = (l + r) / 2;
+  const left = Math.max(12, Math.min(cx - W / 2, vw - W - 12));
+  const caretX = Math.max(26, Math.min(cx - left, W - 26));
+  const roomBelow = vh - (hole.top + hole.height);
+  const place = step.place === 'above' ? 'above' : (roomBelow > 170 ? 'below' : (hole.top > 190 && step.place !== 'dock' ? 'above' : 'dock'));
+  const idx = steps.findIndex(s => s.id === cur.id);
+  const posStyle = place === 'below' ? { top: hole.top + hole.height + 12 } : place === 'above' ? { bottom: vh - hole.top + 12 } : { bottom: 24 };
+  const caretStyle = place === 'below' || place === 'dock' ? { top: -7 } : { bottom: -7 };
+  const done = () => { const next = Array.from(new Set([...readCoachSeen(), step.id])); try { localStorage.setItem(COACH_KEY, JSON.stringify(next)); } catch (e) {} setSeen(next); };
+  const circle = step.shape === 'circle';
+  return (
+    <div role="dialog" aria-label={step.title} style={{ position: 'fixed', inset: 0, zIndex: 400 }}>
+      <div style={{ position: 'absolute', inset: 0 }} />
+      <div style={{ position: 'absolute', ...hole, borderRadius: circle ? 999 : 12, boxShadow: '0 0 0 4000px rgba(10,12,8,0.78)', pointerEvents: 'none', transition: 'all .25s ease' }} />
+      <div style={{ position: 'absolute', ...hole, borderRadius: circle ? 999 : 12, border: '2px solid #F5C84C', animation: 'coachRing 2.2s ease-out infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', left, width: W, boxSizing: 'border-box', background: '#FFFFFF', color: '#0B0D0A', borderRadius: 18, padding: '14px 14px 4px 16px', boxShadow: '0 12px 32px rgba(0,0,0,0.55)', fontFamily: "'Instrument Sans', Inter, sans-serif", ...posStyle }}>
+        {place !== 'dock' || true ? <div style={{ position: 'absolute', left: caretX - 7, width: 14, height: 14, background: '#FFFFFF', transform: 'rotate(45deg)', borderRadius: 3, ...caretStyle }} /> : null}
+        <div style={{ fontWeight: 800, fontSize: 17, lineHeight: 1.2, letterSpacing: -0.2, position: 'relative' }}>{step.title}</div>
+        <div style={{ fontSize: 13, lineHeight: 1.4, color: '#44463C', marginTop: 4, position: 'relative' }}>{step.body}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: steps.length > 1 ? 'space-between' : 'flex-end', marginTop: 6, position: 'relative' }}>
+          {steps.length > 1 && <div aria-hidden="true" style={{ display: 'flex', gap: 5 }}>{steps.map((s, k) => <span key={s.id} style={{ width: k === idx ? 18 : 6, height: 6, borderRadius: 3, background: k === idx ? '#0B0D0A' : '#CFCBBB' }} />)}</div>}
+          <button onClick={done} aria-label="Got it, close this tip" data-testid="coach-got-it" style={{ minHeight: 44, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0 0 0 8px', fontFamily: 'inherit' }}>
+            <span style={{ height: 34, padding: '0 14px 0 10px', borderRadius: 999, background: '#F5C84C', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#000' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>Got it
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const COACH_NAME_STEPS = [{ id: 'name', sel: '[data-coach="names"]', title: 'Tap your name', body: 'So your scores and bets are saved to you. Wrong one? Tap Not you? after.', width: 300, pad: 4, place: 'dock' }];
 function replayWelcomeTips() {
-  try { ['guide-admin', 'guide-player', 'player-intro'].forEach(k => localStorage.removeItem('db:seen-' + k)); } catch (e) {}
+  try { ['guide-admin', 'guide-player', 'player-intro'].forEach(k => localStorage.removeItem('db:seen-' + k)); localStorage.removeItem(COACH_KEY); } catch (e) {}
   try { window.dispatchEvent(new Event('db:replay-tips')); } catch (e) {}
 }
 function GuideCard({ title, steps, onDismiss, cta }) {
@@ -5860,7 +5950,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
               const beacon = { position: 'absolute', inset: 6, borderRadius: '50%', border: `2px solid ${C.blue}`, animation: 'beaconPulse 2.4s ease-out infinite', pointerEvents: 'none' };
               const lbl = { fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 800, color: '#14261B', lineHeight: 1.15, letterSpacing: 0.3, position: 'relative' };
               return (
-                <div onClick={handleTap} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
+                <div data-coach="enter" onClick={handleTap} style={{ position: 'fixed', bottom: 78, right: 16, width: 76, height: 76, zIndex: 30, cursor: 'pointer' }}>
                   {!isDone && <div style={beacon} />}
                   {!isDone && <div style={{ ...beacon, animationDelay: '0.8s' }} />}
                   <svg width="76" height="76" viewBox="0 0 76 76" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
@@ -5895,7 +5985,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const gridP = state.handicapsEnabled ? '30px 1fr 60px 60px' : '30px 1fr 70px';
         const cols = [['Gross', P.red], ...(state.handicapsEnabled ? [['Net', P.green]] : [])];
         return (
-          <button onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
+          <button data-coach="card" onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
             {groupByFlight(bbResults, pr => playerFlightHome((pr.playerIds || [])[0])).map((g, gi) => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>
               <PaperHead title={g.flight ? g.flight.name : 'Best Ball'} sub={g.flight ? 'Best ball' : 'tap for details'} dot={g.flight ? g.flight.color : null} cols={cols} grid={gridP} />
               {g.rows.map((pair, i) => {
@@ -5923,6 +6013,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 );
               })}
             </React.Fragment>))}
+            <TapCue label="Tap to open" />
           </button>
         );
       })()}
@@ -5931,7 +6022,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         const shResults = shambleResultsEarly;
         const gridP = '30px 1fr 70px';
         return (
-          <button onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
+          <button data-coach="card" onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
             {groupByFlight(shResults, pr => playerFlightHome((pr.playerIds || (pr.players || []).map(p => p.id) || [])[0])).map(g => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>
               <PaperHead title={g.flight ? g.flight.name : 'Shamble'} sub={`lowest total wins · ${state.games.shamble.net ? 'net' : 'gross'}`} dot={g.flight ? g.flight.color : null} cols={[['Total', P.ink2]]} grid={gridP} />
               {g.rows.map((pair, i) => {
@@ -5955,6 +6046,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 );
               })}
             </React.Fragment>))}
+            <TapCue label="Tap to open" />
           </button>
         );
       })()}
@@ -5963,7 +6055,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         if (pairs.length === 0) return null;
         const gridP = '30px 1fr 64px';
         return (
-          <div onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
+          <div data-coach="card" onClick={() => setActiveTab('leaderboard')} style={{ ...paperSheet, cursor: 'pointer', margin: '0 0 12px', width: '100%' }}>
             {groupByFlight(pairs, pr => playerFlightHome((pr.players[0] || {}).id)).map(g => (<React.Fragment key={g.flight ? g.flight.id : 'all'}>
               <PaperHead title={g.flight ? g.flight.name : 'Leaderboard'} sub={g.flight ? null : 'tap for full board'} dot={g.flight ? g.flight.color : null} cols={[['To par', P.ink2]]} grid={gridP} />
               {g.rows.map((pr, i) => {
@@ -5983,6 +6075,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 );
               })}
             </React.Fragment>))}
+            <TapCue label="Tap to open" />
           </div>
         );
       })()}
@@ -8467,7 +8560,7 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
   const toParColor = (v) => (v < 0 ? P.green : v > 0 ? P.red : P.ink3);
   const open = (e) => { if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen && onOpen(); } };
   return (
-    <div role="button" tabIndex={0} onClick={open} onKeyDown={open} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
+    <div data-coach="card" role="button" tabIndex={0} onClick={open} onKeyDown={open} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${P.rule}` }}>
         <div>
           <div style={{ fontFamily: DISPLAY, fontSize: 18, fontWeight: 900, letterSpacing: -0.3, color: P.ink }}>Leaderboard</div>
@@ -8499,6 +8592,7 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
           {ranked.length > 3 && <div style={{ padding: '5px 14px 8px', fontSize: 10, color: P.ink3 }}>+{ranked.length - 3} more in {flight.name}</div>}
         </div>
       ))}
+      <TapCue label="Tap for gross and money" />
     </div>
   );
 }
@@ -9759,6 +9853,7 @@ function FontLoader() {
       @keyframes lbFlashB { 0% { background: rgba(${GOLD_RGB},0.30); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},1); } 100% { background: rgba(${GOLD_RGB},0); box-shadow: inset 3px 0 0 rgba(${GOLD_RGB},0); } }
       @keyframes lbRowGlow { 0%, 30%, 100% { box-shadow: inset 0 0 0 0 rgba(${GOLD_RGB},0); } 12% { box-shadow: inset 0 0 0 1.5px rgba(${GOLD_RGB},0.6), inset 0 0 22px rgba(${GOLD_RGB},0.20); } }
       @keyframes wizItemPulse { 0%, 28%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(${GOLD_RGB},0); } 10% { transform: scale(1.025); box-shadow: 0 0 0 6px rgba(${GOLD_RGB},0.38); } }
+      @keyframes coachRing { 0% { box-shadow: 0 0 0 0 rgba(245,200,76,0.75); } 70%, 100% { box-shadow: 0 0 0 12px rgba(245,200,76,0); } }
       @keyframes beaconPulse { 0% { transform: scale(1); opacity: 0.7; } 100% { transform: scale(1.55); opacity: 0; } }
       @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       .spin { animation: spin 1s linear infinite; }
@@ -10348,9 +10443,6 @@ export default function RoGreen() {
   const [homeLayoutPrefs, setHomeLayoutPrefs] = useState({});
   const [proxyPlayerId, setProxyPlayerId] = useState(null); // admin-only, session-only, never persisted — does not touch the admin's own saved identity
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
-  const [showTips, setShowTips] = useState(false);
-  const dismissTips = () => { setShowTips('done'); try { localStorage.setItem('db:seen-player-intro', '1'); } catch (e) {} };
-  useEffect(() => { const h = () => setShowTips(false); window.addEventListener('db:replay-tips', h); return () => window.removeEventListener('db:replay-tips', h); }, []);
   const [notifPrefs, setNotifPrefs] = useState({ leadChange: true, skinsWon: true, matchDecided: true, allSquare: true, playerFinished: true, bettingClosingSoon: true, roundComplete: true, chat: true });
   const [newPlayerName, setNewPlayerName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -11035,6 +11127,18 @@ export default function RoGreen() {
   const roundBets = bets.filter(b => b.roundId === tournament.activeRoundId);
   const phase = getRoundPhase(state, stats, roundBets);
   const viewAsAdmin = isAdmin && !previewMode;
+  const coachOn = !drawerOpen && !settingsOpen && !qrOpen && !accountMenuOpen && !wizardOpen && !profileOpen && !accountProfileOpen;
+  const coachSteps = (() => {
+    const out = [];
+    if (viewAsAdmin && adminAccount) out.push({ id: 'profile', sel: '[data-coach="profile"]', title: 'Your account', body: 'My Tournaments and sign out.', width: 200, pad: 5, shape: 'circle', place: 'below' });
+    if (viewAsAdmin) {
+      out.push({ id: 'share', sel: '[data-coach="share"]', title: 'Invite players', body: 'Show the QR or share the round code.', width: 230, pad: 5, place: 'below' });
+      out.push({ id: 'gear', sel: '[data-coach="gear"]', title: 'Admin settings', body: 'Players, teams, games and rules.', width: 220, pad: 5, place: 'below' });
+    }
+    out.push({ id: 'cards', sel: '[data-coach="card"]', max: 2, scroll: true, clampBottom: 230, title: 'Tap any card to open it', body: 'Your scorecard and the leaderboard open full screen. Look for Tap to open.', width: 270, pad: 4 });
+    if (whoami) out.push({ id: 'enter', sel: '[data-coach="enter"]', title: 'Tap to enter a score', body: 'Opens the next hole. Use + or −, then Save & Next.', width: 248, pad: 8, shape: 'circle', place: 'above' });
+    return out;
+  })();
   const multiRound = tournament.rounds.length > 1;
   const isLastRound = tournament.rounds[tournament.rounds.length - 1]?.id === tournament.activeRoundId;
 
@@ -11049,29 +11153,7 @@ export default function RoGreen() {
           <button onClick={clearIdentity} style={{ background: 'transparent', border: `1px solid ${P.rule}`, color: '#7A5C0F', borderRadius: 8, padding: '6px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Not you?</button>
         </div>
       )}
-      {showTips === 'show' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 99, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => dismissTips()}>
-          <div onClick={e => e.stopPropagation()} style={{ background: P.paper, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '24px 24px 36px' }}>
-            <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 22, color: P.ink, marginBottom: 20, textAlign: 'center' }}>Welcome to {BRAND.short}</div>
-            {[
-              [Flag, 'Tap the round badge to score', 'Use + or − for each hole, then Save & Next'],
-              [ChevronRight, 'Fix a score any time', 'Tap Review, pick the hole, and change it'],
-              [Trophy, 'Check the Games tab for bets', 'See skins, Nassau, and all side games live'],
-            ].map(([Icon, title, sub]) => (
-              <div key={title} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: P.green, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon size={20} color="#FFFFFF" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: P.ink }}>{title}</div>
-                  <div style={{ fontSize: 13, color: P.ink3 }}>{sub}</div>
-                </div>
-              </div>
-            ))}
-            <button onClick={() => dismissTips()} style={{ width: '100%', background: P.green, border: 'none', borderRadius: 8, padding: '16px 0', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 16, textTransform: 'uppercase', color: '#FFFFFF', cursor: 'pointer', marginTop: 4 }}>Got it, let's play</button>
-          </div>
-        </div>
-      )}
+      <CoachMarks enabled={coachOn} steps={coachSteps} />
       <div style={{ flexShrink: 0, background: P.paper, borderBottom: `1px solid ${P.rule}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} data-testid="app-header">
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 20, letterSpacing: -0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: P.ink }}>{tournament.name}</div>
@@ -11094,12 +11176,12 @@ export default function RoGreen() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {adminAccount && (
-            <button onClick={() => setAccountMenuOpen(true)} style={{ border: `1px solid ${P.rule}`, borderRadius: 999, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer', flexShrink: 0, fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, background: `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` }} title="Account">
+            <button data-coach="profile" onClick={() => setAccountMenuOpen(true)} style={{ border: `1px solid ${P.rule}`, borderRadius: 999, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#14261B', cursor: 'pointer', flexShrink: 0, fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, background: `linear-gradient(180deg, ${C.goldBright}, ${C.gold})` }} title="Account">
               {adminAccount.email[0].toUpperCase()}
             </button>
           )}
-          <button onClick={() => setQrOpen(true)} style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: P.ink, cursor: 'pointer', flexShrink: 0 }} title="Share round QR"><Share2 size={17} /></button>
-          <button onClick={() => setSettingsOpen(true)} aria-label="Settings" style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: P.ink, cursor: 'pointer', flexShrink: 0 }}><Settings size={18} /></button>
+          <button data-coach="share" onClick={() => setQrOpen(true)} style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: P.ink, cursor: 'pointer', flexShrink: 0 }} title="Share round QR"><Share2 size={17} /></button>
+          <button data-coach="gear" onClick={() => setSettingsOpen(true)} aria-label="Settings" style={{ background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 10, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: P.ink, cursor: 'pointer', flexShrink: 0 }}><Settings size={18} /></button>
         </div>
       </div>
       {accountMenuOpen && adminAccount && (
@@ -11138,7 +11220,7 @@ export default function RoGreen() {
             ) : <div style={{ color: P.ink2, fontSize: 14, lineHeight: 1.5 }}>Waiting on the admin to finish setting up the round.</div>}
           </div>
         )}
-        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenTeamEvent={(teamId) => { setTeamEventTeam(typeof teamId === 'string' ? teamId : null); setTeamEventOpen('gross'); }} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); if (!isAdmin) setShowTips(prev => { if (prev !== false) return prev; let seen = false; try { seen = localStorage.getItem('db:seen-player-intro') === '1'; } catch (e) {} return seen ? 'done' : 'show'; }); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
+        {hasPlayers && activeTab === 'home' && <HomeTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} setActiveTab={setActiveTab} chat={chat} ledger={ledger} onOpenMyPosition={() => setMyPositionOpen(true)} phase={phase} guidanceEnabled={guidanceEnabled} onOpenChat={() => { setChatOpen(true); setChatSeenLen(chat.length); }} onOpenRoundComplete={() => setRoundCompleteOpen(true)} tournament={tournament} onSwitchRound={() => setRoundSwitcherOpen(true)} onOpenRoundFlow={() => setRoundFlowOpen(true)} onOpenKoS={() => setKosOpen(true)} onOpenAuction={() => setAuctionOpen(true)} onOpenTeamEvent={(teamId) => { setTeamEventTeam(typeof teamId === 'string' ? teamId : null); setTeamEventOpen('gross'); }} onOpenStandings={() => setStandingsOpen(true)} onWolfChoice={setWolfChoice} layoutPrefs={homeLayoutPrefs} onOpenDrawer={() => { setDrawerOpen(true); }} onOpenDrawerReview={() => { setDrawerInitialReview(true); setDrawerOpen(true); }} onOpenRules={() => setRulesOpen(true)} />}
         {hasPlayers && activeTab === 'leaderboard' && <LeaderboardTab state={state} stats={stats} onPlayerTap={setCardPlayerId} />}
         {hasPlayers && activeTab === 'bets' && tournament.bettingEnabled !== false && <BetsTab state={state} stats={stats} isAdmin={viewAsAdmin} whoami={whoami} viewAsAdmin={viewAsAdmin} deviceName={deviceName} onPick={setIdentity} onAddSelf={addSelf} adjustTicket={adjustTicket} resolveMarket={resolveMarket} reopenMarket={reopenMarket} resolveMatchMarket={resolveMatchMarket} reopenMatchMarket={reopenMatchMarket} onOpenBetBuilder={() => setBetBuilderOpen(true)} onResolveCustomBet={resolveCustomBet} onReopenCustomBet={reopenCustomBet} onRemoveCustomBet={removeCustomBet} onEditCustomBet={(bet) => setBetBuilderOpen(bet)} tournamentCustomBets={tournament.tournamentCustomBets} onResolveTournamentBet={resolveTournamentCustomBet} onReopenTournamentBet={reopenTournamentCustomBet} onRemoveTournamentBet={removeTournamentCustomBet} onEditTournamentBet={(bet) => setTournamentBetBuilderOpen(bet)} onOpenTournamentBetBuilder={() => setTournamentBetBuilderOpen(true)} tournament={tournament} />}
         {hasPlayers && activeTab === 'settle' && tournament.bettingEnabled !== false && <SettleTab tournament={tournament} ledger={ledger} bets={bets} onOpenMyPosition={() => setMyPositionOpen(true)} />}
