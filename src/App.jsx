@@ -49,6 +49,8 @@ const DVH = (n) => ((typeof CSS !== 'undefined' && CSS.supports && CSS.supports(
 const DISPLAY = "'Fraunces', Georgia, serif";
 const paperSheet = { background: P.paper, color: P.ink, borderRadius: 4, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', padding: '2px 14px 8px', marginBottom: 12, width: '100%', textAlign: 'left', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', fontFamily: 'inherit', display: 'block', boxSizing: 'border-box' };
 const hlStyle = { background: 'linear-gradient(transparent 52%, rgba(222,180,60,0.6) 52%, rgba(222,180,60,0.6) 92%, transparent 92%)', padding: '0 2px', margin: '0 -2px' };
+const legible = (hex) => { try { const m = /^#([0-9a-f]{6})/i.exec(hex || ''); if (!m) return hex; const n = parseInt(m[1], 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const L = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); if (L < 0.18) return hex; const k = 0.5; const h = x => Math.round(x * (1 - k) + 0x20 * k).toString(16).padStart(2, '0'); return '#' + h(r) + h(g) + h(b); } catch (e) { return hex; } };
+const onColor = (hex) => { try { const m = /^#([0-9a-f]{6})/i.exec(hex || ''); if (!m) return '#F5F5F5'; const n = parseInt(m[1], 16); const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const L = 0.2126 * f(n >> 16) + 0.7152 * f((n >> 8) & 255) + 0.0722 * f(n & 255); return L > 0.3 ? '#14261B' : '#F5F5F5'; } catch (e) { return '#F5F5F5'; } };
 const CHIP_COLORS = [C.gold, '#4C7BAA', '#6F8F72', '#8A4A4A', '#A98D4B', '#5B6470', '#7A1F32', '#123C73'];
 const FLIGHT_COLORS = [C.teamA, '#7A1F32', C.gold, '#19C37D'];
 // "Red" and "Blue" must actually look red and blue, or tapping Red appears to pick Blue.
@@ -979,6 +981,8 @@ function computeShamble(state) {
    - Gross ties after Sunday: back nine, then holes 10-12, 13-15, 16-18. Net ties are split.
    - Maximum score on any hole is net double bogey. */
 const TEAM_EVENT_DEFAULTS = { enabled: false, teams: [], netPct: 100, maxScore: 'none', maxOver: 2, netFlightsOn: false, maxSpread: 0, grossFlightsOn: false, grossFlights: [], improveRule: false, leaderMax: 5, trailBase: 5, trailMult: 2, countback: true, expensesPct: 0, daySplit: [50, 50], mulligansOn: false, mulliganFee: 10, mulligans: {} };
+// One-tap settings for Ironwood's Member-Member 2026 format (see the club's rules sheet).
+const IRONWOOD_PRESET = { netPct: 90, maxScore: 'netDouble', maxOver: 2, countback: true, netFlightsOn: true, maxSpread: 10, grossFlightsOn: true, improveRule: true, leaderMax: 5, trailBase: 5, trailMult: 2, expensesPct: 10, daySplit: [50, 50], mulligansOn: true, mulliganFee: 20 };
 function getTeamEvent(tournament) {
   const te = (tournament && tournament.teamEvent) || {};
   const split = Array.isArray(te.daySplit) && te.daySplit.length === 2 ? te.daySplit.map(x => Number(x) || 0) : [50, 50];
@@ -1064,8 +1068,10 @@ function teamEventModel(tournament) {
     sorted.forEach((t, i) => { t.gross.tied = sorted.some((o, j) => j !== i && o.gross.rank === t.gross.rank); });
     const finals = sorted.filter(bothDone);
     const top = finals.filter(t => t.gross.rank === 1);
-    const playoff = finals.length > 1 && finals.length === sorted.length && top.length > 1;
-    const allMaxed = finals.length > 1 && finals.length === sorted.length && finals.every(t => t.gross.capped);
+    const allDone = finals.length > 1 && finals.length === sorted.length;
+    const allMaxed = allDone && finals.every(t => t.gross.capped);
+    // Every team at its improvement limit means the scores no longer separate anyone, so first place is played off even if a countback would pick one.
+    const playoff = allDone && (top.length > 1 || allMaxed);
     return { flight, teams: sorted, leader, playoff, allMaxed };
   });
   return { te, rounds, teams, grossFlights, hasR2 };
@@ -2115,7 +2121,7 @@ function getNextStep(phase, state, whoami, isAdmin) {
 
 /* ============================== SMALL UI ATOMS ============================== */
 function Chip({ color, children }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 999, background: color || C.gold, color: '#F5F5F5', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 12, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>{children}</span>;
+  return <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 999, background: color || C.gold, color: onColor(color || C.gold), fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 12, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>{children}</span>;
 }
 function IconBadge({ icon: Icon, color, size }) {
   const s = size || 30;
@@ -2130,7 +2136,7 @@ function StatusBadge({ status, label }) {
   const styles = {
     neutral: { bg: 'rgba(255,255,255,0.06)', color: C.ivoryDim },
     live: { bg: `${C.emerald}22`, color: C.emerald },
-    final: { bg: `${C.gold}28`, color: C.goldBright },
+    final: { bg: `${C.gold}28`, color: '#7A5C0F' },
     danger: { bg: `${C.flagRed}22`, color: C.flagRed },
   };
   const s = styles[status] || styles.neutral;
@@ -2232,7 +2238,7 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
 /* ============================== NAV ============================== */
 function NavBtn({ icon: Icon, label, active, onClick, hero, badge }) {
   return (
-    <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? C.goldBright : P.ink3, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 8, position: 'relative', boxShadow: active ? `0 0 14px rgba(${GOLD_RGB},0.14)` : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
+    <button onClick={onClick} style={{ background: active ? `${C.gold}1F` : 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, color: active ? '#7A5C0F' : P.ink3, padding: hero ? '8px 14px' : '6px 4px', flex: hero ? 1.25 : 1, minWidth: 0, borderRadius: 8, position: 'relative', boxShadow: active ? `0 0 14px rgba(${GOLD_RGB},0.14)` : 'none', transition: 'background 0.15s ease, box-shadow 0.15s ease' }}>
       <Icon size={hero ? 22 : 18} strokeWidth={active ? 2.4 : 1.8} />
       <span style={{ fontSize: 9, fontFamily: "'Instrument Sans', Inter, sans-serif", letterSpacing: 0.2, textTransform: 'uppercase', fontWeight: active ? 700 : 500 }}>{label}</span>
       {badge && <span style={{ position: 'absolute', top: 2, right: 6, background: badge.startsWith('-') ? P.green : badge === 'E' ? P.ink3 : P.red, color: '#FFF', borderRadius: 999, fontSize: 8, padding: '1px 4px', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, minWidth: 14, textAlign: 'center' }}>{badge}</span>}
@@ -2850,7 +2856,7 @@ function OwnerConsole({ onBack }) {
                   return (
                     <div key={code} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, borderBottom: `1px solid ${C.hairline}`, paddingBottom: 6 }}>
                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{details[code].name}</div>
-                      <div style={{ fontSize: 10, color: completed ? P.green : activated ? C.goldBright : P.ink3, flexShrink: 0, marginLeft: 8 }}>{completed ? 'Completed' : activated ? 'Activated' : 'Not activated'}</div>
+                      <div style={{ fontSize: 10, color: completed ? P.green : activated ? '#7A5C0F' : P.ink3, flexShrink: 0, marginLeft: 8 }}>{completed ? 'Completed' : activated ? 'Activated' : 'Not activated'}</div>
                     </div>
                   );
                 })}
@@ -2924,7 +2930,7 @@ function CreateProfilePromptModal({ onCreateProfile, onDismiss }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(4,15,10,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onDismiss}>
       <div onClick={e => e.stopPropagation()} style={{ background: P.paper, color: P.ink, border: `1px solid ${P.rule}`, borderRadius: 20, width: '100%', maxWidth: 360, padding: 24, textAlign: 'center' }}>
-        <Trophy size={30} color={C.goldBright} style={{ marginBottom: 10 }} />
+        <Trophy size={30} color={'#7A5C0F'} style={{ marginBottom: 10 }} />
         <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Nice round!</div>
         <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.6, marginBottom: 20 }}>
           Create a free profile to keep every tournament you've played in one place — and host your own whenever you're ready.
@@ -2940,7 +2946,7 @@ function FlightBar({ flight }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', margin: '6px -4px 0', background: `${flight.color}18`, borderRadius: 8 }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color, flexShrink: 0 }} />
-      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color }}>{flight.name}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: legible(flight.color) }}>{flight.name}</span>
     </div>
   );
 }
@@ -3111,7 +3117,7 @@ function SpectatorScreen({ roundCode, onExit }) {
   const flightHeader = (flight) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color }} />
-      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: flight.color }}>{flight.name}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: legible(flight.color) }}>{flight.name}</span>
     </div>
   );
   const playerFlight = (id) => (state.players.find(p => p.id === id) || {}).flightId;
@@ -3262,7 +3268,7 @@ function SpectatorScreen({ roundCode, onExit }) {
               <div key={flight.id} style={{ borderTop: fi > 0 ? `1px solid ${P.rule}` : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: flight.color }}>{flight.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: legible(flight.color) }}>{flight.name}</span>
                 </div>
                 {leaderboardBlock(inFlight)}
               </div>
@@ -3731,7 +3737,7 @@ function AuctionDrawer({ auction, tournament, state, whoami, onClose }) {
                     const sc = r.score && r.score.thru > 0 ? r.score.toPar : null;
                     return (
                       <div key={r.team.id} style={{ display: 'grid', gridTemplateColumns: '20px 1fr auto', gap: 8, alignItems: 'center', padding: '10px 12px', borderTop: `1px solid ${P.rule}` }}>
-                        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.rank === 1 ? C.gold : P.ink3 }}>{r.rank || '–'}</span>
+                        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.rank === 1 ? '#7A5C0F' : P.ink3 }}>{r.rank || '–'}</span>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 14, color: P.ink }}>{r.team.name || 'Team'}</div>
                           <div style={{ fontSize: 11.5, color: P.ink2 }}>{r.team.buyer ? (auctionIsMine(r.team, whoami) ? 'You' : r.team.buyer) : 'Unsold'} · {r.team.buyer ? money0(r.team.price) : '—'}</div>
@@ -4084,9 +4090,9 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
                   const hIdx = from + i;
                   const s = whoami ? state.scores[whoami.id]?.[hIdx] : null;
                   const p = state.pars[hIdx] ?? 4;
-                  const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : 'rgba(32,35,29,0.08)';
+                  const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : P.ink;
                   return (
-                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: 'rgba(32,35,29,0.78)', border: `1px solid rgba(${GOLD_RGB},0.45)`, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
+                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: '#FBF8EE', border: `1px solid rgba(${GOLD_RGB},0.6)`, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
                       <div style={{ fontSize: 9, color: '#6B6455' }}>{hIdx + 1}</div>
                       <div style={{ fontSize: 8, color: '#6B6455' }}>Par {p}</div>
                       <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
@@ -4124,10 +4130,10 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
           <div style={{ fontSize: 34, lineHeight: 1.1, color: paperOn ? '#14261B' : P.ink, fontWeight: 800, letterSpacing: 1.5, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>HOLE {viewHole + 1}</div>
           <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : P.ink2, marginTop: 8, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
           {groupScoreEntry && !listAll && playersToShow.length > 1 && (
-            <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : C.goldBright, marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
+            <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : '#7A5C0F', marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
           )}
           {viewAsAdmin && useGroup && (
-            <button onClick={() => setShowEveryone(v => !v)} style={{ marginTop: 6, background: 'transparent', border: 'none', color: paperOn ? C.goldDark : C.goldBright, fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>{listAll ? 'Show just my group' : 'Show everyone (admin)'}</button>
+            <button onClick={() => setShowEveryone(v => !v)} style={{ marginTop: 6, background: 'transparent', border: 'none', color: paperOn ? C.goldDark : '#7A5C0F', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>{listAll ? 'Show just my group' : 'Show everyone (admin)'}</button>
           )}
         </div>
 
@@ -4326,7 +4332,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', marginBottom: 6 }}>Your final score: <strong>{totalDiffStr}</strong> ({totalScore})</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Results appear when the admin wraps up — you're done! 🍺</div>
           {isAdmin && onUnlock && (
-            <button onClick={() => onUnlock(whoami.id)} style={{ marginTop: 10, background: 'rgba(32,35,29,0.15)', border: '1px solid rgba(32,35,29,0.4)', color: '#FFFFFF', borderRadius: 10, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Unlock my scorecard</button>
+            <button onClick={() => onUnlock(whoami.id)} style={{ marginTop: 10, background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.4)', color: '#FFFFFF', borderRadius: 10, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Unlock my scorecard</button>
           )}
         </div>
         {holeStripEl}
@@ -4385,7 +4391,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1.5, color: P.ink3, display: 'flex', alignItems: 'center', gap: 6 }}>
             Hole {h + 1} · Par {par}
-            {iGetStrokeThisHole && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: `${C.blueBright}20`, borderRadius: 999, padding: '2px 8px', fontSize: 10, color: C.blueBright, letterSpacing: 0 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: C.blueBright, display: 'inline-block' }} />stroke here</span>}
+            {iGetStrokeThisHole && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: `${C.blueBright}20`, borderRadius: 999, padding: '2px 8px', fontSize: 10, color: '#2F5F8F', letterSpacing: 0 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: C.blueBright, display: 'inline-block' }} />stroke here</span>}
           </div>
           {scoredCount > 0 && <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontSize: 13, color: runningColor, fontWeight: 700 }}>{runningStr} thru {scoredCount}</div>}
         </div>
@@ -4646,14 +4652,14 @@ function RoundCardHome({ state, whoami, thru, toPar, onOpen }) {
               : <div style={{ ...SC_MONO, display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.25 }}><span style={{ fontSize: 11, fontWeight: 700 }}>{c.label}</span><span style={{ fontSize: 10.5, opacity: 0.72 }}>{roundRange(state, scores, c.from, c.to).par}</span></div>))}
           </div>
           {showMore && hasYds && (
-            <div style={{ display: 'flex', height: 21, background: '#143A2A', color: P.ink2 }}>
-              {label('#143A2A', P.ink2, 'YDS', 700)}
+            <div style={{ display: 'flex', height: 21, background: '#E7DFC6', color: P.ink2 }}>
+              {label('#E7DFC6', P.ink2, 'YDS', 700)}
               {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (state.yardage?.[c.i] || '') : (roundRange(state, scores, c.from, c.to).yds || '')}</span>))}
             </div>
           )}
           {showMore && hasSi && (
-            <div style={{ display: 'flex', height: 21, background: '#10311F', color: '#8D96A1' }}>
-              {label('#10311F', '#8D96A1', 'HCP', 700)}
+            <div style={{ display: 'flex', height: 21, background: '#DDD4B8', color: '#4D4F43' }}>
+              {label('#DDD4B8', '#4D4F43', 'HCP', 700)}
               {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (state.strokeIndex?.[c.i] ?? '') : ''}</span>))}
             </div>
           )}
@@ -5098,7 +5104,7 @@ function FlightedLeaderboard({ leaderboard, flights, useNet, fmtToPar, onTap, pr
           <div key={flight.id} style={{ borderTop: fi > 0 ? `1px solid ${P.rule}` : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color}18` }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color }}>{flight.name}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: legible(flight.color) }}>{flight.name}</span>
             </div>
             {flightPlayers.slice(0, 3).map((p, i) => {
               const val = useNet ? p.netToPar : p.toPar;
@@ -5252,7 +5258,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
               {grp.label && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: grp.color }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: grp.color }}>{grp.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: legible(grp.color) }}>{grp.label}</span>
                   <span style={{ fontSize: 10, color: P.ink3, marginLeft: 'auto' }}>Pool: {fmtMoney(pool)}</span>
                 </div>
               )}
@@ -5295,7 +5301,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
       {groups.length > 1 && (
         <div style={{ display: 'flex', gap: 18, borderBottom: `1px solid ${C.hairline}`, marginBottom: 18, overflowX: 'auto' }}>
           {groups.map(gr => (
-            <button key={gr.key} onClick={() => setActiveGroup(gr.key)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 0 10px', fontSize: 13, fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, color: group === gr.key ? C.gold : P.ink3, borderBottom: group === gr.key ? `2px solid ${C.gold}` : '2px solid transparent', whiteSpace: 'nowrap', flexShrink: 0 }}>{gr.label}</button>
+            <button key={gr.key} onClick={() => setActiveGroup(gr.key)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 0 10px', fontSize: 13, fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, color: group === gr.key ? '#7A5C0F' : P.ink3, borderBottom: group === gr.key ? `2px solid ${C.gold}` : '2px solid transparent', whiteSpace: 'nowrap', flexShrink: 0 }}>{gr.label}</button>
           ))}
         </div>
       )}
@@ -5366,7 +5372,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
           )}
           {pm.resolved && pmData?.winnerId && (
             <div style={{ ...rowCard, background: 'rgba(32,35,29,0.06)', gap: 8 }}>
-              <Trophy size={16} color={C.goldBright} />
+              <Trophy size={16} color={'#7A5C0F'} />
               <span style={{ fontSize: 13 }}>Winner: <strong>{pmData.entrants.find(e => e.id === pmData.winnerId)?.name || state.players.find(p => p.id === pmData.winnerId)?.name}</strong> · payouts calculated in Settle</span>
             </div>
           )}
@@ -5425,7 +5431,7 @@ function BetsTab({ state, stats, isAdmin, whoami, viewAsAdmin, deviceName, onPic
                       const myTickets = activeBettorId ? (Array.isArray(pm.tickets) ? pm.tickets : []).filter(t => t.bettorId === activeBettorId && t.entrantId === e.id).reduce((sum, t) => sum + (t.count || 1), 0) : 0;
                       return (
                         <div key={e.id} style={{ flex: 1, background: e.isWinner ? 'rgba(32,35,29,0.06)' : 'transparent', border: `1px solid ${e.isWinner ? C.goldBright : P.rule}`, borderRadius: 10, padding: '8px 10px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(e.name)}</Chip><span style={{ fontSize: 12, fontWeight: 600 }}>{pgaName(e.name)}</span>{e.isWinner && <Trophy size={12} color={C.goldBright} />}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><Chip color={e.color} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(e.name)}</Chip><span style={{ fontSize: 12, fontWeight: 600 }}>{pgaName(e.name)}</span>{e.isWinner && <Trophy size={12} color={'#7A5C0F'} />}</div>
                           <div style={{ fontSize: 10, color: P.ink2, marginBottom: canBet ? 6 : 0 }}>{e.tickets ?? 0} ticket{(e.tickets ?? 0) !== 1 ? 's' : ''}{e.odds > 0 ? ` · ${e.odds}:1` : ''}</div>
                           {canBet && activeBettorId && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -5748,13 +5754,13 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
   const positionCard = whoami && ledger[whoami.id] ? (
     <button onClick={onOpenMyPosition} style={{ ...homeCard, justifyContent: 'space-between', background: P.paper, border: `1.5px solid ${P.rule}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <IconBadge icon={Coins} color={C.gold} size={28} />
+        <IconBadge icon={Coins} color={'#7A5C0F'} size={28} />
         <div>
           <div style={{ fontSize: 13, color: P.ink, fontWeight: 600 }}>Your payout {multiRound ? '(whole trip)' : ''}</div>
           <div style={{ fontSize: 10, color: P.ink3 }}>live · updates as bets settle</div>
         </div>
       </div>
-      <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 22, color: ledger[whoami.id].netPosition > 0 ? C.goldBright : ledger[whoami.id].netPosition < 0 ? P.red : P.ink2 }}>{fmtMoney(ledger[whoami.id].netPosition)}</span>
+      <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 22, color: ledger[whoami.id].netPosition > 0 ? '#7A5C0F' : ledger[whoami.id].netPosition < 0 ? P.red : P.ink2 }}>{fmtMoney(ledger[whoami.id].netPosition)}</span>
     </button>
   ) : null;
   return (
@@ -5762,7 +5768,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       <HeaderBanner src={matchbookBunker} title={state.roundName} sub={tournament ? tournament.name : 'Live round'} height={220} />
       <div style={{ padding: 0, marginTop: -2 }}>
         <button onClick={onOpenRules} style={{ background: 'transparent', border: 'none', padding: '6px 0', color: '#7A5C0F', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'underline', textUnderlineOffset: 4, textAlign: 'left' }}>
-          <FileText size={15} color={C.goldBright} />Tournament Rules<ChevronRight size={14} color={C.goldBright} />
+          <FileText size={15} color={'#7A5C0F'} />Tournament Rules<ChevronRight size={14} color={'#7A5C0F'} />
         </button>
       </div>
       {myCardOpen && whoami && <PlayerCardDrawer state={state} stats={stats} tournament={tournament} playerId={whoami.id} onClose={() => setMyCardOpen(false)} onEnter={() => { setMyCardOpen(false); onOpenDrawer(); }} enterLabel={`Hole ${groupHole + 1}`} />}
@@ -6043,8 +6049,8 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
       )}
       {nextStep && (
         <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else if (nextStep.action === 'card') onOpenDrawer(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: 'rgba(32,35,29,0.06)', border: `1.5px solid ${C.gold}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={C.goldBright} size={28} /><span style={{ fontSize: 13, color: P.ink }}>{nextStep.text}</span></div>
-          <ChevronRight size={16} color={C.goldBright} style={{ flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={'#7A5C0F'} size={28} /><span style={{ fontSize: 13, color: P.ink }}>{nextStep.text}</span></div>
+          <ChevronRight size={16} color={'#7A5C0F'} style={{ flexShrink: 0 }} />
         </button>
       )}
 
@@ -6121,7 +6127,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                   <span style={{ color: bStatusStr === 'All square' ? P.ink3 : bStatusStr?.includes('up') ? P.green : P.red, fontWeight: 600 }}>{bNames}: {bStatusStr}</span>
                 </div>
               )}
-              {strokeInfo && <div style={{ textAlign: 'center', fontSize: 10, color: C.blueBright, marginTop: 4, lineHeight: 1.4 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: C.blueBright, display: 'inline-block', marginRight: 4 }} />{strokeInfo}</div>}
+              {strokeInfo && <div style={{ textAlign: 'center', fontSize: 10, color: '#2F5F8F', marginTop: 4, lineHeight: 1.4 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: C.blueBright, display: 'inline-block', marginRight: 4 }} />{strokeInfo}</div>}
             </div>
           );
         };
@@ -6182,7 +6188,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {groupPoints.map((row, i) => (
                 <div key={row.p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
-                  <span style={{ fontSize: 11, color: i === 0 && row.pts > 0 ? C.gold : P.ink3, width: 14 }}>{i + 1}</span>
+                  <span style={{ fontSize: 11, color: i === 0 && row.pts > 0 ? '#7A5C0F' : P.ink3, width: 14 }}>{i + 1}</span>
                   <Chip color={pc(row.p)} style={{ width: 22, height: 22, fontSize: 8 }}>{initials(row.p.name)}</Chip>
                   <span style={{ flex: 1, fontSize: 12 }}>{pgaName(row.p.name)}</span>
                   <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontSize: 14, color: '#7A5C0F', fontWeight: 700 }}>{row.pts}</span>
@@ -6205,14 +6211,14 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           <SectionHeader title="Ryder Cup" sub={ryderCup.target ? `first to ${ryderCup.target} wins the cup` : 'add match pairings to get started'} icon={Swords} iconColor={P.red} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '4px 0 12px' }}>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: ryderCup.totalA > ryderCup.totalB ? C.gold : P.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamA.name}</div>
-              <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: ryderCup.totalA > ryderCup.totalB ? C.gold : P.ink }}>{ryderCup.totalA}</div>
+              <div style={{ fontSize: 11, color: ryderCup.totalA > ryderCup.totalB ? '#7A5C0F' : P.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamA.name}</div>
+              <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: ryderCup.totalA > ryderCup.totalB ? '#7A5C0F' : P.ink }}>{ryderCup.totalA}</div>
               {tournament.ryderCup?.captainA && <div style={{ fontSize: 10, color: P.ink3 }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainA)?.name || ''}</div>}
             </div>
             <div style={{ fontSize: 16, color: P.ink2 }}>–</div>
             <div style={{ textAlign: 'center', flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: ryderCup.totalB > ryderCup.totalA ? C.gold : P.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamB.name}</div>
-              <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: ryderCup.totalB > ryderCup.totalA ? C.gold : P.ink }}>{ryderCup.totalB}</div>
+              <div style={{ fontSize: 11, color: ryderCup.totalB > ryderCup.totalA ? '#7A5C0F' : P.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ryderCup.teamB.name}</div>
+              <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: ryderCup.totalB > ryderCup.totalA ? '#7A5C0F' : P.ink }}>{ryderCup.totalB}</div>
               {tournament.ryderCup?.captainB && <div style={{ fontSize: 10, color: P.ink3 }}>Capt. {tournament.players.find(p => p.id === tournament.ryderCup.captainB)?.name || ''}</div>}
             </div>
           </div>
@@ -6285,7 +6291,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         return (
           <button onClick={onOpenAuction} style={{ ...homeCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              <Coins size={20} color={C.gold} />
+              <Coins size={20} color={'#7A5C0F'} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: P.ink }}>Calcutta · {money0(pots.total)} pot</div>
                 <div style={{ fontSize: 11.5, color: P.ink2 }}>{my.count > 0 ? `You own ${my.count} team${my.count === 1 ? '' : 's'}${my.anyRanked ? ` · ${my.net >= 0 ? '+' : '−'}${money0(Math.abs(my.net))} if ended now` : ''}` : 'See teams, owners and payouts'}</div>
@@ -6308,7 +6314,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
                 <Chip color={pc(p)}>{initials(p.name)}</Chip>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</div>
-                  {flight && <div style={{ fontSize: 9, color: flight.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{flight.name}{pts != null ? ` · ${pts} pt${pts !== 1 ? 's' : ''}` : ''}</div>}
+                  {flight && <div style={{ fontSize: 9, color: legible(flight.color), textTransform: 'uppercase', letterSpacing: 0.4 }}>{flight.name}{pts != null ? ` · ${pts} pt${pts !== 1 ? 's' : ''}` : ''}</div>}
                 </div>
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                   <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, color: (useNet ? p.netToPar : p.toPar) < 0 ? P.green : (useNet ? p.netToPar : p.toPar) > 0 ? P.red : P.ink }}>{p.roundsStarted === 0 ? '–' : fmtToPar(useNet ? p.netToPar : p.toPar)}</span>
@@ -6326,14 +6332,14 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
 
       {lastSkin && (
         <div style={{ ...homeCard, cursor: 'default' }}>
-          <IconBadge icon={Coins} color={C.gold} size={28} />
+          <IconBadge icon={Coins} color={'#7A5C0F'} size={28} />
           <span style={{ fontSize: 13 }}>Latest: <strong>{state.players.find(p => p.id === lastSkin.winnerId)?.name}</strong> took the skin on hole {lastSkin.hole + 1} (${lastSkin.pot})</span>
         </div>
       )}
 
       {pm && (
         <button onClick={() => setActiveTab('bets')} style={{ ...homeCard, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Ticket} color={C.gold} size={28} /><span style={{ fontSize: 13, color: P.ink }}>Pari-mutuel pot</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Ticket} color={'#7A5C0F'} size={28} /><span style={{ fontSize: 13, color: P.ink }}>Pari-mutuel pot</span></div>
           <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, color: '#7A5C0F' }}>${pm.pot}</span>
         </button>
       )}
@@ -6693,7 +6699,7 @@ function CourseSection({ state, selectProviderCourse, selectCustomCourse, setNum
       {state.providerId && (
         <div style={{ ...rowCard, marginBottom: 10, justifyContent: 'space-between' }}>
           <div><div style={{ fontWeight: 600, fontSize: 14 }}>{state.courseName}</div><div style={{ fontSize: 11, color: P.ink2 }}>{state.teeName} tees · {state.courseRating}/{state.courseSlope}</div></div>
-          <Check size={16} color={C.gold} />
+          <Check size={16} color={'#7A5C0F'} />
         </div>
       )}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -7018,7 +7024,7 @@ function PlayersSection({ state, newPlayerName, setNewPlayerName, addPlayer, rem
               {flightsOn && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   {flights.map(f => (
-                    <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? '#14261B' : P.ink2, cursor: 'pointer', flexShrink: 0 }}>{f.name}</button>
+                    <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? onColor(f.color) : P.ink2, cursor: 'pointer', flexShrink: 0 }}>{f.name}</button>
                   ))}
                 </div>
               )}
@@ -7099,7 +7105,7 @@ function HandicapsFlightsSection({ state, updateTournament, setPlayerField, auto
                 <button onClick={addFlight} style={{ background: 'transparent', border: `1px dashed ${P.rule}`, borderRadius: 999, padding: '4px 10px', color: P.ink2, fontSize: 12, cursor: 'pointer' }}>+ flight</button>
               </div>
               <button onClick={autoFlights} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${P.rule}`, color: P.ink, borderRadius: 10, padding: '8px 12px', fontSize: 12, cursor: 'pointer', marginBottom: 10 }}><Shuffle size={14} /> Auto-balance by handicap</button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{state.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', flexWrap: 'wrap' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{pgaName(p.name)}</span></div><div style={{ display: 'flex', gap: 4 }}>{state.flights.map(f => <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? '#14261B' : P.ink2, cursor: 'pointer' }}>{f.name}</button>)}</div></div>)}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{state.players.map(p => <div key={p.id} style={{ ...rowCard, justifyContent: 'space-between', flexWrap: 'wrap' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Chip color={pc(p)}>{initials(p.name)}</Chip><span style={{ fontSize: 13 }}>{pgaName(p.name)}</span></div><div style={{ display: 'flex', gap: 4 }}>{state.flights.map(f => <button key={f.id} onClick={() => assignFlight(p.id, f.id)} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 7, border: `1px solid ${p.flightId === f.id ? f.color : P.rule}`, background: p.flightId === f.id ? f.color : 'transparent', color: p.flightId === f.id ? onColor(f.color) : P.ink2, cursor: 'pointer' }}>{f.name}</button>)}</div></div>)}</div>
             </div>
           )}
         </>
@@ -7704,7 +7710,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
             {tournament.rounds.map((r, i) => (
               <button key={r.id} onClick={() => onSwitchRound(r.id)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer', border: `1px solid ${r.id === tournament.activeRoundId ? C.gold : P.rule}` }}>
                 <span style={{ fontSize: 13 }}>{i + 1}. {r.name}{r.courseName ? ` — ${r.courseName}` : ''}</span>
-                <span style={{ fontSize: 11, color: r.started ? C.goldBright : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
+                <span style={{ fontSize: 11, color: r.started ? '#7A5C0F' : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
               </button>
             ))}
           </div>
@@ -7999,7 +8005,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
             {state.providerId ? (
               <div style={{ ...rowCard, justifyContent: 'space-between' }}>
                 <div><div style={{ fontWeight: 600, fontSize: 14 }}>{state.courseName}</div><div style={{ fontSize: 11, color: P.ink2 }}>{state.teeName} tees · {state.courseRating}/{state.courseSlope}</div></div>
-                <Check size={16} color={C.gold} />
+                <Check size={16} color={'#7A5C0F'} />
               </div>
             ) : (
               <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ width: '100%', padding: '12px 0' }}>Search for a course</GoldButton>
@@ -8047,7 +8053,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
           {state.providerId && (
             <div style={{ ...rowCard, marginBottom: 14, justifyContent: 'space-between' }}>
               <div><div style={{ fontWeight: 600, fontSize: 14 }}>{state.courseName}</div><div style={{ fontSize: 11, color: P.ink2 }}>{state.teeName} tees · {state.courseRating}/{state.courseSlope}</div></div>
-              <Check size={16} color={C.gold} />
+              <Check size={16} color={'#7A5C0F'} />
             </div>
           )}
           <GoldButton onClick={() => setCoursePickerOpen(true)} style={{ width: '100%', padding: '13px 0', marginBottom: 10 }}>Search for a course</GoldButton>
@@ -8080,7 +8086,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
               <button key={opt.key} onClick={() => { updateRound(p => ({ ...p, matchFormat: opt.key })); goNext(); }} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, background: state.matchFormat === opt.key ? 'rgba(32,35,29,0.06)' : P.paper, border: `1.5px solid ${state.matchFormat === opt.key ? C.gold : P.rule}`, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: P.ink }}>{opt.label}</span>
-                  {state.matchFormat === opt.key && <Check size={16} color={C.gold} />}
+                  {state.matchFormat === opt.key && <Check size={16} color={'#7A5C0F'} />}
                 </div>
                 <div style={{ fontSize: 11, color: P.ink2, marginTop: 2 }}>{opt.sub}</div>
               </button>
@@ -8259,7 +8265,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
                 { key: 'games', Icon: Coins, label: 'Side games', sub: 'Skins, Nassau and more' },
               ].map(({ key, Icon, label, sub }, i) => (
                 <button key={key} onClick={() => openExtra(key)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', background: P.paper, border: `1px solid ${C.gold}59`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', color: P.ink, animation: extrasTouched ? 'none' : `wizItemPulse 6s ease-in-out ${i * 1.5}s infinite` }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: `${C.gold}26`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon size={18} color={C.goldBright} /></div>
+                  <div style={{ width: 34, height: 34, borderRadius: 9, background: `${C.gold}26`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon size={18} color={'#7A5C0F'} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 700 }}>{label}</div>
                     <div style={{ fontSize: 11, color: P.ink2 }}>{sub}</div>
@@ -8310,7 +8316,7 @@ function RoundSwitcherModal({ tournament, onSwitch, onClose, isAdmin, onAddRound
           {tournament.rounds.map((r, i) => (
             <button key={r.id} onClick={() => { onSwitch(r.id); onClose(); }} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer', border: `1px solid ${r.id === tournament.activeRoundId ? C.gold : P.rule}`, background: r.id === tournament.activeRoundId ? 'rgba(32,35,29,0.06)' : P.paper }}>
               <div><div style={{ fontSize: 14, fontWeight: 600 }}>{i + 1}. {r.name}</div><div style={{ fontSize: 11, color: P.ink2 }}>{r.courseName || 'no course yet'}</div></div>
-              <span style={{ fontSize: 11, color: r.started ? C.goldBright : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
+              <span style={{ fontSize: 11, color: r.started ? '#7A5C0F' : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
             </button>
           ))}
         </div>
@@ -8392,7 +8398,7 @@ function ProxyPickerModal({ tournament, activeProxyId, onPick, onStop, onClose }
             <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: activeProxyId === p.id ? 'rgba(32,35,29,0.06)' : P.paper, border: `1.5px solid ${activeProxyId === p.id ? C.gold : P.rule}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer', textAlign: 'left' }}>
               <Chip color={pc(p)}>{initials(p.name)}</Chip>
               <span style={{ fontSize: 14, flex: 1 }}>{pgaName(p.name)}</span>
-              {activeProxyId === p.id && <Check size={16} color={C.gold} />}
+              {activeProxyId === p.id && <Check size={16} color={'#7A5C0F'} />}
             </button>
           ))}
         </div>
@@ -8558,7 +8564,7 @@ function TeamEventSetup({ tournament, updateTournament }) {
     setTe({ grossFlights: base.map(f => (f.id === flightId ? { ...f, teamIds: [...f.teamIds, teamId] } : f)) });
   };
   const mull = teamEventMulligans(te, players);
-  const seg = (value, opts, onPick) => <div style={{ display: 'flex', gap: 4 }}>{opts.map(([k, l]) => <button key={k} onClick={() => onPick(k)} aria-pressed={value === k} style={{ flex: 1, fontSize: 12, padding: '8px 4px', borderRadius: 8, border: `1px solid ${value === k ? C.gold : P.rule}`, background: value === k ? `${C.gold}26` : 'transparent', color: value === k ? C.goldBright : P.ink2, cursor: 'pointer' }}>{l}</button>)}</div>;
+  const seg = (value, opts, onPick) => <div style={{ display: 'flex', gap: 4 }}>{opts.map(([k, l]) => <button key={k} onClick={() => onPick(k)} aria-pressed={value === k} style={{ flex: 1, fontSize: 12, padding: '8px 4px', borderRadius: 8, border: `1px solid ${value === k ? C.gold : P.rule}`, background: value === k ? `${C.gold}26` : 'transparent', color: value === k ? '#7A5C0F' : P.ink2, cursor: 'pointer' }}>{l}</button>)}</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
       {msg && <div role="status" style={{ fontSize: 12.5, color: P.green }}>{msg}</div>}
@@ -8578,6 +8584,32 @@ function TeamEventSetup({ tournament, updateTournament }) {
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}><GhostButton onClick={importPairs}>Use my Best Ball pairs</GhostButton></div>
         {free.length > 0 && te.teams.length > 0 && <div style={{ fontSize: 12, color: '#7A5C0F', marginTop: 8 }}>{free.length} player{free.length === 1 ? ' is' : 's are'} not on a team: {free.map(p => p.name).join(', ')}</div>}
+      </div>
+
+      <div style={box}>
+        {lab('Ironwood Member-Member preset')}
+        {help('One tap sets every rule to the Member-Member 2026 format: 90% allowance, net double bogey maximum, back-nine countback, net and gross flights, 5 / 5 + 2 per stroke Sunday limit, 10% expenses, 50/50 days, $20 mulligans, 10 stroke partner limit. You can still change any of them afterwards.')}
+        <GoldButton onClick={() => { setTe(IRONWOOD_PRESET); setMsg('Ironwood Member-Member settings applied.'); }} style={{ width: '100%', padding: '10px 0' }}>Apply Ironwood settings</GoldButton>
+      </div>
+
+      <div style={box}>
+        {lab('Lock handicaps by day')}
+        {help('Freezes the handicaps used for a finished day, so a later Handicap Committee change only affects the days after it. Lock Saturday before you adjust anyone.')}
+        {model.rounds.slice(0, 2).map((rd, i) => {
+          const rr = tournament.rounds[i]; const locked = !!(rr && rr.handicapsLocked && Array.isArray(rr.roundPlayers) && rr.roundPlayers.length > 0);
+          const done = model.teams.length > 0 && model.teams.every(t => t.rounds[i] && t.rounds[i].complete);
+          return (
+            <div key={rd.id} style={{ padding: '8px 0', borderTop: i ? `1px solid ${P.rule}` : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 13.5, color: P.ink }}>{dayName(i)}: {locked ? <b style={{ color: P.green }}>Locked ({rr.roundPlayers.length} players)</b> : <span style={{ color: done ? '#7A5C0F' : P.ink2 }}>{done ? 'Finished, not locked' : 'Not locked'}</span>}</span>
+                {locked
+                  ? <GhostButton onClick={() => { updateTournament(p => ({ ...p, rounds: p.rounds.map((r, k) => (k === i ? { ...r, roundPlayers: [], handicapsLocked: false } : r)) })); setMsg(`${dayName(i)} handicaps unlocked.`); }}>Unlock</GhostButton>
+                  : <GoldButton onClick={() => { updateTournament(p => ({ ...p, rounds: p.rounds.map((r, k) => (k === i ? { ...r, roundPlayers: (p.players || []).map(pl => ({ ...pl })), handicapsLocked: true } : r)) })); setMsg(`${dayName(i)} handicaps locked.`); }} style={{ padding: '8px 14px' }}>{`Lock ${dayName(i)}`}</GoldButton>}
+              </div>
+              {done && !locked && <div role="alert" style={{ fontSize: 12, color: '#7A5C0F', marginTop: 6, lineHeight: 1.4 }}>{dayName(i)} is finished. Changing a handicap now would change its results and payouts. Lock it first.</div>}
+            </div>
+          );
+        })}
       </div>
 
       <div style={box}>
@@ -8649,7 +8681,7 @@ function TeamEventSetup({ tournament, updateTournament }) {
           <>
             {row('Price $', <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{numInput(te.mulliganFee, v => setTe({ mulliganFee: num(v, 0, 1000) }))}<span style={{ fontSize: 13, color: '#7A5C0F' }}>{mull.count} sold · {money0(mull.total)}</span></span>)}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-              {players.map(p => { const on = !!te.mulligans[p.id]; return <button key={p.id} onClick={() => setTe({ mulligans: { ...te.mulligans, [p.id]: !on } })} aria-pressed={on} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${on ? C.gold : P.rule}`, background: on ? `${C.gold}26` : 'transparent', color: on ? C.goldBright : P.ink2, cursor: 'pointer' }}>{pgaName(p.name)}{on ? ' ✓' : ''}</button>; })}
+              {players.map(p => { const on = !!te.mulligans[p.id]; return <button key={p.id} onClick={() => setTe({ mulligans: { ...te.mulligans, [p.id]: !on } })} aria-pressed={on} style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `1px solid ${on ? C.gold : P.rule}`, background: on ? `${C.gold}26` : 'transparent', color: on ? '#7A5C0F' : P.ink2, cursor: 'pointer' }}>{pgaName(p.name)}{on ? ' ✓' : ''}</button>; })}
             </div>
           </>
         )}
@@ -8751,7 +8783,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
       {model.grossFlights.map(({ flight, teams, leader, playoff, allMaxed }) => (
         <div key={flight.id} style={box}>
           {head(flight.id === '_all' ? 'All teams' : flight.name, leader != null ? `${dayName(0)} leader ${leader}` : null)}
-          {playoff && <div role="alert" style={{ padding: '8px 12px', fontSize: 12.5, fontWeight: 700, color: '#7A5C0F', background: `${'#7A5C0F'}1F` }}>{allMaxed ? 'Every team improved by the maximum. Playoff for first place.' : 'Tied for first after every tiebreaker. Playoff for first place.'}</div>}
+          {playoff && <div role="alert" style={{ padding: '8px 12px', fontSize: 12.5, fontWeight: 700, color: '#7A5C0F', background: `${'#7A5C0F'}1F` }}>{allMaxed ? `Every team improved by the maximum, so all ${teams.length} teams play off for first place. The order below is only the countback.` : 'Tied for first after every tiebreaker. Playoff for first place.'}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, padding: '5px 12px', background: 'rgba(32,35,29,0.08)', fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: P.ink3 }}>
             <span>#</span><span>Team</span><span style={{ textAlign: 'right' }}>{dayName(0).slice(0, 3)}</span><span style={{ textAlign: 'right' }}>{model.hasR2 ? dayName(1).slice(0, 3) : ''}</span><span style={{ textAlign: 'right' }}>Total</span>
           </div>
@@ -8788,7 +8820,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
   const viewBtn = (key, label) => <button key={String(key)} onClick={() => setNetView(key)} aria-pressed={netView === key} style={{ flex: 1, background: netView === key ? '#1B4A33' : 'transparent', color: netView === key ? '#F3ECDA' : '#B9C4B6', border: 'none', borderRadius: 8, padding: '8px 4px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{label}</button>;
   const netTab = (
     <>
-      <div style={{ display: 'flex', gap: 3, background: '#0A1F16', borderRadius: 10, padding: 3 }}>
+      <div style={{ display: 'flex', gap: 3, background: 'rgba(32,35,29,0.08)', borderRadius: 10, padding: 3 }}>
         {model.rounds.slice(0, 2).map((r, i) => viewBtn(i, r.name || `Round ${i + 1}`))}
         {model.rounds.length > 1 && viewBtn('total', '2-day')}
       </div>
@@ -8841,7 +8873,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   const box = { background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 8, overflow: 'hidden' };
   const head = (label, right) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: 'rgba(32,35,29,0.06)', borderTop: `1px solid ${P.rule}` }}><span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: '#7A5C0F' }}>{label}</span>{right && <span style={{ fontSize: 11, color: P.ink2, textAlign: 'right' }}>{right}</span>}</div>;
   const tabBtn = (key, label) => <button key={key} onClick={() => setTab(key)} role="tab" aria-selected={tab === key} style={{ flex: 1, background: tab === key ? 'rgba(32,35,29,0.06)' : 'transparent', color: tab === key ? P.ink : P.ink2, border: 'none', borderRadius: 8, padding: '9px 4px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{label}</button>;
-  const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? C.goldBright : P.ink2, borderColor: tone === 'warn' ? `${C.gold}66` : P.rule }}>{txt}</div>;
+  const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? '#7A5C0F' : P.ink2, borderColor: tone === 'warn' ? `${C.gold}66` : P.rule }}>{txt}</div>;
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
   const mine = (auctionTeam) => auctionIsMine(auctionTeam, whoami);
   const num = (v, lo, hi) => Math.max(lo, Math.min(hi, parseInt(v, 10) || 0));
@@ -8877,12 +8909,12 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
               {(tournament.flights || []).length > 1 && <div style={{ padding: '6px 12px', fontSize: 10.5, color: P.ink3, letterSpacing: 0.8, textTransform: 'uppercase' }}>{flight.name}</div>}
               {ranked.map(r => (
                 <div key={r.auctionTeam.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto', gap: 8, alignItems: 'center', padding: '8px 12px', borderTop: `1px solid ${P.rule}`, background: mine(r.auctionTeam) ? `${C.gold}1F` : 'transparent' }}>
-                  <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? C.gold : P.ink3 }}>{r.tied ? 'T' : ''}{r.place}</span>
+                  <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? '#7A5C0F' : P.ink3 }}>{r.tied ? 'T' : ''}{r.place}</span>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 13.5, color: P.ink }}>{r.auctionTeam.name || (r.mt && r.mt.name) || 'Team'}</div>
                     <div style={{ fontSize: 11, color: P.ink2 }}>{r.auctionTeam.buyer ? (mine(r.auctionTeam) ? 'You' : r.auctionTeam.buyer) : 'Unsold'} · net {fmtToPar(r.netToPar)}{r.complete ? '' : ` thru ${r.thru}`}</div>
                   </div>
-                  <b style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 14, color: r.amount > 0 ? C.goldBright : P.ink3 }}>{r.amount > 0 ? money0(r.amount) : '-'}</b>
+                  <b style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 14, color: r.amount > 0 ? '#7A5C0F' : P.ink3 }}>{r.amount > 0 ? money0(r.amount) : '-'}</b>
                 </div>
               ))}
             </div>
@@ -9040,7 +9072,7 @@ function HoleTimeline({ holeProgress, currentHole }) {
         return (
           <div key={h.holeNumber} style={{ position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
             <div style={{ width: 27, height: 27, borderRadius: 8, background: bg, border: `1.5px solid ${isCurrent ? C.gold : P.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity }}>
-              {isCurrent ? <Flag size={13} color={C.goldBright} /> : h.completed ? <Check size={13} color={h.hasBirdieOrBetter ? '#14261B' : C.goldBright} /> : null}
+              {isCurrent ? <Flag size={13} color={'#7A5C0F'} /> : h.completed ? <Check size={13} color={h.hasBirdieOrBetter ? '#14261B' : C.goldBright} /> : null}
             </div>
             {h.hasBetWin && <span style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, borderRadius: 999, background: P.red, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${'rgba(32,35,29,0.08)'}` }}><Coins size={7} color={P.ink} /></span>}
             <span style={{ fontSize: 8, color: P.ink2 }}>{h.holeNumber}</span>
@@ -9061,7 +9093,7 @@ function GroupFlowCard({ group, playersById, isMyGroup, isAdmin, isMock, now, on
           <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 15, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>Group {group.groupNumber}{isMyGroup && <span style={{ color: '#7A5C0F', fontSize: 11 }}>· You</span>}</div>
           <div style={{ fontSize: 11, color: P.ink2 }}>{group.teeTime ? fmtClockTime(new Date(group.teeTime).getTime()) : 'Tee time TBD'} · starts hole {group.startingHole || 1}</div>
         </div>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: group.finished || group.notStarted ? P.ink : '#14261B', background: group.finished || group.notStarted ? P.rule : paceColor, borderRadius: 999, padding: '4px 10px', flexShrink: 0, whiteSpace: 'nowrap' }}>{(group.finished ? 'FINISHED' : group.paceStatus).toUpperCase()}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: group.finished || group.notStarted ? P.ink : onColor(paceColor), background: group.finished || group.notStarted ? P.rule : paceColor, borderRadius: 999, padding: '4px 10px', flexShrink: 0, whiteSpace: 'nowrap' }}>{(group.finished ? 'FINISHED' : group.paceStatus).toUpperCase()}</span>
       </div>
 
       <div style={{ fontSize: 12, color: P.ink2, marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names.join(', ') || 'No players assigned'}{group.playerIds.length > 0 && group.playerIds.length < 4 && ` · ${group.playerIds.length}-some`}</div>
@@ -9331,7 +9363,7 @@ function FullStandingsModal({ tournament, tournamentStandings, useNet, ryderCup,
                 <Chip color={pc(p)}>{initials(p.name)}</Chip>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13 }}>{pgaName(p.name)}</div>
-                  {flight && <div style={{ fontSize: 9, color: flight.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{flight.name}{pts != null ? ` · ${pts} pt${pts !== 1 ? 's' : ''}` : ''}</div>}
+                  {flight && <div style={{ fontSize: 9, color: legible(flight.color), textTransform: 'uppercase', letterSpacing: 0.4 }}>{flight.name}{pts != null ? ` · ${pts} pt${pts !== 1 ? 's' : ''}` : ''}</div>}
                 </div>
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
                   <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, color: (useNet ? p.netToPar : p.toPar) < 0 ? P.red : P.ink }}>{p.roundsStarted === 0 ? '–' : fmtToPar(useNet ? p.netToPar : p.toPar)}</span>
@@ -9384,15 +9416,15 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
 
         <div style={{ ...rowCard, justifyContent: 'space-between', marginBottom: 14 }}>
           <div><div style={{ fontSize: 11, color: P.ink2, textTransform: 'uppercase' }}>Current net position</div></div>
-          <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: net > 0 ? C.goldBright : net < 0 ? P.red : P.ink2 }}>{fmtMoney(net)}</div>
+          <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 30, color: net > 0 ? '#7A5C0F' : net < 0 ? P.red : P.ink2 }}>{fmtMoney(net)}</div>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-          {stat('Pending bets', myLedger.pendingBets, C.blueBright)}
+          {stat('Pending bets', myLedger.pendingBets, '#2F5F8F')}
           {stat('Settled bets', myLedger.settledBets, P.ink)}
           {stat('Total bets', myLedger.pendingBets + myLedger.settledBets, P.ink)}
           {stat('Current exposure', `$${exposure}`, P.ink)}
-          {stat('Biggest potential swing', `$${biggestSwing}`, C.goldBright)}
+          {stat('Biggest potential swing', `$${biggestSwing}`, '#7A5C0F')}
         </div>
 
         {myPending.length > 0 && (
@@ -9407,7 +9439,7 @@ function MyPositionModal({ state, bets, ledger, whoami, onPick, onAddSelf, onClo
           <div>
             <SectionHeader title="Settled" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {mySettled.map(b => { const amt = b.calculatedPayout[whoami.id] || 0; return <div key={b.id} style={{ ...rowCard, justifyContent: 'space-between' }}><span style={{ fontSize: 13 }}>{b.betName}</span><span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: amt > 0 ? C.goldBright : amt < 0 ? P.red : P.ink2, fontWeight: 600 }}>{fmtMoney(amt)}</span></div>; })}
+              {mySettled.map(b => { const amt = b.calculatedPayout[whoami.id] || 0; return <div key={b.id} style={{ ...rowCard, justifyContent: 'space-between' }}><span style={{ fontSize: 13 }}>{b.betName}</span><span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, color: amt > 0 ? '#7A5C0F' : amt < 0 ? P.red : P.ink2, fontWeight: 600 }}>{fmtMoney(amt)}</span></div>; })}
             </div>
           </div>
         )}
@@ -9457,8 +9489,8 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#04100A', zIndex: 70, display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 2, display: 'flex', gap: 8 }}>
-        <button onClick={() => setPaused(p => !p)} style={{ background: 'rgba(32,35,29,0.08)', border: `1px solid ${P.rule}`, borderRadius: 999, color: P.ink, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}>{paused ? 'Resume' : 'Pause'}</button>
-        <button onClick={onClose} style={{ background: 'rgba(32,35,29,0.08)', border: `1px solid ${P.rule}`, borderRadius: 999, color: P.ink, padding: '8px 10px', cursor: 'pointer' }}><X size={16} /></button>
+        <button onClick={() => setPaused(p => !p)} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 999, color: '#F3ECDA', padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}>{paused ? 'Resume' : 'Pause'}</button>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 999, color: '#F3ECDA', padding: '8px 10px', cursor: 'pointer' }}><X size={16} /></button>
       </div>
       <div
         ref={scrollRef}
@@ -9477,7 +9509,7 @@ function AwardsCreditsModal({ awards, tournament, roundName, onClose }) {
           const Icon = a.icon || Trophy;
           return (
             <div key={`${a.key}-${i}`} style={{ marginBottom: '14vh' }}>
-              <Icon size={30} color={C.goldBright} style={{ marginBottom: 10 }} />
+              <Icon size={30} color={'#7A5C0F'} style={{ marginBottom: 10 }} />
               <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2.5, textTransform: 'uppercase', color: '#7A5C0F', marginBottom: 4 }}>{a.label}</div>
               <div style={{ fontSize: 11, color: P.ink2, marginBottom: 16 }}>{a.sub}</div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 6 }}>
@@ -9565,13 +9597,13 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(4,15,10,0.85)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: P.paper, color: P.ink, border: `1px solid ${P.rule}`, borderRadius: 20, width: '100%', maxWidth: 480, maxHeight: DVH(88), overflowY: 'auto', padding: 22, textAlign: 'center' }}>
-        <Trophy size={36} color={C.goldBright} style={{ marginBottom: 8 }} />
+        <Trophy size={36} color={'#7A5C0F'} style={{ marginBottom: 8 }} />
         <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 26, marginBottom: 4, letterSpacing: -0.3 }}>{isLastRound ? 'Tournament complete' : 'Round complete'}</div>
         <div style={{ fontSize: 12, color: P.ink2, marginBottom: 18 }}>{state.roundName}</div>
 
         {bestRow && (
           <div style={{ ...rowCard, justifyContent: 'center', gap: 12, marginBottom: 14, background: 'rgba(32,35,29,0.06)', border: `1px solid ${C.gold}` }}>
-            {bestRow.player ? <Chip color={pc(bestRow.player)}>{initials(bestRow.player.name)}</Chip> : <Trophy size={26} color={C.goldBright} />}
+            {bestRow.player ? <Chip color={pc(bestRow.player)}>{initials(bestRow.player.name)}</Chip> : <Trophy size={26} color={'#7A5C0F'} />}
             <div style={{ textAlign: 'left', minWidth: 0 }}>
               <div style={{ fontSize: 11, color: P.ink2, textTransform: 'uppercase' }}>{kind === 'team' ? 'Top team' : 'Champion'}</div>
               <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{bestRow.name}</div>
@@ -9592,7 +9624,7 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
               {sec.flight && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: `${sec.flight.color}18`, borderRadius: 8, marginBottom: 2 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: sec.flight.color }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: sec.flight.color }}>{sec.flight.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: legible(sec.flight.color) }}>{sec.flight.name}</span>
                 </div>
               )}
               {sec.rows.map(r => (
@@ -11096,7 +11128,7 @@ export default function RoGreen() {
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', padding: 16, paddingBottom: 28, maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box', overscrollBehavior: 'contain' }}>
         {!hasPlayers && (
           <div style={{ textAlign: 'center', marginTop: 60, padding: '0 12px' }}>
-            <Flag size={40} color={C.gold} style={{ marginBottom: 14 }} />
+            <Flag size={40} color={'#7A5C0F'} style={{ marginBottom: 14 }} />
             <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 22, marginBottom: 8, letterSpacing: -0.3 }}>No players yet</div>
             {viewAsAdmin ? (
               <>
