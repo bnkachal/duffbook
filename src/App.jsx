@@ -2228,14 +2228,19 @@ function NetToggle({ value, onChange }) {
 }
 function IdentityPicker({ state, onPick, onAddSelf }) {
   const [name, setName] = useState('');
+  const [q, setQ] = useState('');
+  const list = sortByLastName(state.players).filter(p => nameMatches(p.name, q));
+  // The list scrolls inside itself, so it works the same on a full page, inside Chat, or in any sheet.
   return (
-    <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 12 }}>
-      <span style={{ fontSize: 13 }}>👋 Tap your name to get started</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {state.players.map(p => (
-          <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(32,35,29,0.06)', border: `1px solid ${P.rule}`, borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left' }}>
+    <div data-testid="identity-picker" style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8, marginBottom: 12, flexShrink: 0 }}>
+      <span style={{ fontSize: 13 }}>{'\uD83D\uDC4B'} Tap your name to get started</span>
+      <input data-testid="identity-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search your name" style={{ ...inputStyle, fontSize: 14, padding: '9px 10px' }} />
+      <div data-testid="identity-list" style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'min(280px, 38vh)', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}>
+        {list.length === 0 && <div style={{ fontSize: 12, color: P.ink3, padding: '6px 2px' }}>No name matches. Add yourself below.</div>}
+        {list.map(p => (
+          <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(32,35,29,0.06)', border: `1px solid ${P.rule}`, borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', flexShrink: 0, minHeight: 44 }}>
             <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
-            <span style={{ fontSize: 13, fontWeight: 600, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastFirst(p.name)}</span>
           </button>
         ))}
       </div>
@@ -8936,6 +8941,7 @@ function DeviceProfileModal({ name, onSave, onClose }) {
 
 /* ============================== SETTINGS SHEET ============================== */
 function ProxyPickerModal({ tournament, activeProxyId, onPick, onStop, onClose }) {
+  const [q, setQ] = useState('');
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 45, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: P.paper, color: P.ink, borderTop: `1px solid ${P.rule}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: DVH(80), overflowY: 'auto', padding: '18px 18px 28px' }}>
@@ -8947,11 +8953,12 @@ function ProxyPickerModal({ tournament, activeProxyId, onPick, onStop, onClose }
         {activeProxyId && (
           <button onClick={onStop} style={{ width: '100%', background: P.red, border: 'none', borderRadius: 10, padding: '11px 0', color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, cursor: 'pointer', marginBottom: 14 }}>Stop proxying</button>
         )}
+        <input data-testid="proxy-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search a name" style={{ ...inputStyle, fontSize: 14, padding: '9px 10px', marginBottom: 8 }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {tournament.players.map(p => (
+          {sortByLastName(tournament.players).filter(p => nameMatches(p.name, q)).map(p => (
             <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: activeProxyId === p.id ? 'rgba(32,35,29,0.06)' : P.paper, border: `1.5px solid ${activeProxyId === p.id ? C.gold : P.rule}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer', textAlign: 'left' }}>
               <Chip color={pc(p)}>{initials(p.name)}</Chip>
-              <span style={{ fontSize: 14, flex: 1 }}>{pgaName(p.name)}</span>
+              <span style={{ fontSize: 14, flex: 1 }}>{lastFirst(p.name)}</span>
               {activeProxyId === p.id && <Check size={16} color={'#7A5C0F'} />}
             </button>
           ))}
