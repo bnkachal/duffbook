@@ -1071,7 +1071,7 @@ function teamEventModel(tournament) {
   const teams = te.teams.filter(t => (t.playerIds || []).length > 0).map(t => {
     const tp = (t.playerIds || []).map(id => players.find(p => p.id === id)).filter(Boolean);
     const netFlightId = (tp.find(p => p.flightId) || {}).flightId || null;
-    return { ...t, name: teamDisplayName(t, players), players: tp, netFlightId, sig: teamSig(t.playerIds), rounds: rounds.map(r => teamRoundResult(r.view, t)) };
+    return { ...t, customName: (t.name && String(t.name).trim()) || '', name: teamDisplayName(t, players), players: tp, netFlightId, sig: teamSig(t.playerIds), rounds: rounds.map(r => teamRoundResult(r.view, t)) };
   });
   // ---- gross flights + Sunday improvement limit ----
   const flightOf = (t) => ((te.grossFlightsOn ? te.grossFlights : []).find(f => (f.teamIds || []).includes(t.id)) || { id: '_all', name: 'Everyone' });
@@ -4545,6 +4545,9 @@ function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onCl
   }
 
   const paperOn = playersToShow.length > 0;
+  // More than one player to score (group scoring): one compact row each so the whole group fits without scrolling.
+  const rowMode = !listAll && playersToShow.length > 1;
+  const hasCap = state.maxScore && state.maxScore !== 'none';
   return (
     <DrawerFrame onClose={onClose} paper={paperOn}>{(close) => (
       <>
@@ -4556,7 +4559,7 @@ function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onCl
           <div style={{ fontSize: 34, lineHeight: 1.1, color: paperOn ? '#14261B' : P.ink, fontWeight: 800, letterSpacing: 1.5, textDecoration: 'underline', textDecorationThickness: 3, textUnderlineOffset: 6 }}>HOLE {viewHole + 1}</div>
           <div style={{ fontSize: 13, color: paperOn ? '#6B6455' : P.ink2, marginTop: 8, fontWeight: 600 }}>PAR {par}{yards ? ` · ${yards} YDS` : ''} · SI {si}</div>
           {groupScoreEntry && !listAll && playersToShow.length > 1 && (
-            <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : '#7A5C0F', marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players</div>
+            <div style={{ fontSize: 10.5, color: paperOn ? C.goldDark : '#7A5C0F', marginTop: 4, fontWeight: 700 }}>Scoring for {playersToShow.length} players{hasCap ? ` · Max score: ${maxScoreText(state)}` : ''}</div>
           )}
           {viewAsAdmin && useGroup && (
             <button onClick={() => setShowEveryone(v => !v)} style={{ marginTop: 6, background: 'transparent', border: 'none', color: paperOn ? C.goldDark : '#7A5C0F', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>{listAll ? 'Show just my group' : 'Show everyone (admin)'}</button>
@@ -4576,6 +4579,27 @@ function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onCl
           const label = scoreContextLabel(draft - par);
           const netInfo = netInfoFor(p.id);
           const compact = listAll;
+          if (rowMode) {
+            const cap = capFor(p.id); const atCap = cap != null && draft >= cap;
+            const lblColor = draft < par ? '#0C6B45' : draft > par ? '#8A2A1F' : '#6B6455';
+            return (
+              <div key={p.id} data-testid={`entry-row-${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 0', borderBottom: `1px solid rgba(${GOLD_RGB},0.5)` }}>
+                <Chip color={pc(p)} style={{ width: 30, height: 30, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: '#14261B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pgaName(p.name)}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: atCap ? '#8A2A1F' : '#6B6455', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {atCap ? `Max ${cap} reached` : (useNet && netInfo ? `Net ${netInfo.net} · ${netInfo.strokes} stroke${netInfo.strokes === 1 ? '' : 's'}` : '')}
+                    {!atCap && label && draft !== par ? <span style={{ color: lblColor, fontWeight: 800 }}>{useNet && netInfo ? ' · ' : ''}{label}</span> : null}
+                  </div>
+                </div>
+                <button aria-label={`Lower ${p.name}'s score`} onClick={() => bump(p.id, -1)} style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(32,35,29,0.09)', border: 'none', color: P.ink, fontSize: 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>−</button>
+                <div role="button" aria-label={`Save ${p.name}'s score`} data-saved={confirmed ? '1' : '0'} onClick={() => confirm(p.id)} style={{ position: 'relative', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 800, fontSize: 32, color: confirmed ? '#0C6B45' : '#14261B', cursor: 'pointer', width: 46, height: 44, lineHeight: '44px', textAlign: 'center', borderRadius: 12, background: 'rgba(243,240,230,0.88)', flexShrink: 0, transition: 'color 0.2s' }}>
+                  {draft}{confirmed && <span style={{ position: 'absolute', top: -2, right: 2, fontSize: 11, lineHeight: 1, fontFamily: 'inherit' }}>✓</span>}
+                </div>
+                <button aria-label={`Raise ${p.name}'s score`} onClick={() => bump(p.id, 1)} style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(32,35,29,0.09)', border: 'none', color: P.ink, fontSize: 22, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>+</button>
+              </div>
+            );
+          }
           return (
             <div key={p.id} style={{
               background: 'transparent', borderRadius: 0,
@@ -4616,6 +4640,7 @@ function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onCl
           );
         })}
 
+        {rowMode && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#6B6455', marginTop: 8 }}>Tap # to save</div>}
         {confirmAdvanceAnyway && missingPlayers.length > 0 && (
           <div style={{ fontSize: 11.5, color: '#8A2A1F', fontWeight: 700, textAlign: 'center', margin: '10px 0 8px' }}>
             {missingPlayers.map(p => pgaName(p.name)).join(', ')} {missingPlayers.length === 1 ? 'needs' : 'need'} a score for Hole {viewHole + 1}. Tap again to continue anyway.
@@ -9081,17 +9106,24 @@ function teamStrokeRows(tournament, team) {
     return { id: p.id, name: p.name, course, scaled, strokes, hasIndex: !isNaN(parseFloat(p.handicapIndex)) };
   });
 }
-function StrokesChip({ tournament, team, strong }) {
+function StrokesChip({ tournament, team }) {
   const [open, setOpen] = useState(false);
   const rows = teamStrokeRows(tournament, team);
   if (rows.length < 2) return null;
   const go = (e) => { e.stopPropagation(); e.preventDefault(); setOpen(true); };
   return (
     <>
-      <span role="button" tabIndex={0} aria-label={`How ${team.name} strokes are worked out`} onClick={go} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') go(e); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 28, boxSizing: 'border-box', padding: '0 9px', marginTop: 3, borderRadius: 999, border: `1.5px solid ${strong ? '#7A5C0F' : 'rgba(122,92,15,0.55)'}`, background: '#FFFDF6', fontSize: 11, fontWeight: 700, color: '#7A5C0F', cursor: 'pointer' }}>Strokes {rows.map(r => r.strokes).join(' + ')}<ChevronRight size={11} /></span>
+      <button type="button" data-testid="stroke-breakdown-link" onClick={go} aria-label={`How ${team.name} strokes are worked out`} style={{ display: 'inline-block', marginTop: 3, padding: '2px 0', background: 'transparent', border: 'none', fontSize: 12, fontWeight: 600, color: '#7A5C0F', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>Stroke breakdown</button>
       {open && <TeamStrokesSheet tournament={tournament} team={team} onClose={() => setOpen(false)} />}
     </>
   );
+}
+// Team name for the leaderboards: bold. Players as first initial + last name; a custom team name shows on top with the players beneath.
+function TeamBoardName({ team, size = 13.5 }) {
+  const pl = (team.players || []).map(p => pgaName(p.name)).join(' / ');
+  const wrap = { display: 'block', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+  if (team.customName) return <span style={{ display: 'block', minWidth: 0 }}><span data-testid="team-name" style={{ ...wrap, fontWeight: 700, fontSize: size, color: P.ink }}>{team.customName}</span>{pl && <span style={{ ...wrap, fontSize: 10.5, color: P.ink3, marginTop: 1 }}>{pl}</span>}</span>;
+  return <span data-testid="team-name" style={{ ...wrap, fontWeight: 700, fontSize: size, color: P.ink }}>{pl || team.name}</span>;
 }
 function TeamStrokesSheet({ tournament, team, onClose }) {
   const te = getTeamEvent(tournament);
@@ -9133,6 +9165,22 @@ function TeamStrokesSheet({ tournament, team, onClose }) {
 }
 // Auto-scrolling window for the team leaderboard: shows 3 teams at a time out of the top 10 and rolls through them,
 // like the player leaderboard on Home. Press and hold pauses it; a fresh score pulls the scoring team into view.
+// Tee time (ms) of the group a team plays in, only while it is still in the future. Gone once the time is reached.
+function teamTeeMs(tournament, team, roundIdx, now) {
+  const r = (tournament.rounds || [])[roundIdx]; if (!r || !team) return null;
+  const ids = team.playerIds || [];
+  const g = (r.flowGroups || []).find(fg => fg && fg.teeTime && (fg.playerIds || []).some(id => ids.includes(id)));
+  if (!g) return null;
+  const ms = new Date(g.teeTime).getTime();
+  return (isNaN(ms) || ms <= now) ? null : ms;
+}
+function fmtTeeShort(ms) { return fmtClockTime(ms).replace(/\s*([AP])M/i, (m, c) => c.toLowerCase()); }
+// Not-started teams in tee-time order (earliest first), then by name.
+function sortRestByTee(rest, tournament, roundIdx) {
+  const t = (r) => { const rd = (tournament.rounds || [])[roundIdx]; const ids = r.team.playerIds || []; const g = rd && (rd.flowGroups || []).find(fg => fg && fg.teeTime && (fg.playerIds || []).some(id => ids.includes(id))); const ms = g ? new Date(g.teeTime).getTime() : NaN; return isNaN(ms) ? Infinity : ms; };
+  return rest.slice().sort((a, b) => (t(a) - t(b)) || String(a.team.name).localeCompare(String(b.team.name)));
+}
+
 function TeamScroller({ items, renderRow, full }) {
   const VISIBLE = 3, ROW_H = 64, TICK_MS = 2600;
   const total = items.length;
@@ -9176,12 +9224,14 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
   const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
   const stand = teamEventNetStandings(model, tournament, idx).filter(f => f.ranked.length + f.rest.length > 0);
-  const cols = '22px 1fr 34px 54px 52px';
+  const cols = '22px 1fr 40px 52px 50px';
+  const now = useNow(30000);
   const toParColor = (v) => (v < 0 ? P.green : v > 0 ? P.red : P.ink3);
   const open = (e) => { if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen && onOpen(); } };
   // Every flight shows all of its teams. Each flight can be folded away; the choice is remembered on this phone.
-  const [folded, setFolded] = useState(() => { try { const v = JSON.parse(localStorage.getItem('db:home-flights-folded') || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } });
-  const toggleFlight = (id) => setFolded(prev => { const next = { ...prev, [id]: !prev[id] }; try { localStorage.setItem('db:home-flights-folded', JSON.stringify(next)); } catch (e) {} return next; });
+  const [openMap, setOpenMap] = useState(() => { try { const v = JSON.parse(localStorage.getItem('db:home-flights-open') || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } });
+  const isFoldedId = (id) => !openMap[id]; // flights start folded; players open the ones they want
+  const toggleFlight = (id) => setOpenMap(prev => { const next = { ...prev, [id]: !prev[id] }; try { localStorage.setItem('db:home-flights-open', JSON.stringify(next)); } catch (e) {} return next; });
   return (
     <div data-coach="card" role="button" tabIndex={0} onClick={open} onKeyDown={open} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${P.rule}` }}>
@@ -9196,24 +9246,23 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
       {model.teams.length === 0 && <div style={{ padding: '12px 14px', fontSize: 12.5, color: P.ink2 }}>No teams yet.</div>}
       {stand.map(({ flight, ranked, rest }) => (
         <div key={flight.id}>
-          {(tournament.flights || []).length > 1 && (() => { const isFolded = !!folded[flight.id]; const lead = ranked.find(r => r.thru > 0); return (
+          {(tournament.flights || []).length > 1 && (() => { const isFolded = isFoldedId(flight.id); const lead = ranked.find(r => r.thru > 0); return (
             <button data-testid={`flight-toggle-${flight.id}`} aria-expanded={!isFolded} onClick={(e) => { e.stopPropagation(); toggleFlight(flight.id); }} onKeyDown={(e) => e.stopPropagation()} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', minHeight: 40, background: `${flight.color || '#7A5C0F'}18`, border: 'none', cursor: 'pointer', textAlign: 'left' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color || '#7A5C0F', flexShrink: 0 }} />
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color || '#7A5C0F' }}>{flight.name}</span>
               <span style={{ fontSize: 10.5, color: P.ink3, marginLeft: 4, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ranked.length + rest.length} teams{isFolded && lead ? ` · leader ${lead.team.name} ${lead.thru > 0 ? fmtToPar(lead.netToPar) : ''}` : ''}</span>
               <ChevronDown size={16} color={P.ink3} style={{ transform: isFolded ? 'rotate(-90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
             </button>); })()}
-          {((tournament.flights || []).length <= 1 || !folded[flight.id]) ? <TeamScroller full items={[...ranked, ...(ranked.length === 0 ? rest.map(r => ({ ...r, place: null })) : [])].map(r => ({ id: r.team.id, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
+          {((tournament.flights || []).length <= 1 || !isFoldedId(flight.id)) ? <TeamScroller full items={[...ranked, ...sortRestByTee(rest, tournament, idx).map(r => ({ ...r, place: null }))].map(r => ({ id: r.team.id, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
             const r = it.r; const rr = r.team.rounds[idx];
             return (
               <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={(e) => { e.stopPropagation(); onOpen && onOpen(r.team.id); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: cols, padding: '6px 14px', alignItems: 'center', cursor: 'pointer' }}>
                 <span style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: r.place === 1 ? '#7A5C0F' : P.ink3, fontWeight: r.place === 1 ? 700 : 400 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13, color: P.ink, fontWeight: r.place === 1 && r.thru > 0 ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.team.name}</span>
-                  <StrokesChip tournament={tournament} team={r.team} strong={r.place === 1} />
+                  <TeamBoardName team={r.team} size={13} />
                   <LiveFlash flash={flash} />
                 </span>
-                <span style={{ fontSize: 11, color: P.ink3, textAlign: 'center' }}>{r.thru > 0 ? r.thru : '–'}</span>
+                <span data-testid="tee-time" style={{ fontSize: r.thru > 0 ? 11 : 10, color: P.ink3, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.thru > 0 ? r.thru : (() => { const ms = teamTeeMs(tournament, r.team, idx, now); return ms ? fmtTeeShort(ms) : '–'; })()}</span>
                 <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 13, textAlign: 'right', color: r.thru === 0 ? P.ink3 : toParColor(r.netToPar) }}>{r.thru === 0 ? '–' : fmtToPar(r.netToPar)}</span>
                 <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontSize: 12, textAlign: 'right', color: P.ink2 }}>{rr && rr.thru > 0 ? fmtToPar(rr.grossToPar) : '–'}</span>
               </div>
@@ -9488,6 +9537,7 @@ function TeamCardView({ tournament, model, teamId, onBack }) {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: '#14261B', textTransform: 'uppercase', letterSpacing: 0.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.name}</div>
           <div style={{ fontSize: 11.5, color: '#6B6455' }}>Best ball{team.netFlightId && (tournament.flights || []).find(f => f.id === team.netFlightId) ? ` · ${(tournament.flights || []).find(f => f.id === team.netFlightId).name}` : ''}</div>
+          <StrokesChip tournament={tournament} team={team} />
         </div>
       </div>
       {(tournament.rounds || []).length > 1 && (
@@ -9543,12 +9593,13 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
   const te = getTeamEvent(tournament);
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
   const [netView, setNetView] = useState(() => Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament))));
+  const now = useNow(30000);
   const box = { background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 4, overflow: 'hidden', borderTop: '3px double rgba(32,35,29,0.5)', color: P.ink, boxShadow: '0 6px 18px rgba(0,0,0,0.25)' };
   const head = (label, right) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: 'rgba(32,35,29,0.06)', borderTop: `1px solid ${P.rule}` }}><span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: '#7A5C0F' }}>{label}</span>{right && <span style={{ fontSize: 11, color: P.ink2, textAlign: 'right' }}>{right}</span>}</div>;
   const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? '#7A5C0F' : P.ink2, borderColor: tone === 'warn' ? `${'#7A5C0F'}66` : P.rule }}>{txt}</div>;
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
   const liveIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
-  const NET_GRID = '24px 1fr 30px 42px 42px 44px';
+  const NET_GRID = '24px 1fr 36px 40px 40px 42px';
   // ---------- Gross ----------
   const grossTab = (
     <>
@@ -9573,8 +9624,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
               <div role="button" tabIndex={0} aria-label={`Scorecard for ${t.name}`} onClick={() => onPickTeam && onPickTeam(t.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(t.id); } }} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 42px 50px 52px', gap: 4, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
                 <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: g.rank === 1 ? '#7A5C0F' : P.ink3 }}>{g.tied ? 'T' : ''}{g.rank}<LiveChange change={change} /></span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
-                  <StrokesChip tournament={tournament} team={t} />
+                  <TeamBoardName team={t} />
                   <LiveFlash flash={flash} />
                   {sub && <div style={{ fontSize: 10.5, color: P.ink2, lineHeight: 1.3 }}>{sub}</div>}
                 </div>
@@ -9606,7 +9656,7 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
           <div style={{ display: 'grid', gridTemplateColumns: NET_GRID, gap: 4, padding: '5px 12px', background: 'rgba(32,35,29,0.08)', fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: P.ink3 }}>
             <span>#</span><span>Team</span><span style={{ textAlign: 'center' }}>Thru</span><span style={{ textAlign: 'right' }}>Gross</span><span style={{ textAlign: 'right' }}>Net</span><span style={{ textAlign: 'right' }}>Strokes</span>
           </div>
-          <LiveBoard items={[...ranked, ...rest.map(r => ({ ...r, place: null }))].map(r => ({ id: r.team.id + ':' + netView, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
+          <LiveBoard items={[...ranked, ...sortRestByTee(rest, tournament, netView === 'total' ? liveIdx : netView).map(r => ({ ...r, place: null }))].map(r => ({ id: r.team.id + ':' + netView, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
             const r = it.r;
             const rds = (netView === 'total' ? r.team.rounds : [r.team.rounds[netView]]).filter(rd => rd && rd.thru > 0);
             const gTop = rds.reduce((a, rd) => a + rd.grossToPar, 0), gStr = rds.reduce((a, rd) => a + rd.gross, 0), nStr = rds.reduce((a, rd) => a + rd.net, 0);
@@ -9615,8 +9665,8 @@ function TeamEventBoards({ tournament, tab, onPickTeam }) {
             return (
             <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={() => onPickTeam && onPickTeam(r.team.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickTeam && onPickTeam(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: NET_GRID, gap: 4, alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }}>
               <span style={{ display: 'flex', alignItems: 'center', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 13, color: r.place === 1 ? '#7A5C0F' : P.ink3 }}>{r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–'}<LiveChange change={change} /></span>
-              <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, lineHeight: 1.25, color: P.ink, overflowWrap: 'anywhere' }}>{r.team.name}</span><StrokesChip tournament={tournament} team={r.team} /><LiveFlash flash={flash} /></span>
-              <span style={{ fontSize: 11, color: P.ink3, textAlign: 'center' }}>{started ? (r.complete ? 'F' : r.thru) : '–'}</span>
+              <span style={{ minWidth: 0 }}><TeamBoardName team={r.team} /><LiveFlash flash={flash} /></span>
+              <span data-testid="tee-time" style={{ fontSize: started ? 11 : 9.5, color: P.ink3, textAlign: 'center', whiteSpace: 'nowrap' }}>{started ? (r.complete ? 'F' : r.thru) : (() => { const ms = teamTeeMs(tournament, r.team, netView === 'total' ? liveIdx : netView, now); return ms ? fmtTeeShort(ms) : '–'; })()}</span>
               <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(gTop) }}>{started ? fmtToPar(gTop) : '–'}</span>
               <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 14, textAlign: 'right', color: tone(r.netToPar) }}>{started ? fmtToPar(r.netToPar) : '–'}</span>
               <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10.5, textAlign: 'right', color: P.ink2, lineHeight: 1.35 }}>{started ? <>{gStr}<br />{nStr}</> : '–'}</span>
