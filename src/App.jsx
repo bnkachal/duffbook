@@ -99,6 +99,14 @@ function pc(player) {
    tee's overall declared length — keeps the mock dataset internally consistent without
    hand-typing hundreds of yardage numbers. Swap this whole module out once a real provider
    (GolfAPI.io, GolfCourseAPI, iGolf, etc.) is wired up; the UI never needs to know the source. */
+// Ironwood hole handicaps (men's tees), as they appear in GHIN. Red and Green have their own table that is not in the app yet.
+const IRONWOOD_MEN_SI = [13,9,5,7,17,3,15,1,11, 2,16,4,12,18,8,10,14,6];
+// Rounds already created from the Ironwood course carry their own copy of the hole handicaps. This swaps in the current ones
+// on load, and touches nothing else (players, scores, bets, teams and tees are left alone).
+function fixIronwoodRounds(rounds) {
+  if (!Array.isArray(rounds)) return rounds;
+  return rounds.map(r => (r && r.courseId === 'mock-ironwood' && Array.isArray(r.strokeIndex) && r.strokeIndex.length === 18 && r.strokeIndex.some((v, i) => v !== IRONWOOD_MEN_SI[i])) ? { ...r, strokeIndex: IRONWOOD_MEN_SI.slice() } : r);
+}
 function buildMockHoles(pars, handicaps, teeBoxes, verifiedYardages) {
   const baseByPar = { 3: 165, 4: 400, 5: 540 };
   const baseTotal = pars.reduce((sum, par) => sum + (baseByPar[par] || 400), 0);
@@ -198,7 +206,7 @@ const MOCK_COURSES = [
     courseId: 'mock-ironwood', courseName: 'Ironwood Golf & Country Club',
     address: "1455 Bell's Fork Rd", city: 'Greenville', state: 'NC', latitude: 35.633, longitude: -77.366,
     pars:      [4,4,3,5,4,4,5,3,4, 4,3,4,5,4,4,5,3,4],
-    handicaps: [13,5,9,7,17,3,15,1,11, 2,12,4,8,16,18,10,14,6],
+    handicaps: IRONWOOD_MEN_SI,
     teeBoxes: [
       { teeName: 'Purple', totalYards: 7067, rating: 74.2, slope: 138 },
       { teeName: 'Black',  totalYards: 6657, rating: 72.3, slope: 134 },
@@ -11688,7 +11696,7 @@ export default function RoGreen() {
     const isJustCreated = justCreatedRef.current === roundCode;
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; try { const vs = JSON.parse(localStorage.getItem(viewRoundStoreKey(roundCode)) || 'null'); safe.viewRoundId = (vs && vs.live === safe.activeRoundId && safe.rounds.some(r => r.id === vs.view)) ? vs.view : undefined; } catch (e) {} setTournament(safe);
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; safe.rounds = fixIronwoodRounds(safe.rounds); try { const vs = JSON.parse(localStorage.getItem(viewRoundStoreKey(roundCode)) || 'null'); safe.viewRoundId = (vs && vs.live === safe.activeRoundId && safe.rounds.some(r => r.id === vs.view)) ? vs.view : undefined; } catch (e) {} setTournament(safe);
         // Determine admin status right here, atomically, the instant real data
         // is in hand — a local device flag OR a verified account match, either
         // one grants it. Doing this in one place (instead of splitting the
@@ -11804,6 +11812,7 @@ export default function RoGreen() {
           const raw = JSON.parse(res.value);
           const safe = sanitize(raw);
           if (!safe) return prev;
+          safe.rounds = fixIronwoodRounds(safe.rounds);
           // detect birdies from other players
           const activeRound = safe.rounds?.find(r => r.id === safe.activeRoundId);
           const prevRound = prevTournamentRef?.rounds?.find(r => r.id === prevTournamentRef.activeRoundId);
