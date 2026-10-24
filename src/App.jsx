@@ -99,10 +99,20 @@ function pc(player) {
    tee's overall declared length — keeps the mock dataset internally consistent without
    hand-typing hundreds of yardage numbers. Swap this whole module out once a real provider
    (GolfAPI.io, GolfCourseAPI, iGolf, etc.) is wired up; the UI never needs to know the source. */
-// Ironwood hole handicaps (men's tees), as they appear in GHIN. Red and Green have their own table that is not in the app yet.
+// Ironwood hole handicaps (men's tees), as they appear in GHIN. Red and Green use IRONWOOD_RG_SI below.
 const IRONWOOD_MEN_SI = [13,9,5,7,17,3,15,1,11, 2,16,4,12,18,8,10,14,6];
 // Rounds already created from the Ironwood course carry their own copy of the hole handicaps. This swaps in the current ones
 // on load, and touches nothing else (players, scores, bets, teams and tees are left alone).
+// Red and Green tees (men and women) use their own hole handicap row; every other Ironwood tee uses the men's row above.
+const IRONWOOD_RG_SI = [15,9,13,3,11,5,1,17,7,4,18,2,6,12,10,8,16,14];
+function isIronwoodRG(teeName) { return /^(red|green)\b/i.test(String(teeName || '').trim()); }
+// Hole handicap row for one player. Same as the round's row everywhere except Ironwood Red/Green players.
+function siFor(ctx, pid, players) {
+  const base = (ctx && ctx.strokeIndex) || [];
+  if (!ctx || ctx.courseId !== 'mock-ironwood' || !pid) return base;
+  const p = (players || ctx.players || []).find(x => x && x.id === pid);
+  return p && isIronwoodRG(p.teeName) ? IRONWOOD_RG_SI : base;
+}
 function fixIronwoodRounds(rounds) {
   if (!Array.isArray(rounds)) return rounds;
   return rounds.map(r => (r && r.courseId === 'mock-ironwood' && Array.isArray(r.strokeIndex) && r.strokeIndex.length === 18 && r.strokeIndex.some((v, i) => v !== IRONWOOD_MEN_SI[i])) ? { ...r, strokeIndex: IRONWOOD_MEN_SI.slice() } : r);
@@ -672,7 +682,7 @@ function holeScoreFn(state, useNet) {
     const g = state.scores[playerId]?.[holeIdx];
     if (g == null) return null;
     if (!useNet) return g;
-    return g - strokesOnHole(chMap[playerId] || 0, state.strokeIndex, holeIdx);
+    return g - strokesOnHole(chMap[playerId] || 0, siFor(state, playerId), holeIdx);
   };
 }
 
@@ -947,7 +957,7 @@ function computeBestBall(state) {
     });
     // Net best ball: each partner plays off their own strokes, then the better net score counts.
     const holeNets = Array.from({ length: state.numHoles }, (_, h) => {
-      const nets = playerIds.map(id => { const g = state.scores[id]?.[h]; return g == null ? null : g - strokesOnHole(bbStrokes[id] || 0, state.strokeIndex, h); }).filter(v => v != null);
+      const nets = playerIds.map(id => { const g = state.scores[id]?.[h]; return g == null ? null : g - strokesOnHole(bbStrokes[id] || 0, siFor(state, id), h); }).filter(v => v != null);
       return nets.length > 0 ? Math.min(...nets) : null;
     });
     const thru = holeScores.filter(s => s != null).length;
@@ -1038,7 +1048,7 @@ function maxScoreFor(state, playerId, holeIdx, strokeMap) {
   const par = state.pars?.[holeIdx] ?? 4;
   if (state.maxScore === 'overPar') return par + (Number(state.maxOver) || 2);
   const map = strokeMap || allocStrokeMap(state);
-  return par + 2 + strokesOnHole(map[playerId] || 0, state.strokeIndex || [], holeIdx);
+  return par + 2 + strokesOnHole(map[playerId] || 0, siFor(state, playerId), holeIdx);
 }
 function maxScoreText(state) {
   if (state.maxScore === 'overPar') { const n = Number(state.maxOver) || 2; return n === 2 ? 'double bogey' : `par + ${n}`; }
@@ -1051,7 +1061,7 @@ function teamRoundResult(view, team) {
     const vals = (team.playerIds || []).map(id => {
       const raw = view.scores?.[id]?.[h]; if (raw == null) return null;
       const cap = maxScoreFor(view, id, h, map); const g = cap != null ? Math.min(raw, cap) : raw;
-      return { g, n: g - strokesOnHole(map[id] || 0, view.strokeIndex || [], h) };
+      return { g, n: g - strokesOnHole(map[id] || 0, siFor(view, id), h) };
     }).filter(Boolean);
     gross.push(vals.length ? Math.min(...vals.map(v => v.g)) : null);
     net.push(vals.length ? Math.min(...vals.map(v => v.n)) : null);
@@ -1235,7 +1245,7 @@ function computeAwards(state, tournament, ledger) {
   const awardStrokes = allocStrokeMap(state);
   const netStrokesFor = (p) => {
     const ch = awardStrokes[p.id] || 0;
-    return Array.from({ length: numHoles }, (_, h) => strokesOnHole(ch, state.strokeIndex, h)).reduce((a, b) => a + b, 0);
+    return Array.from({ length: numHoles }, (_, h) => strokesOnHole(ch, siFor(state, p.id), h)).reduce((a, b) => a + b, 0);
   };
   const results = [];
   const push = (key, winner, statText, extra) => { if (winner) results.push({ key, ...AWARD_DEFS[key], winner, statText, ...extra }); };
@@ -1372,7 +1382,7 @@ function computeStats(state) {
       if (s == null) continue;
       const par = state.pars[i] ?? 4;
       strokes += s; parSum += par; thru++;
-      netStrokes += s - strokesOnHole(ch, state.strokeIndex, i);
+      netStrokes += s - strokesOnHole(ch, siFor(state, p.id), i);
     }
     return { ...p, strokes, parSum, thru, toPar: strokes - parSum, netToPar: netStrokes - parSum, courseHandicap: getCourseHandicap(p, state), playingStrokes: ch };
   });
@@ -1456,7 +1466,7 @@ function buildMatchScoreFn(match, state) {
   // Match play is played net off the low handicap in the match, honoring the allowance %.
   const alloc = getAllocationConfig(state);
   const rel = getRelativeStrokes(allIds, state, { type: 'percentageOffLow', percent: alloc.percent ?? 100 }).byId;
-  return (playerId, holeIdx) => { const g = state.scores[playerId]?.[holeIdx]; if (g == null) return null; return g - strokesOnHole(rel[playerId] || 0, state.strokeIndex, holeIdx); };
+  return (playerId, holeIdx) => { const g = state.scores[playerId]?.[holeIdx]; if (g == null) return null; return g - strokesOnHole(rel[playerId] || 0, siFor(state, playerId), holeIdx); };
 }
 // A match normally covers all holes. Split 9 Singles matches are scoped to just the
 // front or back 9 — this returns the [startHole, endHole) range (0-indexed, exclusive end)
@@ -2047,7 +2057,7 @@ function aggregateStatsAcrossRounds(tournament, participantIds) {
         thru++;
         const par = round.pars[i] ?? 4;
         strokes += s; parSum += par;
-        netStrokes += s - strokesOnHole(ch, round.strokeIndex, i);
+        netStrokes += s - strokesOnHole(ch, siFor(rv, id), i);
         if (s - par <= -1) birdies++;
       }
       if (thru < round.numHoles) allFinished = false;
@@ -4465,7 +4475,7 @@ function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onCl
     const player = state.players.find(pl => pl.id === playerId);
     if (!player) return null;
     const allocatedHandicap = fieldStrokes[playerId] ?? 0;
-    const strokesHere = strokesOnHole(allocatedHandicap, state.strokeIndex, viewHole);
+    const strokesHere = strokesOnHole(allocatedHandicap, siFor(state, playerId), viewHole);
     return { strokes: strokesHere, net: getDraft(playerId) - strokesHere };
   };
 
@@ -4728,7 +4738,7 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
       if (myCh == null || oppCh == null) return new Set();
       const myStrokes = Math.max(0, myCh - oppCh);
       const rangeStart = inFrontHalf ? 0 : half, rangeEnd = inFrontHalf ? half : state.numHoles;
-      const segIndex = state.strokeIndex.slice(rangeStart, rangeEnd);
+      const segIndex = siFor(state, whoami.id).slice(rangeStart, rangeEnd);
       const localHoles = distributeStrokes(myStrokes, segIndex, rangeEnd - rangeStart);
       return new Set([...localHoles].map(i => i + rangeStart));
     }
@@ -4743,13 +4753,13 @@ function ScorecardTab({ state, h, par, tapPlus, tapMinus, tapCenter, clearScore,
       const oppCh = getCourseHandicap(oppPlayer, state);
       if (myCh == null || oppCh == null) return new Set();
       const myStrokes = Math.max(0, myCh - oppCh);
-      return distributeStrokes(myStrokes, state.strokeIndex, state.numHoles);
+      return distributeStrokes(myStrokes, siFor(state, whoami.id), state.numHoles);
     }
     if (state.matchFormat === 'best-ball') {
       const lm = lowManStrokes(myMatch, state);
       if (!lm) return new Set();
       const myStrokes = lm.adjById[whoami.id] || 0;
-      return distributeStrokes(myStrokes, state.strokeIndex, state.numHoles);
+      return distributeStrokes(myStrokes, siFor(state, whoami.id), state.numHoles);
     }
     return new Set();
   })();
@@ -4989,7 +4999,7 @@ function ScoreMark({ score, par }) {
 /* Little dots in the corner of a hole: one per handicap stroke the player gets there (two max shown). */
 function strokeDotsFor(state, strokeMap, playerId, holeIdx) {
   if (!state.handicapsEnabled) return 0;
-  return Math.max(0, Math.min(2, strokesOnHole(strokeMap?.[playerId] || 0, state.strokeIndex || [], holeIdx)));
+  return Math.max(0, Math.min(2, strokesOnHole(strokeMap?.[playerId] || 0, siFor(state, playerId), holeIdx)));
 }
 function StrokeDots({ n, color = SC_INK }) {
   if (!n) return null;
@@ -5065,7 +5075,7 @@ function RoundCardHome({ state, whoami, thru, toPar, onOpen }) {
   // The +/- row can show strokes over or under par as shot (gross) or after the strokes you receive (net).
   const canNet = !!state.handicapsEnabled && anyStroke;
   const net = canNet && overUnder === 'net';
-  const recv = (h) => strokesOnHole(strokeMap[whoami.id] || 0, state.strokeIndex || [], h);
+  const recv = (h) => strokesOnHole(strokeMap[whoami.id] || 0, siFor(state, whoami.id), h);
   let run = 0;
   const runs = cols.map(c => {
     if (c.type === 'hole') { const s = scores[c.i]; if (s == null) return null; run += s - (state.pars?.[c.i] ?? 4) - (net ? recv(c.i) : 0); return run; }
@@ -5111,7 +5121,7 @@ function RoundCardHome({ state, whoami, thru, toPar, onOpen }) {
           {showMore && hasSi && (
             <div style={{ display: 'flex', height: 21, background: '#DDD4B8', color: '#4D4F43' }}>
               {label('#DDD4B8', '#4D4F43', 'HCP', 700)}
-              {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (state.strokeIndex?.[c.i] ?? '') : ''}</span>))}
+              {cols.map((c, k) => cell(k, c, <span style={{ ...SC_MONO, fontSize: 10 }}>{c.type === 'hole' ? (siFor(state, whoami.id)[c.i] ?? '') : ''}</span>))}
             </div>
           )}
           <div style={{ display: 'flex', height: 40, background: SC_CREAM }}>
@@ -5159,7 +5169,7 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose, onEnter
   const anyStroke = Array.from({ length: numHoles }, (_, h) => strokeDotsFor(state, strokeMap, playerId, h)).some(Boolean);
   const canNet = !!state.handicapsEnabled && anyStroke;
   const net = canNet && view === 'net';
-  const recvOn = (h) => strokesOnHole(strokeMap[playerId] || 0, state.strokeIndex || [], h);
+  const recvOn = (h) => strokesOnHole(strokeMap[playerId] || 0, siFor(state, playerId), h);
   const dcol = (d, thruN) => thruN === 0 ? P.ink3 : d < 0 ? SC_GREEN : d > 0 ? SC_RED : SC_INK;
   const tile = (lbl, val, color) => <div style={{ flex: 1, background: '#FFF', border: '1px solid #D8D0BC', borderRadius: 10, padding: '8px 10px' }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, color: '#6B6455' }}>{lbl}</div><div style={{ ...SC_MONO, fontWeight: 700, fontSize: 18, color }}>{val}</div></div>;
   const lab = (bg, color, text, w = 700) => <div style={{ width: 46, flexShrink: 0, background: bg, color, fontSize: 9, fontWeight: w, letterSpacing: 0.3, display: 'flex', alignItems: 'center', paddingLeft: 6, whiteSpace: 'nowrap', boxSizing: 'border-box' }}>{text}</div>;
@@ -5212,7 +5222,7 @@ function PlayerCardDrawer({ state, stats, tournament, playerId, onClose, onEnter
               {hasSi && (
                 <div style={{ display: 'flex', height: 22, background: '#DAD5C6', color: '#5A5442' }}>
                   {lab('#DAD5C6', '#5A5442', 'HCP')}
-                  {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 9.5 }}>{state.strokeIndex?.[i] ?? ''}</div>)}
+                  {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 9.5 }}>{siFor(state, playerId)[i] ?? ''}</div>)}
                   <div style={flex} />
                 </div>
               )}
@@ -6242,7 +6252,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
     if (!whoami) return null;
     const scores = Array.from({ length: state.numHoles }, (_, i) => state.scores[whoami.id]?.[i]);
     const sm = allocStrokeMap(state);
-    const recvAt = (i) => strokesOnHole(sm[whoami.id] || 0, state.strokeIndex || [], i);
+    const recvAt = (i) => strokesOnHole(sm[whoami.id] || 0, siFor(state, whoami.id), i);
     const part = (from, to) => {
       let gross = 0, scored = 0, recv = 0;
       for (let i = from; i < Math.min(to, scores.length); i++) { if (scores[i] == null) continue; gross += scores[i]; scored++; recv += recvAt(i); }
@@ -6584,7 +6594,7 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
             const chA = getCourseHandicap(aPlayers[0], state);
             const chB = getCourseHandicap(bPlayers[0], state);
             if (chA != null && chB != null && chA !== chB) {
-              const { strokesToA, strokesToB } = singlesStrokeHoles(chA, chB, state.strokeIndex, state.numHoles);
+              const { strokesToA, strokesToB } = singlesStrokeHoles(chA, chB, (siFor(state, aPlayers[0].id) === siFor(state, bPlayers[0].id) ? siFor(state, aPlayers[0].id) : state.strokeIndex), state.numHoles);
               const giver = strokesToA > 0 ? bPlayers[0] : aPlayers[0];
               const getter = strokesToA > 0 ? aPlayers[0] : bPlayers[0];
               const n = Math.max(strokesToA, strokesToB);
@@ -9134,7 +9144,7 @@ function TeamStrokesSheet({ tournament, team, onClose }) {
   const phs = rows.map(r => r.strokes);
   const avg = phs.length ? phs.reduce((a, b) => a + b, 0) / phs.length : 0;
   const gap = phs.length === 2 ? Math.abs(phs[0] - phs[1]) : 0;
-  const gets = (ph, h) => { const base = Math.floor(ph / n), extra = ph % n; return base + ((si ? si[h] : h + 1) <= extra ? 1 : 0); };
+  const gets = (ph, h, pid) => { const base = Math.floor(ph / n), extra = ph % n; const sx = pid ? siFor(view, pid, tournament.players) : si; return base + ((sx && sx.length === n ? sx[h] : h + 1) <= extra ? 1 : 0); };
   const flight = (tournament.flights || []).find(f => f.id === team.netFlightId);
   const mono = { fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, textAlign: 'right' };
   return (
@@ -9157,7 +9167,7 @@ function TeamStrokesSheet({ tournament, team, onClose }) {
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', margin: '14px 0 6px' }}>Strokes by hole</div>
       <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(${n}, 1fr)`, gap: 1, alignItems: 'center', fontSize: 9, color: P.ink3, textAlign: 'center' }}>
         <span style={{ textAlign: 'left' }}>Hole</span>{Array.from({ length: n }, (_, h) => <span key={h}>{h + 1}</span>)}
-        {rows.map(r => (<React.Fragment key={r.id}><span style={{ textAlign: 'left', color: P.ink, fontSize: 10, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap' }}>{r.name.split(' ')[0]}</span>{Array.from({ length: n }, (_, h) => { const g = gets(r.strokes, h); return <span key={h} style={{ height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: g > 1 ? 11 : 7, height: g > 1 ? 11 : 7, borderRadius: 999, background: g > 0 ? '#1F6B3A' : 'rgba(32,35,29,0.12)', color: '#fff', fontSize: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{g > 1 ? g : ''}</span></span>; })}</React.Fragment>))}
+        {rows.map(r => (<React.Fragment key={r.id}><span style={{ textAlign: 'left', color: P.ink, fontSize: 10, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap' }}>{r.name.split(' ')[0]}</span>{Array.from({ length: n }, (_, h) => { const g = gets(r.strokes, h, r.id); return <span key={h} style={{ height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: g > 1 ? 11 : 7, height: g > 1 ? 11 : 7, borderRadius: 999, background: g > 0 ? '#1F6B3A' : 'rgba(32,35,29,0.12)', color: '#fff', fontSize: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{g > 1 ? g : ''}</span></span>; })}</React.Fragment>))}
       </div>
       <div style={{ fontSize: 12, color: P.ink2, marginTop: 12, lineHeight: 1.45 }}>Each hole counts the better net score of the two partners. A dot is a hole where that player gets a stroke.</div>
     </>)}</DrawerSheet>
@@ -10377,7 +10387,7 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
       if (s == null) continue;
       const parVal = state.pars[i] ?? 4;
       strokes += s; par += parVal; thru++;
-      netStrokes += s - strokesOnHole(ch, state.strokeIndex, i);
+      netStrokes += s - strokesOnHole(ch, siFor(state, p.id), i);
     }
     if (thru === 0) return null;
     return useNet ? (netStrokes - par) : (strokes - par);
