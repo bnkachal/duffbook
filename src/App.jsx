@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, X, UserPlus, Trash2, Check, Camera, Send, Bell,
   MessageCircle, Swords, Shuffle, Copy, LogOut, Loader2, Home, Ticket, KeyRound,
   Calendar, User, ChevronsUpDown, RefreshCw, Share2, Target, Zap, TrendingUp,
-  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText, Users, HelpCircle, Phone, Search,
+  Snowflake, Anchor as AnchorIcon, Mail, Lock, FileText, Users, HelpCircle, Phone, Search, Monitor,
 } from 'lucide-react';
 
 /* ============================== DESIGN TOKENS ============================== */
@@ -690,7 +690,7 @@ function defaultRound(index) {
 function defaultTournament() {
   const r0 = defaultRound(0);
   return {
-    name: '', adminPin: null, adminInvites: [], organizer: null,
+    name: '', adminPin: null, adminInvites: [], organizer: null, clubhouse: { enabled: false, panels: { net: true, gross: true, leaders: true, highlights: true, money: false }, intervalSec: 12, banner: '', hold: null, paused: false },
     players: [], flights: [], handicapsEnabled: false, bettingEnabled: BRAND.bettingDefault,
     spectatorsEnabled: false, spectatorShowBetting: false, rules: '',
     entryFee: 0, payoutSplit: [50, 30, 20], groupScoreEntry: false,
@@ -9667,7 +9667,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   );
 }
 
-function SettingsSheet({ onOpenSaveTemplate, onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn, onOpenAdminTeam }) {
+function SettingsSheet({ onOpenClubhouse, onOpenSaveTemplate, onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn, onOpenAdminTeam }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? P.red : P.ink, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${P.rule}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -9686,6 +9686,7 @@ function SettingsSheet({ onOpenSaveTemplate, onClose, onOpenTeamEvent, onOpenSet
         {isAdmin && item(Settings, 'Round setup', onOpenSetup)}
         {isAdmin && onOpenAdminTeam && item(Users, 'Admins and helpers', onOpenAdminTeam)}
         {isAdmin && onOpenSaveTemplate && item(Copy, 'Save as template', onOpenSaveTemplate)}
+        {isAdmin && onOpenClubhouse && item(Monitor, 'Clubhouse screen', onOpenClubhouse)}
         {isAdmin && hasPlayers && item(Trophy, 'Finish round & awards', onOpenRoundComplete)}
         {isAdmin && hasPlayers && bettingOn && onOpenAuctionSetup && item(Coins, 'Calcutta auction results', onOpenAuctionSetup)}
         {hasPlayers && item(Camera, 'Scan a scorecard', onOpenScan)}
@@ -11071,8 +11072,357 @@ function BetBuilderModal({ state, templates, editingBet, onCreate, onSave, onSav
   );
 }
 
+/* ============================== CLUBHOUSE SCREEN ==============================
+   A read-only, big-type board for a TV, tablet or laptop at the clubhouse. It opens from its own link
+   (?code=CODE&tv=1), needs no sign-in, rotates through boards on a timer, and the admin steers it from their own phone
+   (Settings, Clubhouse screen): pause, hold a board, choose boards, speed, and a message banner. */
+const CLUBHOUSE_DEFAULTS = { enabled: false, panels: { net: true, gross: true, leaders: true, highlights: true, money: false }, intervalSec: 12, banner: '', hold: null, paused: false };
+function getClubhouse(t) {
+  const c = (t && t.clubhouse) || {};
+  return { ...CLUBHOUSE_DEFAULTS, ...c, panels: { ...CLUBHOUSE_DEFAULTS.panels, ...(c.panels || {}) } };
+}
+const CLUBHOUSE_PANELS = [
+  ['net', 'Net leaderboard', 'Scores after handicap, one slide per flight'],
+  ['gross', 'Gross leaderboard', 'Scores before handicap'],
+  ['leaders', 'Flight leaders', 'The leader and the chasers in each flight'],
+  ['highlights', 'Birdies and eagles', 'Recent great scores. Skipped when there are none'],
+  ['money', 'Money', 'Calcutta payouts for the day. Off by default'],
+];
+const clubhouseUrl = (code) => `${window.location.origin}${window.location.pathname === '/' ? '' : window.location.pathname}?code=${code}&tv=1`;
+function clubhouseHighlights(state, teamOf, nowMs, windowMs) {
+  const out = [];
+  (state.players || []).forEach(p => {
+    const arr = state.scores[p.id] || [];
+    for (let h = 0; h < state.numHoles; h++) {
+      const sc = arr[h]; if (sc == null) continue;
+      const ts = (state.scoreUpdatedAt || {})[`${p.id}-${h}`];
+      if (!ts || nowMs - ts > windowMs) continue;
+      const par = state.pars[h] ?? 4; const d = sc - par;
+      if (d > -1 && sc !== 1) continue;
+      out.push({ key: `${p.id}-${h}-${ts}`, name: p.name, team: teamOf ? teamOf(p.id) : null, hole: h + 1, diff: d, ts, label: sc === 1 ? 'Hole in one' : d <= -3 ? 'Albatross' : d === -2 ? 'Eagle' : 'Birdie' });
+    }
+  });
+  return out.sort((a, b) => b.ts - a.ts);
+}
+const chTone = (v) => (v < 0 ? -1 : v > 0 ? 1 : 0);
+const chPar = (v, thru) => ({ t: thru > 0 ? fmtToPar(v) : '–', tone: thru > 0 ? chTone(v) : 0 });
+// Everything the screen can show, as plain data: [{id, panel, title, sub, color, kind, ...}]. Pure, so a bad tournament can never break the page tree.
+function buildClubhouseSlides(tournament, cfg, nowMs) {
+  const slides = [];
+  const state = getRoundView(tournament, tournament.activeRoundId);
+  setActiveFlightsForRender(tournament.flights);
+  const rounds = tournament.rounds || [];
+  const idx = Math.max(0, rounds.findIndex(r => r.id === tournament.activeRoundId));
+  const roundName = (rounds[idx] && rounds[idx].name) || 'Today';
+  const teCfg = getTeamEvent(tournament);
+  const teamMode = teCfg.enabled && teCfg.teams.some(t => (t.playerIds || []).length > 0);
+  const P_ = cfg.panels;
+  const TOP = 10;
+  const tryPanel = (name, fn) => { try { fn(); } catch (e) { try { console.error('clubhouse panel ' + name, e && e.message); } catch (x) {} } };
+  let model = null, teamOf = null;
+  if (teamMode) {
+    model = teamEventModel(tournament);
+    var dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`; // eslint-disable-line no-var
+    teamOf = (pid) => { const t = model.teams.find(x => (x.playerIds || []).includes(pid)); return t ? t.name : null; };
+    if (P_.net) tryPanel('net', () => {
+      teamEventNetStandings(model, tournament, idx).filter(f => f.ranked.length + f.rest.length > 0).forEach(f => {
+        const rows = (f.ranked.length ? f.ranked : f.rest.map(r => ({ ...r, place: null }))).slice(0, TOP).map(r => {
+          const rr = r.team.rounds[idx];
+          return { lead: r.place === 1 && r.thru > 0, cells: { pos: r.place ? `${r.tied ? 'T' : ''}${r.place}` : '–', name: r.team.name, thru: r.thru > 0 ? String(r.thru) : '–', a: chPar(r.netToPar, r.thru), b: rr ? chPar(rr.grossToPar, rr.thru) : '–' } };
+        });
+        slides.push({ id: 'net:' + f.flight.id, panel: 'net', title: 'Net leaderboard', sub: (tournament.flights || []).length > 1 ? f.flight.name : roundName, color: (tournament.flights || []).length > 1 ? f.flight.color : null, kind: 'board', cols: [['pos', 'Pos', 9, 'left'], ['name', 'Team', 0, 'left'], ['thru', 'Thru', 10, 'center'], ['a', 'Net', 14, 'right'], ['b', 'Gross', 14, 'right']], rows });
+      });
+    });
+    if (P_.gross) tryPanel('gross', () => {
+      model.grossFlights.filter(g => g.teams.length > 0).forEach(({ flight, teams }) => {
+        const named = flight.id !== '_all';
+        const rows = teams.slice(0, TOP).map(t => {
+          const g = t.gross, r1 = t.rounds[0], r2 = t.rounds[1];
+          const d1 = g.r1Done ? String(g.r1) : (r1 && r1.thru > 0 ? `${r1.thru}h` : '–');
+          const d2 = !model.hasR2 ? '' : g.r2Done ? (g.capped ? `${g.posted2}*` : String(g.r2)) : (r2 && r2.thru > 0 ? `${r2.thru}h` : '–');
+          const total = g.total != null ? String(g.total) : ((g.r1Done || (r1 && r1.thru > 0)) ? fmtToPar(g.totalToPar) : '–');
+          const ar = t.rounds[idx];
+          return { lead: g.rank === 1 && ar && ar.thru > 0, cells: { pos: `${g.tied ? 'T' : ''}${g.rank}`, name: t.name, d1, d2, total } };
+        });
+        const cols = model.hasR2 ? [['pos', 'Pos', 9, 'left'], ['name', 'Team', 0, 'left'], ['d1', dayName(0).slice(0, 3), 11, 'right'], ['d2', dayName(1).slice(0, 3), 11, 'right'], ['total', 'Total', 14, 'right']] : [['pos', 'Pos', 9, 'left'], ['name', 'Team', 0, 'left'], ['d1', dayName(0).slice(0, 3), 14, 'right'], ['total', 'Total', 14, 'right']];
+        slides.push({ id: 'gross:' + flight.id, panel: 'gross', title: 'Gross leaderboard', sub: named ? flight.name : roundName, color: null, kind: 'board', cols, rows });
+      });
+    });
+    if (P_.leaders) tryPanel('leaders', () => {
+      const cards = [];
+      teamEventNetStandings(model, tournament, idx).forEach(f => {
+        const a = f.ranked[0], b = f.ranked[1]; if (!a) return;
+        cards.push({ head: (tournament.flights || []).length > 1 ? f.flight.name : 'Net', color: f.flight.color, name: a.team.name, big: fmtToPar(a.netToPar), small: `thru ${a.thru}${b ? ` · ${b.netToPar - a.netToPar === 0 ? 'tied with' : b.netToPar - a.netToPar + ' ahead of'} ${b.team.name}` : ''}` });
+      });
+      if (cards.length) slides.push({ id: 'leaders', panel: 'leaders', title: 'Flight leaders', sub: roundName, kind: 'cards', cards: cards.slice(0, 8) });
+    });
+    if (P_.money && tournament.bettingEnabled !== false) tryPanel('money', () => {
+      const pay = teamEventPayouts(tournament, model);
+      const day = pay && pay.days[Math.min(idx, pay.days.length - 1)];
+      if (day) {
+        const rows = [];
+        day.flights.forEach(f => f.ranked.filter(r => r.amount > 0).slice(0, 3).forEach(r => rows.push({ lead: r.place === 1, cells: { pos: `${r.tied ? 'T' : ''}${r.place}`, name: `${r.mt ? r.mt.name : teamDisplayName(r.auctionTeam, tournament.players)}${(tournament.flights || []).length > 1 ? ' · ' + f.flight.name : ''}`, amt: '$' + Math.round(r.amount) } })));
+        if (rows.length) slides.push({ id: 'money', panel: 'money', title: 'Money', sub: `${roundName} · if the round ended now`, kind: 'board', cols: [['pos', 'Pos', 9, 'left'], ['name', 'Team', 0, 'left'], ['amt', 'Payout', 16, 'right']], rows: rows.slice(0, TOP) });
+      }
+    });
+  } else {
+    const stats = computeStats(state);
+    const useNet = getScoringDisplay(state) !== 'gross' && state.matchFormat !== 'captain-choice' && !state.games?.scramble?.enabled;
+    const flights = Array.isArray(tournament.flights) ? tournament.flights : [];
+    const groups = flights.length >= 2 ? flights.map(f => ({ f, list: stats.filter(s => s.flightId === f.id) })).filter(g => g.list.length) : [{ f: null, list: stats }];
+    const rank = (list, key) => { const s = [...list].sort((a, b) => a[key] - b[key] || b.thru - a.thru); let pl = 0; return s.map((p, i) => { if (i === 0 || s[i - 1][key] !== p[key] || s[i - 1].thru !== p.thru) pl = i + 1; return { p, pl, tied: s.some((o, j) => j !== i && o[key] === p[key] && o.thru === p.thru) }; }); };
+    groups.forEach(({ f, list }) => {
+      if (P_.net || (P_.gross && !useNet)) {
+        const key = useNet ? 'netToPar' : 'toPar';
+        const rows = rank(list, key).slice(0, TOP).map(({ p, pl, tied }) => ({ lead: pl === 1 && p.thru > 0, cells: { pos: `${tied && p.thru > 0 ? 'T' : ''}${pl}`, name: p.name, thru: p.thru > 0 ? String(p.thru) : '–', a: chPar(p[key], p.thru), b: chPar(p.toPar, p.thru) } }));
+        if (P_.net || !useNet) slides.push({ id: 'net:' + (f ? f.id : 'all'), panel: 'net', title: useNet ? 'Net leaderboard' : 'Leaderboard', sub: f ? f.name : roundName, color: f ? f.color : null, kind: 'board', cols: [['pos', 'Pos', 9, 'left'], ['name', 'Player', 0, 'left'], ['thru', 'Thru', 10, 'center'], ['a', useNet ? 'Net' : 'Score', 14, 'right'], ['b', 'Gross', 14, 'right']], rows });
+      }
+      if (P_.gross && useNet) {
+        const rows = rank(list, 'toPar').slice(0, TOP).map(({ p, pl, tied }) => ({ lead: pl === 1 && p.thru > 0, cells: { pos: `${tied && p.thru > 0 ? 'T' : ''}${pl}`, name: p.name, thru: p.thru > 0 ? String(p.thru) : '–', a: chPar(p.toPar, p.thru) } }));
+        slides.push({ id: 'gross:' + (f ? f.id : 'all'), panel: 'gross', title: 'Gross leaderboard', sub: f ? f.name : roundName, color: f ? f.color : null, kind: 'board', cols: [['pos', 'Pos', 9, 'left'], ['name', 'Player', 0, 'left'], ['thru', 'Thru', 10, 'center'], ['a', 'Gross', 16, 'right']], rows });
+      }
+    });
+    if (P_.leaders) {
+      const key = useNet ? 'netToPar' : 'toPar';
+      const cards = groups.map(({ f, list }) => { const r = rank(list.filter(p => p.thru > 0), key); const a = r[0], b = r[1]; return a ? { head: f ? f.name : 'Leader', color: f ? f.color : null, name: a.p.name, big: fmtToPar(a.p[key]), small: `thru ${a.p.thru}${b ? ` · ${b.p[key] - a.p[key] === 0 ? 'tied with' : (b.p[key] - a.p[key]) + ' ahead of'} ${b.p.name}` : ''}` } : null; }).filter(Boolean);
+      if (cards.length) slides.push({ id: 'leaders', panel: 'leaders', title: 'Leaders', sub: roundName, kind: 'cards', cards: cards.slice(0, 8) });
+    }
+  }
+  if (P_.highlights) {
+    const hl = clubhouseHighlights(state, teamOf, nowMs, 3 * 3600 * 1000).slice(0, 8);
+    if (hl.length) slides.push({ id: 'highlights', panel: 'highlights', title: 'Birdies and eagles', sub: roundName, kind: 'list', items: hl });
+  }
+  return { slides, state, roundName, final: !!(rounds[idx] && rounds[idx].roundFinalized), highlights: clubhouseHighlights(state, teamOf, nowMs, 3 * 3600 * 1000) };
+}
+const chAgo = (ts, now) => { if (!ts) return 'never'; const s = Math.max(0, Math.round((now - ts) / 1000)); return s < 5 ? 'just now' : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+class ClubhouseBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: false }; }
+  static getDerivedStateFromError() { return { err: true }; }
+  componentDidCatch(e) { try { console.error(e); } catch (x) {} }
+  componentDidUpdate(prev) { if (prev.resetKey !== this.props.resetKey && this.state.err) this.setState({ err: false }); }
+  render() { return this.state.err ? <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9DB0A3', fontSize: 'min(3vw, 5vh)' }}>Updating{'…'}</div> : this.props.children; }
+}
+function ClubhouseScreen({ roundCode }) {
+  const CH = { bg: '#0B1A13', panel: '#12281D', ink: '#F3ECDA', mute: '#9DB0A3', gold: '#E8C766', under: '#5FD38D', over: '#FF8A80', line: 'rgba(243,236,218,0.14)' };
+  const [tournament, setTournament] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const [lastOk, setLastOk] = useState(0);
+  const [lastChange, setLastChange] = useState(0);
+  const [fails, setFails] = useState(0);
+  const [slideIdx, setSlideIdx] = useState(0);
+  const [toast, setToast] = useState(null);
+  const [fs, setFs] = useState(false);
+  const [idle, setIdle] = useState(false);
+  const rawRef = useRef('');
+  const slideStart = useRef(Date.now());
+  const seenRef = useRef(null);
+  const cfgRef = useRef(CLUBHOUSE_DEFAULTS);
+  const idleTimer = useRef(null);
+
+  const accept = (value) => {
+    setLastOk(Date.now()); setFails(0);
+    if (value === rawRef.current) return;
+    try { const t = JSON.parse(value); rawRef.current = value; setTournament(t); setLastChange(Date.now()); setLoaded(true); } catch (e) {}
+  };
+  const fetchNow = async () => {
+    try { const res = await storage.get(tournamentKey(roundCode), true); if (res && res.value) accept(res.value); else { setFails(f => f + 1); setLoaded(true); } }
+    catch (e) { setFails(f => f + 1); }
+  };
+  useEffect(() => {
+    const unsub = storage.subscribe(tournamentKey(roundCode), true, (res) => { if (res && res.value) accept(res.value); else setLoaded(true); });
+    fetchNow();
+    const beat = setInterval(fetchNow, 20000);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => { if (typeof unsub === 'function') unsub(); clearInterval(beat); clearInterval(tick); };
+  }, [roundCode]); // eslint-disable-line
+
+  // Keep the screen awake where the browser allows it, and take it back after the tab was hidden.
+  useEffect(() => {
+    let lock = null, dead = false;
+    const ask = async () => { try { if (navigator.wakeLock && document.visibilityState === 'visible') { lock = await navigator.wakeLock.request('screen'); } } catch (e) {} };
+    ask();
+    const vis = () => { if (!dead && document.visibilityState === 'visible') ask(); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { dead = true; document.removeEventListener('visibilitychange', vis); try { lock && lock.release(); } catch (e) {} };
+  }, []);
+  useEffect(() => { const f = () => setFs(!!document.fullscreenElement); document.addEventListener('fullscreenchange', f); return () => document.removeEventListener('fullscreenchange', f); }, []);
+  const wake = () => { setIdle(false); clearTimeout(idleTimer.current); idleTimer.current = setTimeout(() => setIdle(true), 4000); };
+  useEffect(() => { wake(); return () => clearTimeout(idleTimer.current); }, []); // eslint-disable-line
+
+  const cfg = getClubhouse(tournament);
+  cfgRef.current = cfg;
+  const stale = lastOk > 0 && now - lastOk > 75000;
+  const online = fails < 2 && !stale && (typeof navigator === 'undefined' || navigator.onLine !== false);
+
+  let built = { slides: [], state: null, roundName: '', final: false, highlights: [] };
+  if (tournament && tournament.rounds) { try { built = buildClubhouseSlides(tournament, cfg, now); } catch (e) { try { console.error('clubhouse build', e && e.message); } catch (x) {} built = { slides: [], state: null, roundName: '', final: false, highlights: [] }; } }
+  const slides = cfg.hold ? built.slides.filter(s => s.panel === cfg.hold) : built.slides;
+  const useSlides = slides.length ? slides : built.slides;
+  const cur = useSlides.length ? useSlides[slideIdx % useSlides.length] : null;
+
+  // Advance on a timer; paused holds the current slide and restarts the clock when resumed.
+  useEffect(() => {
+    const c = cfgRef.current;
+    if (c.paused) { slideStart.current = Date.now(); return; }
+    if (Date.now() - slideStart.current >= Math.max(4, c.intervalSec) * 1000) { slideStart.current = Date.now(); setSlideIdx(i => i + 1); }
+  }, [now]);
+  useEffect(() => { setSlideIdx(0); slideStart.current = Date.now(); }, [cfg.hold]);
+
+  // A new birdie or better pops up over the board for a few seconds. The first load only records what already happened.
+  useEffect(() => {
+    const keys = new Set(built.highlights.map(h => h.key));
+    if (seenRef.current === null) { if (loaded) seenRef.current = keys; return; }
+    const fresh = built.highlights.filter(h => !seenRef.current.has(h.key));
+    seenRef.current = keys;
+    if (fresh.length) { const top = fresh.sort((a, b) => a.diff - b.diff)[0]; setToast({ ...top, until: Date.now() + 9000 }); }
+  }, [built.highlights.length, loaded]); // eslint-disable-line
+  useEffect(() => { if (toast && now > toast.until) setToast(null); }, [now, toast]);
+
+  const shell = { position: 'fixed', inset: 0, background: CH.bg, color: CH.ink, fontFamily: "'Instrument Sans', Inter, sans-serif", display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: idle ? 'none' : 'default' };
+  const big = (n) => `min(${n}vw, ${n * 1.75}vh)`;
+  if (!loaded || !tournament) return <div style={{ ...shell, alignItems: 'center', justifyContent: 'center', fontSize: big(3) }}>{loaded ? 'Waiting for the tournament…' : 'Loading…'}</div>;
+  if (!cfg.enabled) return (
+    <div data-testid="clubhouse-screen" style={{ ...shell, alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '6vw' }}>
+      <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: big(4.5) }}>{tournament.name || 'Tournament'}</div>
+      <div style={{ fontSize: big(2.2), color: CH.mute, marginTop: '2vh' }}>The clubhouse screen is off. Turn it on in Settings, Clubhouse screen.</div>
+    </div>
+  );
+  const clock = new Date(now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const pct = cfg.paused ? 0 : Math.min(100, ((now - slideStart.current) / (Math.max(4, cfg.intervalSec) * 1000)) * 100);
+  const toneColor = (t) => (t < 0 ? CH.under : t > 0 ? CH.over : CH.ink);
+  const cell = (v) => (v && typeof v === 'object' ? { text: v.t, color: toneColor(v.tone) } : { text: v == null ? '' : String(v), color: CH.ink });
+  const renderBoard = (s) => {
+    const tpl = s.cols.map(c => (c[2] ? `${c[2]}vw` : '1fr')).join(' ');
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 3vw' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: tpl, gap: '1vw', padding: '0.6vh 1.2vw', fontSize: big(1.3), letterSpacing: 1, textTransform: 'uppercase', color: CH.mute, fontWeight: 700 }}>
+          {s.cols.map(c => <span key={c[0]} style={{ textAlign: c[3] }}>{c[1]}</span>)}
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {s.rows.length === 0 && <div style={{ color: CH.mute, fontSize: big(2.2), padding: '4vh 1.2vw' }}>No scores yet.</div>}
+          {s.rows.map((r, i) => (
+            <div key={i} style={{ flex: '1 1 0', maxHeight: '10.5vh', display: 'grid', gridTemplateColumns: tpl, gap: '1vw', alignItems: 'center', padding: '0 1.2vw', borderTop: i > 0 ? `1px solid ${CH.line}` : 'none', background: r.lead ? 'rgba(232,199,102,0.16)' : 'transparent', borderRadius: 6 }}>
+              {s.cols.map(c => { const v = cell(r.cells[c[0]]); return <span key={c[0]} style={{ textAlign: c[3], color: c[0] === 'pos' && r.lead ? CH.gold : v.color, fontWeight: c[0] === 'name' || c[0] === 'a' || c[0] === 'total' || c[0] === 'amt' ? 700 : 500, fontSize: c[0] === 'name' ? big(2.5) : big(2.3), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{v.text}</span>; })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+  const renderCards = (s) => (
+    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: s.cards.length > 4 ? 'repeat(3, 1fr)' : s.cards.length > 1 ? 'repeat(2, 1fr)' : '1fr', gap: '2vw', padding: '2vh 3vw', alignContent: 'center' }}>
+      {s.cards.map((c, i) => (
+        <div key={i} style={{ background: CH.panel, borderRadius: 14, borderLeft: `0.8vw solid ${c.color || CH.gold}`, padding: '2.4vh 2vw' }}>
+          <div style={{ fontSize: big(1.5), letterSpacing: 1.5, textTransform: 'uppercase', color: CH.mute, fontWeight: 700 }}>{c.head}</div>
+          <div style={{ fontSize: big(3), fontWeight: 800, margin: '0.6vh 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '1.4vw' }}><span style={{ fontSize: big(4.2), fontWeight: 800, color: c.big.startsWith('-') ? CH.under : c.big === 'E' ? CH.ink : CH.over }}>{c.big}</span><span style={{ fontSize: big(1.7), color: CH.mute }}>{c.small}</span></div>
+        </div>
+      ))}
+    </div>
+  );
+  const renderList = (s) => (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1vh 3vw', minHeight: 0 }}>
+      {s.items.map((h) => (
+        <div key={h.key} style={{ flex: '1 1 0', maxHeight: '10.5vh', display: 'flex', alignItems: 'center', gap: '2vw', padding: '0 1.2vw', borderTop: `1px solid ${CH.line}` }}>
+          <span style={{ width: '12vw', fontSize: big(2.2), fontWeight: 800, color: h.diff <= -2 || h.label === 'Hole in one' ? CH.gold : CH.under }}>{h.label}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: big(2.5), fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.name}{h.team ? <span style={{ color: CH.mute, fontWeight: 500 }}> {'·'} {h.team}</span> : null}</span>
+          <span style={{ fontSize: big(2.1), color: CH.mute }}>Hole {h.hole}</span>
+          <span style={{ width: '10vw', textAlign: 'right', fontSize: big(1.8), color: CH.mute }}>{chAgo(h.ts, now)}</span>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div style={shell} onMouseMove={wake} onTouchStart={wake} data-testid="clubhouse-screen">
+      <style>{'@keyframes chFade{from{opacity:0;transform:translateY(1.2vh)}to{opacity:1;transform:none}}@keyframes chPop{from{opacity:0;transform:translateY(-4vh) scale(.96)}to{opacity:1;transform:none}}'}</style>
+      <div style={{ height: '0.7vh', background: 'rgba(243,236,218,0.08)', flexShrink: 0 }}><div style={{ width: pct + '%', height: '100%', background: CH.gold, transition: 'width 1s linear' }} /></div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.8vh 3vw 1.2vh', flexShrink: 0, gap: '2vw' }}>
+        <div style={{ minWidth: 0 }}>
+          <div data-testid="clubhouse-title" style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: big(3.4), letterSpacing: -0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name || 'Tournament'}</div>
+          <div style={{ fontSize: big(1.8), color: CH.mute }}>{cur ? `${cur.title}${cur.sub ? ' · ' + cur.sub : ''}` : built.roundName}{built.final ? ' · FINAL' : ''}{cfg.paused ? ' · PAUSED' : ''}</div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: big(3), fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{clock}</div>
+          <div data-testid="clubhouse-status" style={{ fontSize: big(1.5), fontWeight: 700, color: online ? CH.under : CH.over }}>{online ? `● Live · checked ${chAgo(lastOk, now)}` : `● Offline · last update ${chAgo(lastChange, now)}`}</div>
+        </div>
+      </div>
+      <div key={cur ? cur.id : 'none'} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, opacity: online ? 1 : 0.55, animation: 'chFade .5s ease-out' }}>
+        <ClubhouseBoundary resetKey={cur ? cur.id + ':' + lastChange : 'none'}>
+          {cur ? (cur.kind === 'board' ? renderBoard(cur) : cur.kind === 'cards' ? renderCards(cur) : renderList(cur)) : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: CH.mute, fontSize: big(2.6), textAlign: 'center', padding: '0 6vw' }}>{cfg.panels && !cfg.panels.net && !cfg.panels.gross && !cfg.panels.leaders && !cfg.panels.money ? 'No birdies or eagles in the last few minutes' : 'Waiting for scores…'}</div>}
+        </ClubhouseBoundary>
+      </div>
+      {!online && <div style={{ position: 'absolute', left: 0, right: 0, bottom: cfg.banner.trim() ? '11vh' : '3vh', textAlign: 'center', fontSize: big(1.8), fontWeight: 700, color: CH.over }}>Connection lost. Showing the last known scores.</div>}
+      {cfg.banner.trim() && <div data-testid="clubhouse-banner" style={{ flexShrink: 0, background: CH.gold, color: '#14261B', textAlign: 'center', fontWeight: 800, fontSize: big(2.6), padding: '1.6vh 3vw', lineHeight: 1.2 }}>{cfg.banner.trim()}</div>}
+      {toast && <div data-testid="clubhouse-toast" style={{ position: 'absolute', top: '16vh', left: '8vw', right: '8vw', background: toast.diff <= -2 || toast.label === 'Hole in one' ? CH.gold : CH.under, color: '#0B1A13', borderRadius: 18, padding: '3vh 3vw', textAlign: 'center', boxShadow: '0 2vh 6vh rgba(0,0,0,0.5)', animation: 'chPop .4s ease-out' }}>
+        <div style={{ fontSize: big(5), fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase' }}>{toast.label}</div>
+        <div style={{ fontSize: big(3), fontWeight: 800 }}>{toast.name}{toast.team ? ` · ${toast.team}` : ''}</div>
+        <div style={{ fontSize: big(2), fontWeight: 600 }}>Hole {toast.hole}</div>
+      </div>}
+      {!fs && !idle && document.documentElement.requestFullscreen && <button onClick={() => { try { document.documentElement.requestFullscreen(); } catch (e) {} }} style={{ position: 'absolute', top: '1.5vh', left: '50%', transform: 'translateX(-50%)', background: 'rgba(243,236,218,0.14)', color: CH.ink, border: `1px solid ${CH.line}`, borderRadius: 999, padding: '0.8vh 2vw', fontSize: big(1.4), cursor: 'pointer' }}>Full screen</button>}
+    </div>
+  );
+}
+
+function ClubhouseAdminModal({ tournament, updateTournament, roundCode, onClose }) {
+  const cfg = getClubhouse(tournament);
+  const [copied, setCopied] = useState(false);
+  const [banner, setBanner] = useState(cfg.banner || '');
+  const url = clubhouseUrl(roundCode);
+  const set = (patch) => updateTournament(prev => ({ ...prev, clubhouse: { ...getClubhouse(prev), ...patch } }));
+  const setPanel = (id, on) => updateTournament(prev => { const c = getClubhouse(prev); return { ...prev, clubhouse: { ...c, panels: { ...c.panels, [id]: on }, hold: c.hold === id && !on ? null : c.hold } }; });
+  const copy = () => { try { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
+  const chip = (id, label, on, onClick) => <button key={id} data-testid={'ch-' + id} onClick={onClick} aria-pressed={on} style={{ minHeight: 40, padding: '0 14px', borderRadius: 999, border: `1.5px solid ${on ? '#1F6B3A' : P.rule}`, background: on ? 'rgba(31,107,58,0.14)' : P.paper, color: P.ink, fontSize: 13, fontWeight: on ? 700 : 500, cursor: 'pointer' }}>{label}</button>;
+  const label = (t) => <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#7A5C0F', margin: '16px 2px 6px' }}>{t}</div>;
+  return (
+    <DrawerSheet onClose={onClose}>{(onClose) => (<>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 20, letterSpacing: -0.3 }}>Clubhouse screen</div>
+        <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', color: P.ink, cursor: 'pointer' }}><X size={22} /></button>
+      </div>
+      <div style={{ fontSize: 12.5, color: P.ink2, lineHeight: 1.5, marginBottom: 10 }}>A big-type, hands-off leaderboard for a TV, tablet or laptop. It rotates through the boards on its own, and you steer it from here.</div>
+      <ToggleRow label="Show the clubhouse screen" sub="Turn on to let the link work" enabled={cfg.enabled} onToggle={() => set({ enabled: !cfg.enabled })} />
+      {cfg.enabled && (<>
+        {label('Open this on the screen')}
+        <div style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+          <div data-testid="ch-url" style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 13, wordBreak: 'break-all', color: P.ink }}>{url}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <GhostButton onClick={copy} style={{ flex: 1, textAlign: 'center' }}>{copied ? 'Copied' : 'Copy link'}</GhostButton>
+            <GhostButton onClick={() => { try { window.open(url, '_blank'); } catch (e) {} }} style={{ flex: 1, textAlign: 'center' }}>Preview</GhostButton>
+          </div>
+          <div style={{ fontSize: 11.5, color: P.ink3, lineHeight: 1.5 }}>Most reliable: a laptop or iPad on the TV by HDMI cable, with this link open and the power plugged in. Tap Full screen on the board.</div>
+        </div>
+
+        {label('Control it now')}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {chip('pause', cfg.paused ? 'Resume rotation' : 'Pause rotation', cfg.paused, () => set({ paused: !cfg.paused }))}
+        </div>
+        <div style={{ fontSize: 11.5, color: P.ink2, margin: '10px 2px 6px' }}>Show only one board</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {chip('hold-auto', 'Rotate all', !cfg.hold, () => set({ hold: null }))}
+          {CLUBHOUSE_PANELS.filter(([id]) => cfg.panels[id]).map(([id, name]) => chip('hold-' + id, name, cfg.hold === id, () => set({ hold: cfg.hold === id ? null : id })))}
+        </div>
+
+        {label('Message banner')}
+        <input data-testid="ch-banner" value={banner} maxLength={140} onChange={e => setBanner(e.target.value)} placeholder="Awards at 4:30 on the patio" style={{ width: '100%', minHeight: 44, boxSizing: 'border-box', background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 10, padding: '0 12px', color: P.ink, fontSize: 14 }} />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <GoldButton data-testid="ch-banner-save" onClick={() => set({ banner: banner.trim() })} style={{ flex: 1, padding: '11px 0' }}>Show banner</GoldButton>
+          <GhostButton onClick={() => { setBanner(''); set({ banner: '' }); }} style={{ flex: 1, textAlign: 'center' }}>Clear</GhostButton>
+        </div>
+
+        {label('Boards to rotate')}
+        {CLUBHOUSE_PANELS.map(([id, name, sub]) => <ToggleRow key={id} label={name} sub={sub} enabled={!!cfg.panels[id]} onToggle={() => setPanel(id, !cfg.panels[id])} />)}
+
+        {label('Seconds per board')}
+        <div style={{ display: 'flex', gap: 8 }}>{[8, 12, 20].map(n => chip('speed-' + n, n + 's', cfg.intervalSec === n, () => set({ intervalSec: n })))}</div>
+      </>)}
+    </>)}</DrawerSheet>
+  );
+}
+
 /* ============================== MAIN APP ============================== */
 export default function RoGreen() {
+  const [isClubhouseSession] = useState(() => { try { return new URLSearchParams(window.location.search).get('tv') === '1'; } catch (e) { return false; } });
   const [isSpectatorSession, setIsSpectatorSession] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('spectate') === '1'; } catch (e) { return false; }
   });
@@ -11083,8 +11433,8 @@ export default function RoGreen() {
       if (urlCode) {
         const inv = params.get('invite');
         if (inv) { try { localStorage.setItem('db:invite-' + urlCode.toUpperCase(), inv); } catch (e) {} }
-        // Clean the URL without reloading
-        window.history.replaceState({}, '', window.location.pathname);
+        // Clean the URL without reloading. The clubhouse screen keeps its link so a TV refresh comes back to the board.
+        if (params.get('tv') !== '1') window.history.replaceState({}, '', window.location.pathname);
         return urlCode.toUpperCase();
       }
     } catch (e) {}
@@ -11119,6 +11469,7 @@ export default function RoGreen() {
   const [createChoiceOpen, setCreateChoiceOpen] = useState(false);
   const [startFromOpen, setStartFromOpen] = useState(false);
   const [saveTplOpen, setSaveTplOpen] = useState(false);
+  const [clubhouseOpen, setClubhouseOpen] = useState(false);
   const [addRoundChoices, setAddRoundChoices] = useState(null);
   const [wizardQuickMode, setWizardQuickMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -11337,7 +11688,7 @@ export default function RoGreen() {
   }, [tournament.adminInvites, roundCode, loading, isAdmin]);
 
   useEffect(() => {
-    if (!roundCode || !loadedRef.current) return;
+    if (!roundCode || !loadedRef.current || isClubhouseSession || isSpectatorSession) return; // read-only sessions never write the tournament back
     const t = setTimeout(async () => { try { await storage.set(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
     return () => clearTimeout(t);
   }, [tournament, roundCode]);
@@ -11531,7 +11882,7 @@ export default function RoGreen() {
     } catch (e) { presenceKeyRef.current = 'anon_' + Math.random().toString(36).slice(2, 8); }
   }
   useEffect(() => {
-    if (!roundCode) return;
+    if (!roundCode || isClubhouseSession || isSpectatorSession) return;
     const key = whoamiId || presenceKeyRef.current;
     const beat = () => updateRound(r => ({ ...r, presence: { ...(r.presence || {}), [key]: Date.now() } }));
     beat();
@@ -11866,6 +12217,9 @@ export default function RoGreen() {
       {startFromOpen && <StartFromModal adminAccount={adminAccount} cloudTournaments={cloudTournaments} onClose={() => setStartFromOpen(false)} onCreate={(base) => { setStartFromOpen(false); startCreateFlow(false, base); }} />}
     </>
   );
+  if (isClubhouseSession && roundCode) {
+    return <ClubhouseScreen roundCode={roundCode} />;
+  }
   if (isSpectatorSession) {
     return <SpectatorScreen roundCode={roundCode} onExit={() => { setIsSpectatorSession(false); setRoundCode(null); try { localStorage.removeItem('db:last-code'); } catch (e) {} }} />;
   }
@@ -12016,7 +12370,7 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onOpenSaveTemplate={adminAccount ? () => { setSettingsOpen(false); setSaveTplOpen(true); } : null} onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} onOpenAdminTeam={() => { setSettingsOpen(false); setAdminTeamOpen(true); }} />
+        <SettingsSheet onOpenClubhouse={() => { setSettingsOpen(false); setClubhouseOpen(true); }} onOpenSaveTemplate={adminAccount ? () => { setSettingsOpen(false); setSaveTplOpen(true); } : null} onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} onOpenAdminTeam={() => { setSettingsOpen(false); setAdminTeamOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
@@ -12027,6 +12381,7 @@ export default function RoGreen() {
           if (!dismissed) setProfilePromptOpen(true);
         }
       }} />}
+      {clubhouseOpen && <ClubhouseAdminModal tournament={tournament} updateTournament={updateTournament} roundCode={roundCode} onClose={() => setClubhouseOpen(false)} />}
       {saveTplOpen && <SaveTemplateModal tournament={tournament} round={tournament.rounds.find(r => r.id === tournament.activeRoundId) || tournament.rounds[0]} adminAccount={adminAccount} onClose={() => setSaveTplOpen(false)} />}
       {addRoundChoices && <AddRoundModal templates={addRoundChoices} onCopyLast={() => addRound()} onTemplate={(t) => addRound(t)} onClose={() => setAddRoundChoices(null)} />}
       {rulesOpen && <RulesModal rules={tournament.rules} isAdmin={viewAsAdmin} adminAccount={adminAccount} onSave={(text) => updateTournament(p => ({ ...p, rules: text }))} onClose={() => setRulesOpen(false)} />}
