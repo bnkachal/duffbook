@@ -464,7 +464,25 @@ const toLocalInput = (iso) => {
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
 };
 function tournamentKey(code) { return `round-${code}-state`; }
+// Which round THIS phone is looking at. tournament.activeRoundId is the round the admin has made live for everyone;
+// viewRoundId is a private override kept on this phone only (never written to Firebase).
+function activeRoundOf(t) { const v = t && t.viewRoundId; if (v && (t.rounds || []).some(r => r.id === v)) return v; return t && t.activeRoundId; }
+function viewRoundStoreKey(code) { return 'db:viewround-' + code; }
 function chatKey(code) { return `round-${code}-chat`; }
+// ---- Name claims: once a phone picks a name, nobody else can pick it until that phone says "Not you?" or an admin resets it.
+// tournament.claims = { [playerId]: { d: deviceId | null, t: timestamp } }. d:null is a release. The newest t wins per player when two copies merge.
+function myClaimDevice() {
+  try { let d = localStorage.getItem('db:claim-device'); if (!d) { d = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('db:claim-device', d); } return d; } catch (e) { return 'd-anon'; }
+}
+var CLAIM_CTX = { claims: {}, me: null };
+function setClaimsForRender(claims, me) { CLAIM_CTX = { claims: claims || {}, me }; }
+function claimedByOther(pid) { const c = CLAIM_CTX.claims[pid]; return !!(c && c.d && c.d !== CLAIM_CTX.me); }
+function isClaimed(pid) { const c = (CLAIM_CTX.claims || {})[pid]; return !!(c && c.d); }
+function mergeClaims(a, b) {
+  const out = { ...(a || {}) };
+  Object.keys(b || {}).forEach(k => { if (!out[k] || ((b[k] && b[k].t) || 0) >= ((out[k] && out[k].t) || 0)) out[k] = b[k]; });
+  return out;
+}
 function whoamiKey(code) { return `whoami-${code}`; }
 function isAdminKey(code) { return `isadmin-${code}`; }
 function initials(name) { return (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase(); }
@@ -2237,12 +2255,13 @@ function IdentityPicker({ state, onPick, onAddSelf }) {
       <input data-testid="identity-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search your name" style={{ ...inputStyle, fontSize: 14, padding: '9px 10px' }} />
       <div data-testid="identity-list" style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 'min(280px, 38vh)', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', touchAction: 'pan-y' }}>
         {list.length === 0 && <div style={{ fontSize: 12, color: P.ink3, padding: '6px 2px' }}>No name matches. Add yourself below.</div>}
-        {list.map(p => (
-          <button key={p.id} onClick={() => onPick(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(32,35,29,0.06)', border: `1px solid ${P.rule}`, borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', flexShrink: 0, minHeight: 44 }}>
+        {list.map(p => { const taken = claimedByOther(p.id); return (
+          <button key={p.id} data-testid={taken ? 'identity-taken' : 'identity-option'} disabled={taken} aria-disabled={taken} onClick={() => { if (!taken) onPick(p.id); }} style={{ opacity: taken ? 0.45 : 1, filter: taken ? 'grayscale(1)' : 'none', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(32,35,29,0.06)', border: `1px solid ${P.rule}`, borderRadius: 10, padding: '9px 12px', cursor: 'pointer', textAlign: 'left', flexShrink: 0, minHeight: 44 }}>
             <Chip color={pc(p)} style={{ width: 26, height: 26, fontSize: 10, flexShrink: 0 }}>{initials(p.name)}</Chip>
             <span style={{ fontSize: 13, fontWeight: 600, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastFirst(p.name)}</span>
+            {taken && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: P.ink3 }}>Taken</span>}
           </button>
-        ))}
+        ); })}
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Not listed? Add your name" style={{ ...inputStyle, flex: 1, fontSize: 12, padding: '7px 10px' }} />
@@ -3348,7 +3367,7 @@ function SpectatorScreen({ roundCode, onExit }) {
     );
   }
 
-  const state = getRoundView(tournament, tournament.activeRoundId);
+  const state = getRoundView(tournament, activeRoundOf(tournament));
   setActiveFlightsForRender(tournament.flights);
   const stats = computeStats(state);
   const useNet = getScoringDisplay(state) !== 'gross' && state.matchFormat !== 'captain-choice' && !state.games?.scramble?.enabled;
@@ -3360,7 +3379,7 @@ function SpectatorScreen({ roundCode, onExit }) {
   const teCfg = getTeamEvent(tournament);
   const teamMode = teCfg.enabled && teCfg.teams.some(t => (t.playerIds || []).length > 0);
   const teModel = teamMode ? teamEventModel(tournament) : null;
-  const teRoundIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+  const teRoundIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
   const teNet = teamMode ? teamEventNetStandings(teModel, tournament, teRoundIdx) : [];
   const teLead = (() => { let best = null; teNet.forEach(f => { const r = f.ranked[0]; if (r && r.thru > 0 && (!best || r.netToPar < best.netToPar)) best = r; }); return best; })();
   const gms = state.games || {};
@@ -3762,7 +3781,7 @@ function NamePicker({ players, onPick, onNotListed }) {
     const el = listRef.current && listRef.current.querySelector('[data-active="true"]');
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
   }, [active, open]);
-  const choose = (p) => { setOpen(false); setQuery(''); onPick(p); };
+  const choose = (p) => { if (claimedByOther(p.id)) return; setOpen(false); setQuery(''); onPick(p); };
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setActive(a => Math.min(shown.length - 1, a + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(0, a - 1)); }
@@ -3791,14 +3810,15 @@ function NamePicker({ players, onPick, onNotListed }) {
               <button onClick={onNotListed} style={{ display: 'block', marginTop: 8, minHeight: 40, background: 'transparent', border: 'none', padding: 0, color: '#7A5C0F', fontWeight: 700, fontSize: 13.5, textDecoration: 'underline', cursor: 'pointer' }}>I'm not on the list</button>
             </div>
           )}
-          {shown.map((p, i) => (
-            <div key={p.id} id={`name-opt-${p.id}`} role="option" aria-selected={i === active} data-active={i === active} data-testid={`player-pick-btn-${p.id}`} tabIndex={-1}
+          {shown.map((p, i) => { const taken = claimedByOther(p.id); return (
+            <div key={p.id} id={`name-opt-${p.id}`} role="option" aria-selected={i === active} aria-disabled={taken} data-active={i === active} data-taken={taken ? '1' : '0'} data-testid={`player-pick-btn-${p.id}`} tabIndex={-1}
               onClick={() => choose(p)} onMouseEnter={() => setActive(i)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 48, boxSizing: 'border-box', padding: '6px 12px', cursor: 'pointer', background: i === active ? `${C.gold}26` : 'transparent', borderTop: i ? `1px solid ${P.rule}` : 'none' }}>
+              style={{ opacity: taken ? 0.45 : 1, filter: taken ? 'grayscale(1)' : 'none', display: 'flex', alignItems: 'center', gap: 10, minHeight: 48, boxSizing: 'border-box', padding: '6px 12px', cursor: 'pointer', background: i === active ? `${C.gold}26` : 'transparent', borderTop: i ? `1px solid ${P.rule}` : 'none' }}>
               <Chip color={pc(p)} style={{ width: 30, height: 30, fontSize: 11, flexShrink: 0 }}>{initials(p.name)}</Chip>
               <span style={{ fontSize: 15, fontWeight: 600, color: P.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lastFirst(p.name)}</span>
+              {taken && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: P.ink3 }}>Taken</span>}
             </div>
-          ))}
+          ); })}
         </div>
       )}
     </div>
@@ -3834,7 +3854,7 @@ function WhoAreYouScreen({ players, onPick, onAddSelf, onBack, deviceName, onHel
         <div style={{ width: 72, height: 72, borderRadius: 20, background: pc(selected), display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 28, color: '#FFF', marginBottom: 18, boxShadow: `0 8px 24px ${pc(selected)}60` }}>{initials(selected.name)}</div>
         <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 28, letterSpacing: -0.3, marginBottom: 6, textAlign: 'center' }}>{pgaName(selected.name)}</div>
         <div style={{ fontSize: 13, color: P.ink3, marginBottom: 32, textAlign: 'center' }}>Is this you?</div>
-        <button data-testid="confirm-player-btn" onClick={() => onPick(selected.id)} style={{ width: '100%', maxWidth: 300, padding: '17px 0', background: `linear-gradient(135deg, ${P.green}, #004d2e)`, border: 'none', borderRadius: 8, color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 17, textTransform: 'uppercase', letterSpacing: 0.5, cursor: 'pointer', marginBottom: 12, boxShadow: '0 4px 0 rgba(0,0,0,0.2)' }}>
+        <button data-testid="confirm-player-btn" onClick={() => { if (claimedByOther(selected.id)) { setSelected(null); return; } onPick(selected.id); }} style={{ width: '100%', maxWidth: 300, padding: '17px 0', background: `linear-gradient(135deg, ${P.green}, #004d2e)`, border: 'none', borderRadius: 8, color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, fontSize: 17, textTransform: 'uppercase', letterSpacing: 0.5, cursor: 'pointer', marginBottom: 12, boxShadow: '0 4px 0 rgba(0,0,0,0.2)' }}>
           Yes, that's me
         </button>
         <button onClick={() => setSelected(null)} style={{ background: 'transparent', border: 'none', color: P.ink3, fontSize: 13, cursor: 'pointer', padding: '8px 0' }}>Not me — go back</button>
@@ -4348,7 +4368,7 @@ function currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry, showEvery
   return Math.max(0, Math.min(numHoles - 1, last + 1));
 }
 
-function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
+function ScoreDrawer({ tournament, state, whoami, viewAsAdmin, setScoreVal, onClose, onPick, onAddSelf, onFinalHoleConfirmed, submitScorecard, unlockScorecard, initialReview, onSwitchPlayer, groupScoreEntry }) {
   const numHoles = state.numHoles;
   // Open on the hole the player is actually up to: one past the furthest hole anyone being scored has a score for.
   const initialHole = currentHoleIndex(state, whoami, viewAsAdmin, groupScoreEntry, false);
@@ -4372,6 +4392,19 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
   const useNet = !isHandicapFreeFormat && getScoringDisplay(state) !== 'gross';
   const allocConfig = getAllocationConfig(state);
   const isSubmitted = whoami && Array.isArray(state.submittedPlayers) && state.submittedPlayers.includes(whoami.id);
+  // A submitted card is final for players: they only ever see it read-only. Admins can still open it and edit.
+  useEffect(() => { if (isSubmitted && !viewAsAdmin) setReviewMode(true); }, [isSubmitted, viewAsAdmin]);
+  const teModel = useMemo(() => { try { return tournament && getTeamEvent(tournament).enabled ? teamEventModel(tournament) : null; } catch (e) { return null; } }, [tournament]);
+  const myTeam = teModel && whoami ? (teModel.teams || []).find(t => (t.players || []).some(p => p.id === whoami.id)) : null;
+  const matchPartners = (() => {
+    if (!whoami || myTeam || state.matchFormat !== 'best-ball') return [];
+    const ms = Array.isArray(state.games?.matchplay?.matches) ? state.games.matchplay.matches : [];
+    const m = ms.find(x => (x.sideA || []).includes(whoami.id) || (x.sideB || []).includes(whoami.id));
+    if (!m) return [];
+    return ((m.sideA || []).includes(whoami.id) ? m.sideA : m.sideB).filter(id => id !== whoami.id).map(id => state.players.find(p => p.id === id)).filter(Boolean);
+  })();
+  const reviewPlayers = !whoami ? [] : (useGroup ? [whoami, ...myGroupPlayers.filter(p => p.id !== whoami.id)] : [whoami, ...matchPartners]);
+  const lockIds = !whoami ? [] : (useGroup ? Array.from(new Set([whoami.id, ...myGroupPlayers.map(p => p.id)])) : [whoami.id]);
 
   // Local draft only — nothing here touches Firebase. Reset whenever the
   // viewed hole changes, so leaving a hole without confirming discards
@@ -4447,36 +4480,54 @@ function ScoreDrawer({ state, whoami, viewAsAdmin, setScoreVal, onClose, onPick,
             <span style={{ fontSize: 18, fontWeight: 800, color: '#14261B', textTransform: 'uppercase' }}>{isSubmitted ? 'Your Scorecard' : 'Review Scorecard'}</span>
             <button onClick={close} style={{ background: 'transparent', border: 'none', color: '#14261B', cursor: 'pointer' }}><X size={22} /></button>
           </div>
-          <div style={{ fontSize: 11.5, color: '#6B6455', marginBottom: 14 }}>{isSubmitted ? 'Submitted — read only. Tap Edit to make changes.' : 'Check everything before submitting your final card.'}</div>
+          <div style={{ fontSize: 11.5, color: '#6B6455', marginBottom: 14 }}>{isSubmitted ? (viewAsAdmin ? 'Submitted and locked for the player. As an admin you can still tap a hole to edit it.' : 'Submitted. This card is final. Ask an admin if something needs to change.') : 'Check everything before submitting your final card. Tap any hole to fix it.'}</div>
 
-          {[[0, Math.ceil(numHoles / 2), 'Front nine'], [Math.ceil(numHoles / 2), numHoles, 'Back nine']].map(([from, to, label]) => (
-            <div key={label}>
-              <div style={{ fontSize: 10, color: '#6B6455', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 4px' }}>{label}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 6 }}>
-                {Array.from({ length: to - from }, (_, i) => {
-                  const hIdx = from + i;
-                  const s = whoami ? state.scores[whoami.id]?.[hIdx] : null;
-                  const p = state.pars[hIdx] ?? 4;
-                  const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : P.ink;
-                  return (
-                    <div key={hIdx} onClick={() => { if (!isSubmitted) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: '#FBF8EE', border: `1px solid rgba(${GOLD_RGB},0.6)`, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: isSubmitted ? 'default' : 'pointer' }}>
-                      <div style={{ fontSize: 9, color: '#6B6455' }}>{hIdx + 1}</div>
-                      <div style={{ fontSize: 8, color: '#6B6455' }}>Par {p}</div>
-                      <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
-                    </div>
-                  );
-                })}
-              </div>
+          {reviewPlayers.map(rp => (
+            <div key={rp.id} data-testid={`review-card-${rp.id}`} style={{ marginBottom: 10 }}>
+              {reviewPlayers.length > 1 && <div style={{ fontSize: 13, fontWeight: 800, color: '#14261B', marginTop: 6 }}>{pgaName(rp.name)}{rp.id === whoami.id ? ' (you)' : ''}</div>}
+              {[[0, Math.ceil(numHoles / 2), 'Front nine'], [Math.ceil(numHoles / 2), numHoles, 'Back nine']].map(([from, to, label]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 10, color: '#6B6455', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, margin: '10px 0 4px' }}>{label}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 4, marginBottom: 6 }}>
+                    {Array.from({ length: to - from }, (_, i) => {
+                      const hIdx = from + i;
+                      const s = state.scores[rp.id]?.[hIdx];
+                      const p = state.pars[hIdx] ?? 4;
+                      const cls = s == null ? '#8a8473' : s < p ? '#0C6B45' : s > p ? '#8A2A1F' : P.ink;
+                      const canEdit = viewAsAdmin || !isSubmitted;
+                      return (
+                        <div key={hIdx} onClick={() => { if (canEdit) { setViewHole(hIdx); setReviewMode(false); } }} style={{ background: '#FBF8EE', border: `1px solid rgba(${GOLD_RGB},0.6)`, borderRadius: 8, padding: '8px 0', textAlign: 'center', cursor: canEdit ? 'pointer' : 'default' }}>
+                          <div style={{ fontSize: 9, color: '#6B6455' }}>{hIdx + 1}</div>
+                          <div style={{ fontSize: 8, color: '#6B6455' }}>Par {p}</div>
+                          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, fontSize: 15, marginTop: 2, color: cls }}>{s ?? '–'}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
+          {myTeam && (
+            <div data-testid="review-team-card" style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: '#6B6455', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>Your team's scorecard</div>
+              <TeamCardView tournament={tournament} model={teModel} teamId={myTeam.id} />
+            </div>
+          )}
+          {!isSubmitted && lockIds.some(id => state.scores[id] && Array.from({ length: numHoles }, (_, h) => state.scores[id][h]).some(v => v == null)) && (
+            <div style={{ fontSize: 12, color: '#8A2A1F', marginTop: 8, lineHeight: 1.4 }}>Some holes are still blank{useGroup ? ' for someone in your group' : ''}. Tap a hole to fill it in before you submit.</div>
+          )}
+          {!isSubmitted && <div style={{ fontSize: 11.5, color: '#6B6455', marginTop: 10, lineHeight: 1.4 }}>{useGroup ? 'Submitting locks every card in your group.' : 'Submitting locks your card. Only an admin can change it after that.'}</div>}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             {isSubmitted ? (
-              <GhostButton onClick={() => whoami && unlockScorecard?.(whoami.id)} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Edit Scorecard</GhostButton>
+              viewAsAdmin
+                ? <GhostButton onClick={() => lockIds.length && unlockScorecard?.(lockIds)} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Unlock for player</GhostButton>
+                : <GhostButton onClick={close} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Close</GhostButton>
             ) : (
               <>
                 <GhostButton onClick={() => setReviewMode(false)} style={{ ...padGhost, flex: 1, padding: '13px 0', textAlign: 'center' }}>Keep Editing</GhostButton>
-                <GoldButton onClick={() => { if (whoami) submitScorecard?.(whoami.id); close(); }} style={{ flex: 1, padding: '13px 0' }}>Submit Final Scorecard</GoldButton>
+                <GoldButton data-testid="submit-final" onClick={() => { if (whoami) submitScorecard?.(lockIds); close(); }} style={{ flex: 1, padding: '13px 0' }}>Submit Final Scorecard</GoldButton>
               </>
             )}
           </div>
@@ -6019,8 +6070,12 @@ function useSeenFlag(key) {
 }
 
 /* ===== First-run coach marks: small spotlight + callout, shown once per device per tip ===== */
-const COACH_KEY = 'db:coach-seen';
-const readCoachSeen = () => { try { const v = JSON.parse(localStorage.getItem(COACH_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+// Tips are remembered per tournament AND per person (not once per phone), so every new player, and every new tournament on a shared phone, gets the walkthrough.
+var COACH_SCOPE = 'anon';
+const COACH_PREFIX = 'db:coach-seen:';
+function setCoachScope(code, who) { COACH_SCOPE = (code || 'none') + ':' + (who || 'anon'); }
+const coachKey = () => COACH_PREFIX + COACH_SCOPE;
+const readCoachSeen = () => { try { const v = JSON.parse(localStorage.getItem(coachKey()) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
 function TapCue({ label = 'Tap to open' }) {
   return <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 3, padding: '7px 12px 8px', borderTop: `1px solid ${P.rule}`, fontSize: 11, fontWeight: 700, color: '#7A5C0F', letterSpacing: 0.2 }}>{label}<ChevronRight size={14} /></div>;
 }
@@ -6038,6 +6093,8 @@ function coachMeasure(step) {
 }
 function CoachMarks({ steps, enabled = true }) {
   const [seen, setSeen] = useState(readCoachSeen);
+  const scopeNow = COACH_SCOPE;
+  useEffect(() => { setSeen(readCoachSeen()); }, [scopeNow]);
   const [cur, setCur] = useState(null);
   const [ready, setReady] = useState(false);
   const stepsRef = useRef(steps); stepsRef.current = steps;
@@ -6080,7 +6137,7 @@ function CoachMarks({ steps, enabled = true }) {
   const idx = steps.findIndex(s => s.id === cur.id);
   const posStyle = place === 'below' ? { top: hole.top + hole.height + 12 } : place === 'above' ? { bottom: vh - hole.top + 12 } : { bottom: 24 };
   const caretStyle = place === 'below' || place === 'dock' ? { top: -7 } : { bottom: -7 };
-  const done = () => { const next = Array.from(new Set([...readCoachSeen(), step.id])); try { localStorage.setItem(COACH_KEY, JSON.stringify(next)); } catch (e) {} setSeen(next); };
+  const done = () => { const next = Array.from(new Set([...readCoachSeen(), step.id])); try { localStorage.setItem(coachKey(), JSON.stringify(next)); } catch (e) {} setSeen(next); };
   const circle = step.shape === 'circle';
   return (
     <div role="dialog" aria-label={step.title} style={{ position: 'fixed', inset: 0, zIndex: 400 }}>
@@ -6105,7 +6162,7 @@ function CoachMarks({ steps, enabled = true }) {
 }
 const COACH_NAME_STEPS = [{ id: 'name', sel: '[data-coach="names"]', title: 'Tap your name', body: 'So your scores and bets are saved to you. Wrong one? Tap Not you? after.', width: 300, pad: 4, place: 'dock' }];
 function replayWelcomeTips() {
-  try { ['guide-admin', 'guide-player', 'player-intro'].forEach(k => localStorage.removeItem('db:seen-' + k)); localStorage.removeItem(COACH_KEY); } catch (e) {}
+  try { ['guide-admin', 'guide-player', 'player-intro'].forEach(k => localStorage.removeItem('db:seen-' + k)); localStorage.removeItem(coachKey()); } catch (e) {}
   try { window.dispatchEvent(new Event('db:replay-tips')); } catch (e) {}
 }
 function GuideCard({ title, steps, onDismiss, cta }) {
@@ -6461,22 +6518,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
           </div>
         );
       })()}
-      {guidanceEnabled && isAdmin && !adminGuideSeen && (
-        <GuideCard title="Your round is live" onDismiss={markAdminGuide}
-          steps={[
-            'Share the round code or QR so players can join from their phones.',
-            'Anyone can score — tap the round badge at the bottom right. In a group, one person can enter scores for everyone.',
-            'Handicaps, groups and side games can be changed any time in Settings (the gear at the top).',
-          ]} />
-      )}
-      {guidanceEnabled && !isAdmin && whoami && !playerGuideSeen && (
-        <GuideCard title="Welcome — here's how it works" onDismiss={markPlayerGuide}
-          steps={[
-            'Tap the round badge at the bottom right to enter your score after each hole.',
-            'Use + and − to set the score, then Save & Next. Made a mistake? Tap Review to fix it.',
-            'The Leaderboard and Games tabs update live as everyone scores.',
-          ]} />
-      )}
       {nextStep && (
         <button onClick={() => { if (nextStep.action === 'wrapup') onOpenRoundComplete(); else if (nextStep.action === 'card') onOpenDrawer(); else setActiveTab(nextStep.action); }} style={{ ...homeCard, justifyContent: 'space-between', background: 'rgba(32,35,29,0.06)', border: `1.5px solid ${C.gold}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Bell} color={'#7A5C0F'} size={28} /><span style={{ fontSize: 13, color: P.ink }}>{nextStep.text}</span></div>
@@ -6629,12 +6670,6 @@ function HomeTab({ state, stats, isAdmin, whoami, setActiveTab, chat, ledger, on
         );
       })()}
 
-      {layoutPrefs.roundFlow !== false && (
-      <button onClick={onOpenRoundFlow} style={{ ...homeCard, justifyContent: 'space-between', color: P.ink }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><IconBadge icon={Flag} color={C.blueBright} size={28} /><span style={{ fontSize: 13, color: P.ink }}>Round Flow</span></div>
-        <span style={{ fontSize: 11, color: P.ink3 }}>where every group stands</span>
-      </button>
-      )}
 
       {layoutPrefs.ryderCup !== false && ryderCup && (
         <div style={{ ...cardBtn, background: P.paper, border: `1.5px solid ${P.rule}`, borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
@@ -7534,6 +7569,10 @@ function PlayersSection({ state, tournament, newPlayerName, setNewPlayerName, ad
                     ? <input value={p.name} onChange={e => rename(p.id, e.target.value)} aria-label="Player name" autoFocus style={{ ...inputStyle, flex: 1, minHeight: 40, fontSize: 15 }} />
                     : <div style={{ minWidth: 0 }}>
                         <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{pgaName(p.name)}</span>
+                        {((tournament.claims || {})[p.id] || {}).d && <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: P.ink2, marginBottom: 2 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: 999, background: P.green }} />Claimed on a phone
+                          <button data-testid={`release-${p.id}`} onClick={() => { if (window.confirm(`Reset ${p.name}? Their phone goes back to the name picker and the name opens up again. Scores stay.`)) updateTournament(prev => ({ ...prev, claims: { ...(prev.claims || {}), [p.id]: { d: null, t: Date.now() } } })); }} style={{ background: 'transparent', border: 'none', color: '#7A5C0F', fontWeight: 700, fontSize: 11, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>Reset</button>
+                        </span>}
                         <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 11, color: P.ink2 }}>
                           {hcOn && (hasIdx ? <span>HCP {p.handicapIndex} · CH {ch}</span> : <span style={{ color: '#7A5C0F' }}>+ handicap</span>)}
                           {teesOn && p.teeName && <span>{p.teeName}</span>}
@@ -8157,7 +8196,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
       });
     }
   };
-  const roundIdx = tournament.rounds.findIndex(r => r.id === tournament.activeRoundId);
+  const roundIdx = tournament.rounds.findIndex(r => r.id === activeRoundOf(tournament));
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.78)', zIndex: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: P.paper, color: P.ink, borderTop: `1px solid ${P.rule}`, borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 720, maxHeight: DVH(90), overflowY: 'auto', overflowX: 'hidden', padding: '18px 18px 28px' }}>
@@ -8176,7 +8215,7 @@ function SetupModal({ tournament, state, updateTournament, updateRound, onClose,
         <Accordion title="Rounds" badge={tournament.rounds.length} defaultOpen>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
             {tournament.rounds.map((r, i) => (
-              <button key={r.id} onClick={() => onSwitchRound(r.id)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer', border: `1px solid ${r.id === tournament.activeRoundId ? C.gold : P.rule}` }}>
+              <button key={r.id} onClick={() => onSwitchRound(r.id)} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer', border: `1px solid ${r.id === activeRoundOf(tournament) ? C.gold : P.rule}` }}>
                 <span style={{ fontSize: 13 }}>{i + 1}. {r.name}{r.courseName ? ` — ${r.courseName}` : ''}</span>
                 <span style={{ fontSize: 11, color: r.started ? '#7A5C0F' : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
               </button>
@@ -8738,7 +8777,7 @@ function SetupWizard({ tournament, state, updateTournament, updateRound, onClose
 }
 
 /* ============================== ROUND SWITCHER ============================== */
-function RoundSwitcherModal({ tournament, onSwitch, onClose, isAdmin, onAddRound }) {
+function RoundSwitcherModal({ tournament, onSwitch, onMakeLive, onClose, isAdmin, onAddRound }) {
   return (
     <DrawerSheet onClose={onClose}>{(onClose) => (<>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -8746,12 +8785,15 @@ function RoundSwitcherModal({ tournament, onSwitch, onClose, isAdmin, onAddRound
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: P.ink, cursor: 'pointer' }}><X size={22} /></button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-          {tournament.rounds.map((r, i) => (
-            <button key={r.id} onClick={() => { onSwitch(r.id); onClose(); }} style={{ ...rowCard, justifyContent: 'space-between', width: '100%', textAlign: 'left', cursor: 'pointer', border: `1px solid ${r.id === tournament.activeRoundId ? C.gold : P.rule}`, background: r.id === tournament.activeRoundId ? 'rgba(32,35,29,0.06)' : P.paper }}>
-              <div><div style={{ fontSize: 14, fontWeight: 600 }}>{i + 1}. {r.name}</div><div style={{ fontSize: 11, color: P.ink2 }}>{r.courseName || 'no course yet'}</div></div>
-              <span style={{ fontSize: 11, color: r.started ? '#7A5C0F' : P.ink2 }}>{r.started ? 'started' : 'not started'}</span>
-            </button>
-          ))}
+          {tournament.rounds.map((r, i) => { const mine = r.id === activeRoundOf(tournament); const live = r.id === tournament.activeRoundId; return (
+            <div key={r.id} style={{ ...rowCard, flexDirection: 'column', alignItems: 'stretch', gap: 6, border: `1px solid ${mine ? C.gold : P.rule}`, background: mine ? 'rgba(32,35,29,0.06)' : P.paper }}>
+              <button data-testid={`round-view-${i}`} onClick={() => { onSwitch(r.id); onClose(); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', cursor: 'pointer', background: 'transparent', border: 'none', padding: 0, color: P.ink }}>
+                <div><div style={{ fontSize: 14, fontWeight: 600 }}>{i + 1}. {r.name}</div><div style={{ fontSize: 11, color: P.ink2 }}>{r.courseName || 'no course yet'}{mine ? ' · you are viewing this' : ''}</div></div>
+                <span style={{ fontSize: 11, color: r.started ? '#7A5C0F' : P.ink2 }}>{live ? 'live for everyone' : r.started ? 'started' : 'not started'}</span>
+              </button>
+              {isAdmin && !live && <button data-testid={`round-live-${i}`} onClick={() => { onMakeLive(r.id); onClose(); }} style={{ alignSelf: 'flex-start', background: 'transparent', border: `1px solid ${P.rule}`, borderRadius: 8, padding: '5px 10px', fontSize: 11.5, fontWeight: 700, color: '#7A5C0F', cursor: 'pointer' }}>Make live for everyone</button>}
+            </div>
+          ); })}
         </div>
         {isAdmin && <GoldButton onClick={() => { onAddRound(); onClose(); }} style={{ width: '100%', padding: '12px 0' }}>+ Add another round</GoldButton>}
       </>)}</DrawerSheet>
@@ -8794,8 +8836,8 @@ function newInviteToken() {
 function adminContacts(tournament) {
   const list = [];
   const org = tournament.organizer;
-  if (org && (org.phone || org.email)) list.push({ key: 'org', name: org.name || 'Organizer', role: 'Organizer', phone: org.phone, email: org.email, playing: org.playing === true ? true : (org.playing === false ? false : null) });
-  (tournament.adminInvites || []).filter(i => i && (i.phone || i.email)).forEach(i => list.push({ key: i.id, name: i.name, role: 'Co-admin', phone: i.phone, email: i.email, playing: i.playing === true }));
+  if (org && (org.name || org.phone || org.email)) list.push({ key: 'org', name: org.name || 'Organizer', role: 'Organizer', phone: org.phone, email: org.email, playing: org.playing === true ? true : (org.playing === false ? false : null) });
+  (tournament.adminInvites || []).filter(i => i && (i.name || i.phone || i.email)).forEach(i => list.push({ key: i.id, name: i.name, role: 'Co-admin', phone: i.phone, email: i.email, playing: i.playing === true }));
   return [...list.filter(c => c.playing === false), ...list.filter(c => c.playing !== false)];
 }
 function smsHref(phone, body) { return `sms:${String(phone).replace(/[^\d+]/g, '')}?&body=${encodeURIComponent(body)}`; }
@@ -8813,6 +8855,7 @@ function HelpSheet({ tournament, isAdmin, onClose, onOpenChat, onManage }) {
         </div>
         {first && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1F6B3A', background: 'rgba(31,107,58,0.12)', borderRadius: 999, padding: '3px 9px' }}>Best first call</span>}
       </div>
+      {!c.phone && !c.email && <div style={{ fontSize: 12, color: P.ink3, lineHeight: 1.4 }}>No phone or email saved yet. Ask in the group chat.</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         {c.phone && <a href={smsHref(c.phone, `Hi ${c.name.split(' ')[0]}, I need help with ${tournament.name || 'the tournament'}.`)} style={{ ...btn, background: first ? '#1F6B3A' : 'transparent', color: first ? '#fff' : '#1F6B3A', border: '1.5px solid #1F6B3A' }}><MessageCircle size={16} />Text</a>}
         {c.phone && <a href={`tel:${String(c.phone).replace(/[^\d+]/g, '')}`} style={{ ...btn, color: '#1F6B3A', border: '1.5px solid #1F6B3A' }}><Phone size={16} />Call</a>}
@@ -8968,22 +9011,22 @@ function ProxyPickerModal({ tournament, activeProxyId, onPick, onStop, onClose }
   );
 }
 
-function ResetRoundModal({ roundName, onConfirm, onClose }) {
+function ResetRoundModal({ roundName, onConfirm, onClose, title, body, body2, finalLabel }) {
   const [step, setStep] = useState(1);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,26,0.85)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: P.paper, color: P.ink, border: `1.5px solid ${P.red}`, borderRadius: 10, width: '100%', maxWidth: 380, padding: 22 }}>
-        <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 18, color: P.red, marginBottom: 8 }}>Reset {roundName}?</div>
+        <div style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 600, fontSize: 18, color: P.red, marginBottom: 8 }}>{title || `Reset ${roundName}?`}</div>
         {step === 1 ? (
           <>
-            <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.5, marginBottom: 18 }}>This permanently clears every player's scores, all pari-mutuel tickets, and all custom bets for this round only. Other rounds are untouched. This cannot be undone.</div>
+            <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.5, marginBottom: 18 }}>{body || "This permanently clears every player's scores, all pari-mutuel tickets, and all custom bets for this round only. Other rounds are untouched. This cannot be undone."}</div>
             <button onClick={() => setStep(2)} style={{ width: '100%', background: P.red, border: 'none', borderRadius: 10, padding: '12px 0', color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>Yes, continue</button>
             <button onClick={onClose} style={{ width: '100%', background: 'transparent', border: 'none', color: P.ink2, padding: '10px 0', cursor: 'pointer' }}>Cancel</button>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.5, marginBottom: 18 }}>Are you <strong style={{ color: P.red }}>really</strong> sure? Every player will need to re-enter their scores from hole 1.</div>
-            <button onClick={onConfirm} style={{ width: '100%', background: P.red, border: 'none', borderRadius: 10, padding: '12px 0', color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>Reset everything</button>
+            <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.5, marginBottom: 18 }}>Are you <strong style={{ color: P.red }}>really</strong> sure? {body2 || 'Every player will need to re-enter their scores from hole 1.'}</div>
+            <button onClick={onConfirm} style={{ width: '100%', background: P.red, border: 'none', borderRadius: 10, padding: '12px 0', color: '#FFF', fontFamily: "'Instrument Sans', Inter, sans-serif", fontWeight: 700, cursor: 'pointer', marginBottom: 8 }}>{finalLabel || 'Reset everything'}</button>
             <button onClick={onClose} style={{ width: '100%', background: 'transparent', border: 'none', color: P.ink2, padding: '10px 0', cursor: 'pointer' }}>Cancel</button>
           </>
         )}
@@ -8996,7 +9039,6 @@ const HOME_LAYOUT_CARDS = [
   { key: 'yourMatch', label: 'Your Match' },
   { key: 'wolf', label: 'Wolf' },
   { key: 'payout', label: 'Live payout' },
-  { key: 'roundFlow', label: 'Round Flow link' },
   { key: 'ryderCup', label: 'Ryder Cup team score' },
   { key: 'standings', label: 'Overall Standings' },
   { key: 'kos', label: 'King of Swing bracket' },
@@ -9047,7 +9089,7 @@ function TeamStrokesSheet({ tournament, team, onClose }) {
   const te = getTeamEvent(tournament);
   const rows = teamStrokeRows(tournament, team);
   const r0 = tournament.rounds[0];
-  const view = getRoundView({ ...tournament, handicapsEnabled: true }, (tournament.rounds.find(r => r.id === tournament.activeRoundId) || r0).id);
+  const view = getRoundView({ ...tournament, handicapsEnabled: true }, (tournament.rounds.find(r => r.id === activeRoundOf(tournament)) || r0).id);
   const n = view.numHoles || 18; const si = Array.isArray(view.strokeIndex) && view.strokeIndex.length === n ? view.strokeIndex : null;
   const phs = rows.map(r => r.strokes);
   const avg = phs.length ? phs.reduce((a, b) => a + b, 0) / phs.length : 0;
@@ -9083,10 +9125,10 @@ function TeamStrokesSheet({ tournament, team, onClose }) {
 }
 // Auto-scrolling window for the team leaderboard: shows 3 teams at a time out of the top 10 and rolls through them,
 // like the player leaderboard on Home. Press and hold pauses it; a fresh score pulls the scoring team into view.
-function TeamScroller({ items, renderRow }) {
+function TeamScroller({ items, renderRow, full }) {
   const VISIBLE = 3, ROW_H = 64, TICK_MS = 2600;
   const total = items.length;
-  const shouldScroll = total > VISIBLE;
+  const shouldScroll = !full && total > VISIBLE;
   const [offset, setOffset] = useState(0);
   const [paused, setPaused] = useState(false);
   const pauseRef = useRef(null);
@@ -9110,7 +9152,7 @@ function TeamScroller({ items, renderRow }) {
   const rows = shouldScroll ? [...items, ...items].slice(offset, offset + VISIBLE) : items;
   return (
     <div data-testid="team-scroller" data-scrolling={shouldScroll ? '1' : '0'} onMouseDown={holdStart} onMouseUp={holdEnd} onMouseLeave={holdEnd} onTouchStart={holdStart} onTouchEnd={holdEnd} onTouchCancel={holdEnd}>
-      <div style={{ height: ROW_H * Math.min(VISIBLE, Math.max(total, 1)), overflow: 'hidden' }}>
+      <div style={{ height: ROW_H * (full ? Math.max(total, 1) : Math.min(VISIBLE, Math.max(total, 1))), overflow: 'hidden' }}>
         {rows.map((it, idx) => (
           <div key={it.id + ':' + idx} data-testid="team-scroller-row" style={{ height: ROW_H, boxSizing: 'border-box', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', borderTop: idx > 0 ? `1px solid ${P.rule}` : 'none', background: it.leader ? 'rgba(222,180,60,0.30)' : 'transparent' }}>
             {renderRow(it, { change: changes[it.id], flash: flashes[it.id], index: idx })}
@@ -9124,17 +9166,20 @@ function TeamScroller({ items, renderRow }) {
 
 function TeamLeaderboardCard({ tournament, onOpen }) {
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
-  const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+  const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
   const stand = teamEventNetStandings(model, tournament, idx).filter(f => f.ranked.length + f.rest.length > 0);
   const cols = '22px 1fr 34px 54px 52px';
   const toParColor = (v) => (v < 0 ? P.green : v > 0 ? P.red : P.ink3);
   const open = (e) => { if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen && onOpen(); } };
+  // Every flight shows all of its teams. Each flight can be folded away; the choice is remembered on this phone.
+  const [folded, setFolded] = useState(() => { try { const v = JSON.parse(localStorage.getItem('db:home-flights-folded') || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } });
+  const toggleFlight = (id) => setFolded(prev => { const next = { ...prev, [id]: !prev[id] }; try { localStorage.setItem('db:home-flights-folded', JSON.stringify(next)); } catch (e) {} return next; });
   return (
     <div data-coach="card" role="button" tabIndex={0} onClick={open} onKeyDown={open} style={{ background: P.paper, border: 'none', borderTop: '3px double rgba(32,35,29,0.5)', borderRadius: 4, overflow: 'hidden', boxShadow: '0 6px 18px rgba(0,0,0,0.25)', color: P.ink, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px 8px', borderBottom: `1px solid ${P.rule}` }}>
         <div>
           <div style={{ fontFamily: DISPLAY, fontSize: 18, fontWeight: 900, letterSpacing: -0.3, color: P.ink }}>Leaderboard</div>
-          <div style={{ fontSize: 10, color: P.ink3 }}>{(model.rounds[idx] && model.rounds[idx].name) || 'Today'} · net by flight · tap for gross and money</div>
+          <div style={{ fontSize: 10, color: P.ink3 }}>{(model.rounds[idx] && model.rounds[idx].name) || 'Today'} · net by flight · tap for full leaderboard</div>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: cols, padding: '5px 14px', background: 'rgba(32,35,29,0.08)' }}>
@@ -9143,8 +9188,14 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
       {model.teams.length === 0 && <div style={{ padding: '12px 14px', fontSize: 12.5, color: P.ink2 }}>No teams yet.</div>}
       {stand.map(({ flight, ranked, rest }) => (
         <div key={flight.id}>
-          {(tournament.flights || []).length > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: `${flight.color || '#7A5C0F'}18` }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color || '#7A5C0F' }} /><span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color || '#7A5C0F' }}>{flight.name}</span></div>}
-          <TeamScroller items={[...ranked.slice(0, 10), ...(ranked.length === 0 ? rest.slice(0, 10).map(r => ({ ...r, place: null })) : [])].map(r => ({ id: r.team.id, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
+          {(tournament.flights || []).length > 1 && (() => { const isFolded = !!folded[flight.id]; const lead = ranked.find(r => r.thru > 0); return (
+            <button data-testid={`flight-toggle-${flight.id}`} aria-expanded={!isFolded} onClick={(e) => { e.stopPropagation(); toggleFlight(flight.id); }} onKeyDown={(e) => e.stopPropagation()} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', minHeight: 40, background: `${flight.color || '#7A5C0F'}18`, border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: flight.color || '#7A5C0F', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: flight.color || '#7A5C0F' }}>{flight.name}</span>
+              <span style={{ fontSize: 10.5, color: P.ink3, marginLeft: 4, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ranked.length + rest.length} teams{isFolded && lead ? ` · leader ${lead.team.name} ${lead.thru > 0 ? fmtToPar(lead.netToPar) : ''}` : ''}</span>
+              <ChevronDown size={16} color={P.ink3} style={{ transform: isFolded ? 'rotate(-90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+            </button>); })()}
+          {((tournament.flights || []).length <= 1 || !folded[flight.id]) ? <TeamScroller full items={[...ranked, ...(ranked.length === 0 ? rest.map(r => ({ ...r, place: null })) : [])].map(r => ({ id: r.team.id, thru: r.thru, val: r.netToPar, leader: r.place === 1 && r.thru > 0, r }))} renderRow={(it, { change, flash }) => {
             const r = it.r; const rr = r.team.rounds[idx];
             return (
               <div role="button" tabIndex={0} aria-label={`Scorecard for ${r.team.name}`} onClick={(e) => { e.stopPropagation(); onOpen && onOpen(r.team.id); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(r.team.id); } }} style={{ display: 'grid', gridTemplateColumns: cols, padding: '6px 14px', alignItems: 'center', cursor: 'pointer' }}>
@@ -9159,11 +9210,10 @@ function TeamLeaderboardCard({ tournament, onOpen }) {
                 <span style={{ fontFamily: "'Instrument Sans', Inter, sans-serif", fontSize: 12, textAlign: 'right', color: P.ink2 }}>{rr && rr.thru > 0 ? fmtToPar(rr.grossToPar) : '–'}</span>
               </div>
             );
-          }} />
-          {(ranked.length > 10 || (ranked.length === 0 && rest.length > 10)) && <div style={{ padding: '2px 14px 8px', fontSize: 10, color: P.ink3 }}>Top 10 of {ranked.length || rest.length} teams{(tournament.flights || []).length > 1 ? ' in ' + flight.name : ''}. Tap for the full board.</div>}
+          }} /> : null}
         </div>
       ))}
-      <TapCue label="Tap for gross and money" />
+      <TapCue label="Tap for full leaderboard" />
     </div>
   );
 }
@@ -9408,8 +9458,8 @@ function TeamEventSetup({ tournament, updateTournament }) {
 // A team's scorecard: each partner's score on every hole, then the team's best-ball gross and net. One tab per round.
 function TeamCardView({ tournament, model, teamId, onBack }) {
   const team = model.teams.find(t => t.id === teamId);
-  const [ri, setRi] = useState(() => { const i = model.teams.length ? Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId)) : 0; return i < 0 ? 0 : i; });
-  if (!team) return <div style={{ fontSize: 13, color: P.ink2 }}>That team is no longer in the event. <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: '#7A5C0F', textDecoration: 'underline', cursor: 'pointer' }}>Back</button></div>;
+  const [ri, setRi] = useState(() => { const i = model.teams.length ? Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament))) : 0; return i < 0 ? 0 : i; });
+  if (!team) return <div style={{ fontSize: 13, color: P.ink2 }}>That team is no longer in the event. {onBack && <button onClick={onBack} style={{ background: 'transparent', border: 'none', color: '#7A5C0F', textDecoration: 'underline', cursor: 'pointer' }}>Back</button>}</div>;
   const rnd = (tournament.rounds || [])[ri] || (tournament.rounds || [])[0];
   const view = getRoundView(tournament, rnd.id);
   const res = team.rounds[ri] || team.rounds[0];
@@ -9426,7 +9476,7 @@ function TeamCardView({ tournament, model, teamId, onBack }) {
   return (
     <div style={{ background: '#F6F1E3', borderRadius: 8, padding: 12, color: SC_INK }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <button onClick={onBack} aria-label="Back to leaderboard" style={{ background: 'transparent', border: 'none', color: '#14261B', cursor: 'pointer', padding: 2, display: 'flex' }}><ChevronLeft size={22} /></button>
+        {onBack && <button onClick={onBack} aria-label="Back to leaderboard" style={{ background: 'transparent', border: 'none', color: '#14261B', cursor: 'pointer', padding: 2, display: 'flex' }}><ChevronLeft size={22} /></button>}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: '#14261B', textTransform: 'uppercase', letterSpacing: 0.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.name}</div>
           <div style={{ fontSize: 11.5, color: '#6B6455' }}>Best ball{team.netFlightId && (tournament.flights || []).find(f => f.id === team.netFlightId) ? ` · ${(tournament.flights || []).find(f => f.id === team.netFlightId).name}` : ''}</div>
@@ -9461,13 +9511,13 @@ function TeamCardView({ tournament, model, teamId, onBack }) {
               );
             })}
             <div style={{ display: 'flex', height: 34, borderTop: '2px solid #1F3A2D', background: '#F1ECDC' }}>
-              {lab('#F1ECDC', 'rgba(32,35,29,0.08)', 'TEAM', 800)}
+              {lab('#F1ECDC', SC_INK, 'TEAM', 800)}
               {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 13, fontWeight: 800, color: SC_INK }}>{res.holesGross[i] ?? ''}</div>)}
               <div style={{ ...flex, ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{sum(res.holesGross, from, to) ?? '–'}</div>
             </div>
             {showNet && (
               <div style={{ display: 'flex', height: 34, borderTop: '1px solid #CFC7B2', background: '#F1ECDC' }}>
-                {lab('#F1ECDC', 'rgba(32,35,29,0.08)', 'TEAM NET', 800)}
+                {lab('#F1ECDC', SC_INK, 'TEAM NET', 800)}
                 {idxs.map(i => <div key={i} style={{ ...flex, ...SC_MONO, fontSize: 13, fontWeight: 800, color: SC_INK }}>{res.holesNet[i] ?? ''}</div>)}
                 <div style={{ ...flex, ...SC_MONO, fontWeight: 800, fontSize: 13, color: SC_INK }}>{sum(res.holesNet, from, to) ?? '–'}</div>
               </div>
@@ -9484,12 +9534,12 @@ function TeamCardView({ tournament, model, teamId, onBack }) {
 function TeamEventBoards({ tournament, tab, onPickTeam }) {
   const te = getTeamEvent(tournament);
   const model = useMemo(() => teamEventModel(tournament), [tournament]);
-  const [netView, setNetView] = useState(() => Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId)));
+  const [netView, setNetView] = useState(() => Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament))));
   const box = { background: P.paper, border: `1px solid ${P.rule}`, borderRadius: 4, overflow: 'hidden', borderTop: '3px double rgba(32,35,29,0.5)', color: P.ink, boxShadow: '0 6px 18px rgba(0,0,0,0.25)' };
   const head = (label, right) => <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '8px 12px', background: 'rgba(32,35,29,0.06)', borderTop: `1px solid ${P.rule}` }}><span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.1, textTransform: 'uppercase', color: '#7A5C0F' }}>{label}</span>{right && <span style={{ fontSize: 11, color: P.ink2, textAlign: 'right' }}>{right}</span>}</div>;
   const note = (txt, tone) => <div style={{ ...box, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45, color: tone === 'warn' ? '#7A5C0F' : P.ink2, borderColor: tone === 'warn' ? `${'#7A5C0F'}66` : P.rule }}>{txt}</div>;
   const dayName = (i) => (model.rounds[i] && model.rounds[i].name) || `Round ${i + 1}`;
-  const liveIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+  const liveIdx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
   const NET_GRID = '24px 1fr 30px 42px 42px 44px';
   // ---------- Gross ----------
   const grossTab = (
@@ -9667,7 +9717,7 @@ function TeamEventDrawer({ tournament, updateTournament, isAdmin, whoami, initia
   );
 }
 
-function SettingsSheet({ onOpenClubhouse, onOpenSaveTemplate, onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn, onOpenAdminTeam }) {
+function SettingsSheet({ onOpenClubhouse, onOpenSaveTemplate, onClose, onOpenTeamEvent, onOpenSetup, onOpenNotifications, onOpenScan, onLeave, onBecomeAdmin, roundCode, adminPin, isAdmin, hasPlayers, previewMode, onExitPreview, onEnterPreview, guidanceEnabled, onToggleGuidance, onOpenProfile, onOpenRoundSwitcher, multiRound, onOpenRoundComplete, onOpenReset, onOpenClearChat, onOpenLayout, onOpenRules, whoami, onSwitchPlayer, onOpenAuctionSetup, bettingOn, onOpenAdminTeam }) {
   const [copied, setCopied] = useState(false);
   const copyCode = () => { try { navigator.clipboard.writeText(roundCode); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
   const item = (Icon, label, onClick, danger) => <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', background: 'transparent', border: 'none', color: danger ? P.red : P.ink, padding: '13px 4px', cursor: 'pointer', fontSize: 15, borderBottom: `1px solid ${P.rule}`, textAlign: 'left' }}><Icon size={18} /> {label}</button>;
@@ -9705,6 +9755,7 @@ function SettingsSheet({ onOpenClubhouse, onOpenSaveTemplate, onClose, onOpenTea
         {item(LogOut, 'Leave this tournament', onLeave, true)}
         {BRAND.poweredBy && <div style={{ textAlign: 'center', fontSize: 11, color: P.ink3, padding: '16px 0 4px' }}>{BRAND_POWERED}</div>}
         {isAdmin && item(Trash2, 'Reset scores & bets for this round', onOpenReset, true)}
+        {isAdmin && item(Trash2, 'Delete group chat', onOpenClearChat, true)}
     </>)}</DrawerSheet>
   );
 }
@@ -9787,14 +9838,13 @@ function HoleTimeline({ holeProgress, currentHole }) {
     <div style={{ display: 'flex', gap: 4, overflowX: 'auto', padding: '2px 2px 6px', WebkitOverflowScrolling: 'touch' }}>
       {holeProgress.map(h => {
         const isCurrent = h.holeNumber === currentHole;
-        const bg = isCurrent ? 'rgba(32,35,29,0.06)' : h.hasBirdieOrBetter ? C.gold : h.completed ? P.paper : 'rgba(32,35,29,0.08)';
+        const bg = isCurrent ? 'rgba(32,35,29,0.06)' : h.completed ? P.paper : 'rgba(32,35,29,0.08)';
         const opacity = (!h.completed && !isCurrent) ? 0.4 : 1;
         return (
           <div key={h.holeNumber} style={{ position: 'relative', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
             <div style={{ width: 27, height: 27, borderRadius: 8, background: bg, border: `1.5px solid ${isCurrent ? C.gold : P.rule}`, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity }}>
-              {isCurrent ? <Flag size={13} color={'#7A5C0F'} /> : h.completed ? <Check size={13} color={h.hasBirdieOrBetter ? '#14261B' : C.goldBright} /> : null}
+              {isCurrent ? <Flag size={13} color={'#7A5C0F'} /> : h.completed ? <Check size={13} color={C.goldBright} /> : null}
             </div>
-            {h.hasBetWin && <span style={{ position: 'absolute', top: -5, right: -5, width: 14, height: 14, borderRadius: 999, background: P.red, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${'rgba(32,35,29,0.08)'}` }}><Coins size={7} color={P.ink} /></span>}
             <span style={{ fontSize: 8, color: P.ink2 }}>{h.holeNumber}</span>
           </div>
         );
@@ -10295,7 +10345,7 @@ function RoundCompleteModal({ state, stats, ledger, isLastRound, onClose, onOpen
   if (teamMode) {
     kind = 'team';
     const model = teamEventModel(tournament);
-    const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === tournament.activeRoundId));
+    const idx = Math.max(0, (tournament.rounds || []).findIndex(r => r.id === activeRoundOf(tournament)));
     sections = teamEventNetStandings(model, tournament, idx).map(({ flight, ranked: rk, rest }) => ({
       flight: flight.id === '_all' ? null : flight,
       rows: [...rk, ...rest.map(r => ({ ...r, place: null }))].map(r => { const rd = r.team.rounds[idx] || {}; return { id: r.team.id, name: r.team.name, thru: r.thru, toPar: rd.thru > 0 ? rd.grossToPar : 0, netToPar: r.netToPar, grossStr: rd.gross, netStr: rd.net, place: r.place, tied: r.tied, sub: null }; }),
@@ -11109,10 +11159,10 @@ const chPar = (v, thru) => ({ t: thru > 0 ? fmtToPar(v) : '–', tone: thru > 0 
 // Everything the screen can show, as plain data: [{id, panel, title, sub, color, kind, ...}]. Pure, so a bad tournament can never break the page tree.
 function buildClubhouseSlides(tournament, cfg, nowMs) {
   const slides = [];
-  const state = getRoundView(tournament, tournament.activeRoundId);
+  const state = getRoundView(tournament, activeRoundOf(tournament));
   setActiveFlightsForRender(tournament.flights);
   const rounds = tournament.rounds || [];
-  const idx = Math.max(0, rounds.findIndex(r => r.id === tournament.activeRoundId));
+  const idx = Math.max(0, rounds.findIndex(r => r.id === activeRoundOf(tournament)));
   const roundName = (rounds[idx] && rounds[idx].name) || 'Today';
   const teCfg = getTeamEvent(tournament);
   const teamMode = teCfg.enabled && teCfg.teams.some(t => (t.playerIds || []).length > 0);
@@ -11445,6 +11495,7 @@ export default function RoGreen() {
   const [initChecked, setInitChecked] = useState(false);
   const [tournament, setTournament] = useState(defaultTournament());
   setActiveFlightsForRender(tournament.flights);
+  setClaimsForRender(tournament.claims, myClaimDevice());
   const [chat, setChat] = useState([]);
   const [whoamiId, setWhoamiId] = useState(null);
   const recentlyRemovedPlayerIdsRef = useRef(new Map());
@@ -11455,6 +11506,7 @@ export default function RoGreen() {
     return () => clearTimeout(t);
   }, [justPickedIdentity]);
   const [isAdmin, setIsAdmin] = useState(false);
+  setCoachScope(roundCode, whoamiId || (isAdmin ? 'admin' : null));
   const [activeTab, setActiveTabRaw] = useState('home');
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   // The leaderboard opens as a drawer over whatever you are on instead of switching pages.
@@ -11523,7 +11575,7 @@ export default function RoGreen() {
   // render below). Derived from `tournament` directly (not the flattened
   // `state` view) because this hook has to sit above this component's early
   // returns, and `state` isn't computed until after them.
-  const activeRoundAwardsFlag = tournament.rounds.find(r => r.id === tournament.activeRoundId)?.awardsPresentationActive;
+  const activeRoundAwardsFlag = tournament.rounds.find(r => r.id === activeRoundOf(tournament))?.awardsPresentationActive;
   useEffect(() => {
     setAwardsOpen(!!activeRoundAwardsFlag);
   }, [activeRoundAwardsFlag]);
@@ -11533,6 +11585,7 @@ export default function RoGreen() {
   const [roundFlowOpen, setRoundFlowOpen] = useState(false);
   const [proxyOpen, setProxyOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [clearChatOpen, setClearChatOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [homeLayoutPrefs, setHomeLayoutPrefs] = useState({});
   const [proxyPlayerId, setProxyPlayerId] = useState(null); // admin-only, session-only, never persisted — does not touch the admin's own saved identity
@@ -11635,7 +11688,7 @@ export default function RoGreen() {
     const isJustCreated = justCreatedRef.current === roundCode;
     if (justCreatedRef.current === roundCode) { justCreatedRef.current = null; }
     (async () => {
-      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; setTournament(safe);
+      try { const res = await storage.get(tournamentKey(roundCode), true); if (mounted) { try { const raw = res ? JSON.parse(res.value) : null; if (!raw || !raw.rounds) { if (isJustCreated) { if (mounted) { loadedRef.current = true; setLoading(false); } return; } localStorage.removeItem('db:last-code'); if (mounted) { setRoundCode(null); setLoading(false); } return; } const safe = { ...defaultTournament(), ...raw, players: Array.isArray(raw.players) ? raw.players.filter(p => p && p.id) : [], flights: Array.isArray(raw.flights) ? raw.flights.filter(f => f && f.id).map(fixRedBlueColors) : [], ryderCup: (raw.ryderCup && typeof raw.ryderCup === 'object') ? raw.ryderCup : defaultTournament().ryderCup, rounds: Array.isArray(raw.rounds) ? raw.rounds.map(r => { if (!r) return null; return { ...defaultRound(0), ...r, pars: Array.isArray(r.pars) ? r.pars : DEFAULT_PARS_18.slice(), strokeIndex: Array.isArray(r.strokeIndex) ? r.strokeIndex : DEFAULT_SI_18.slice(), yardage: Array.isArray(r.yardage) ? r.yardage : [], customBets: Array.isArray(r.customBets) ? r.customBets : [], flowGroups: Array.isArray(r.flowGroups) ? r.flowGroups : [], tournamentCustomBets: Array.isArray(r.tournamentCustomBets) ? r.tournamentCustomBets : [], scores: r.scores && typeof r.scores === 'object' ? r.scores : {}, games: r.games ? { ...defaultRound(0).games, ...r.games, matchplay: { ...defaultRound(0).games.matchplay, ...(r.games.matchplay || {}), matches: Array.isArray(r.games.matchplay?.matches) ? r.games.matchplay.matches : [] }, wolf: { ...defaultRound(0).games.wolf, ...(r.games.wolf || {}), choices: (r.games.wolf?.choices && typeof r.games.wolf.choices === 'object') ? r.games.wolf.choices : {} }, parimutuel: { ...defaultRound(0).games.parimutuel, ...(r.games.parimutuel || {}), tickets: Array.isArray(r.games.parimutuel?.tickets) ? r.games.parimutuel.tickets : [] } } : defaultRound(0).games }; }).filter(Boolean) : [defaultRound(0)], tournamentCustomBets: Array.isArray(raw.tournamentCustomBets) ? raw.tournamentCustomBets : [] }; try { const vs = JSON.parse(localStorage.getItem(viewRoundStoreKey(roundCode)) || 'null'); safe.viewRoundId = (vs && vs.live === safe.activeRoundId && safe.rounds.some(r => r.id === vs.view)) ? vs.view : undefined; } catch (e) {} setTournament(safe);
         // Determine admin status right here, atomically, the instant real data
         // is in hand — a local device flag OR a verified account match, either
         // one grants it. Doing this in one place (instead of splitting the
@@ -11689,7 +11742,7 @@ export default function RoGreen() {
 
   useEffect(() => {
     if (!roundCode || !loadedRef.current || isClubhouseSession || isSpectatorSession) return; // read-only sessions never write the tournament back
-    const t = setTimeout(async () => { try { await storage.set(tournamentKey(roundCode), JSON.stringify(tournament), true); } catch (e) {} }, 500);
+    const t = setTimeout(async () => { try { const { viewRoundId: _vr, ...toSave } = tournament; await storage.set(tournamentKey(roundCode), JSON.stringify(toSave), true); } catch (e) {} }, 500);
     return () => clearTimeout(t);
   }, [tournament, roundCode]);
 
@@ -11702,6 +11755,14 @@ export default function RoGreen() {
       rememberTournament(roundCode, tournament.name);
     }
   }, [roundCode, tournament.name]);
+
+  // Name claims. A phone that already had a name before claims existed registers it once. If an admin released the name, or another phone holds it, this phone drops back to the picker.
+  useEffect(() => {
+    if (loading || !whoamiId || isAdmin) return;
+    const me = myClaimDevice(); const c = (tournament.claims || {})[whoamiId];
+    if (!c) { setTournament(prev => ((prev.claims || {})[whoamiId] ? prev : { ...prev, claims: { ...(prev.claims || {}), [whoamiId]: { d: me, t: Date.now() } } })); return; }
+    if (c.d !== me) { setWhoamiId(null); setJustPickedIdentity(false); try { localStorage.removeItem('db:whoami-' + roundCode); } catch (e) {} }
+  }, [loading, whoamiId, isAdmin, tournament.claims, roundCode]);
 
   // Real-time sync + offline mode: onValue() caches data locally in Firebase,
   // so the app loads from cache instantly when signal drops mid-round.
@@ -11790,7 +11851,9 @@ export default function RoGreen() {
           const remoteIds = new Set(safePlayersFiltered.map(p => p.id));
           const localOnlyPlayers = (prev.players || []).filter(p => !remoteIds.has(p.id) && !recentlyRemoved.has(p.id));
           const mergedPlayers = [...safePlayersFiltered, ...localOnlyPlayers];
-          const merged = { ...safe, players: mergedPlayers, rounds: mergedRounds };
+          const liveChanged = prev.activeRoundId !== safe.activeRoundId;
+          if (liveChanged) { try { localStorage.removeItem(viewRoundStoreKey(roundCode)); } catch (e) {} }
+          const merged = { ...safe, players: mergedPlayers, rounds: mergedRounds, claims: mergeClaims(prev.claims, safe.claims), viewRoundId: liveChanged ? undefined : prev.viewRoundId };
           if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
           return merged;
         } catch(e) { return prev; }
@@ -11798,8 +11861,8 @@ export default function RoGreen() {
     });
 
     const unsubChat = storage.subscribe(chatKey(roundCode), true, (res) => {
-      if (!res) return;
-      try { const parsed = JSON.parse(res.value); setChat(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed); } catch(e) {}
+      if (!res) { setChat(prev => { const keep = chatOutboxRef.current; return prev.length === 0 && keep.length === 0 ? prev : keep.slice(); }); return; }
+      try { const parsed = JSON.parse(res.value); const list = mergeChatLists(Array.isArray(parsed) ? parsed : [], chatOutboxRef.current); setChat(prev => JSON.stringify(prev) === JSON.stringify(list) ? prev : list); } catch(e) {}
     });
 
     return () => { unsubTournament(); unsubChat(); };
@@ -11809,22 +11872,22 @@ export default function RoGreen() {
     if (pendingAdminPin && !loading && !tournament.adminPin) { setTournament(prev => ({ ...prev, adminPin: pendingAdminPin })); setPendingAdminPin(null); }
   }, [pendingAdminPin, loading, tournament.adminPin]);
 
-  const activeRoundForClamp = tournament.rounds.find(r => r.id === tournament.activeRoundId) || tournament.rounds[0];
-  useEffect(() => { setViewHole(v => Math.max(0, Math.min(v, (activeRoundForClamp?.numHoles || 18) - 1))); }, [activeRoundForClamp?.numHoles, tournament.activeRoundId]);
+  const activeRoundForClamp = tournament.rounds.find(r => r.id === activeRoundOf(tournament)) || tournament.rounds[0];
+  useEffect(() => { setViewHole(v => Math.max(0, Math.min(v, (activeRoundForClamp?.numHoles || 18) - 1))); }, [activeRoundForClamp?.numHoles, activeRoundOf(tournament)]);
 
   useEffect(() => {
     if (loading || autoJumpRef.current) return;
-    const rv = getRoundView(tournament, tournament.activeRoundId);
+    const rv = getRoundView(tournament, activeRoundOf(tournament));
     const stats = computeStats(rv);
     let target = 0;
     if (whoamiId) { const me = stats.find(s => s.id === whoamiId); if (me) target = Math.min(me.thru, rv.numHoles - 1); }
     else if (stats.length) { target = Math.min(Math.min(...stats.map(s => s.thru)), rv.numHoles - 1); }
     setViewHole(target); autoJumpRef.current = true;
-  }, [loading, whoamiId, tournament.activeRoundId]);
+  }, [loading, whoamiId, activeRoundOf(tournament)]);
 
   useEffect(() => {
     if (!loadedRef.current || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const state = getRoundView(tournament, tournament.activeRoundId);
+    const state = getRoundView(tournament, activeRoundOf(tournament));
     const fire = (title, body) => { try { new Notification(title, { body }); } catch (e) {} };
     const stats = computeStats(state);
     const inProgress = stats.filter(s => s.thru > 0);
@@ -11851,7 +11914,7 @@ export default function RoGreen() {
       if (maxThru === state.games?.parimutuel?.lockAfterHole) { watchRef.current.bettingClosingNotified = true; if (notifPrefs.bettingClosingSoon) fire('Betting closing soon', 'Pari-mutuel betting closes after this hole.'); }
     }
     const allFinished = stats.length > 0 && stats.every(s => s.thru === state.numHoles);
-    if (allFinished && !buildBetsFromState(state, roundCode, tournament.activeRoundId).some(b => b.currentStatus === 'pending') && !watchRef.current.roundCompleteNotified) {
+    if (allFinished && !buildBetsFromState(state, roundCode, activeRoundOf(tournament)).some(b => b.currentStatus === 'pending') && !watchRef.current.roundCompleteNotified) {
       watchRef.current.roundCompleteNotified = true;
       if (notifPrefs.roundComplete) fire('Round complete', "Everyone's finished and everything's settled.");
     }
@@ -11867,7 +11930,7 @@ export default function RoGreen() {
   }, [chat]);
 
   const updateTournament = (fn) => setTournament(prev => fn(prev));
-  const updateRound = (fn) => setTournament(prev => ({ ...prev, rounds: prev.rounds.map(r => r.id === prev.activeRoundId ? fn(r) : r) }));
+  const updateRound = (fn) => setTournament(prev => ({ ...prev, rounds: prev.rounds.map(r => r.id === activeRoundOf(prev) ? fn(r) : r) }));
 
   // Lightweight presence heartbeat — each connected device pings its own
   // timestamp into the round every 45s. Home reads however many pings are
@@ -11958,8 +12021,15 @@ export default function RoGreen() {
   const becomeAdmin = (pin) => { if (pin === tournament.adminPin) { viaInviteRef.current = false; setIsAdmin(true); try { localStorage.setItem('db:isadmin-' + roundCode, JSON.stringify(true)); } catch(e) {} return true; } return false; };
   const saveDeviceProfile = (name) => { setDeviceName(name); try { localStorage.setItem('db:device-profile', JSON.stringify({ name })); } catch(e) {} };
 
-  const setIdentity = (playerId) => { setWhoamiId(playerId); setJustPickedIdentity(true); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {} };
-  const clearIdentity = () => { setWhoamiId(null); setJustPickedIdentity(false); try { localStorage.removeItem('db:whoami-' + roundCode); } catch(e) {} };
+  const setClaim = (playerId, deviceId) => setTournament(prev => ({ ...prev, claims: { ...(prev.claims || {}), [playerId]: { d: deviceId, t: Date.now() } } }));
+  const setIdentity = (playerId) => {
+    if (playerId && playerId !== whoamiId && claimedByOther(playerId)) return;
+    if (whoamiId && whoamiId !== playerId) setClaim(whoamiId, null);
+    if (playerId) setClaim(playerId, myClaimDevice());
+    setWhoamiId(playerId); setJustPickedIdentity(true); try { localStorage.setItem('db:whoami-' + roundCode, JSON.stringify(playerId)); } catch(e) {}
+  };
+  const clearIdentity = () => { if (whoamiId) setClaim(whoamiId, null); setWhoamiId(null); setJustPickedIdentity(false); try { localStorage.removeItem('db:whoami-' + roundCode); } catch(e) {} };
+  const releaseClaim = (playerId) => setClaim(playerId, null);
   const addSelf = (name) => {
     if (!deviceName) saveDeviceProfile(name);
     const color = CHIP_COLORS[tournament.players.length % CHIP_COLORS.length];
@@ -11975,10 +12045,37 @@ export default function RoGreen() {
   const chatFlashRef = useRef(0);
   const [chatFlash, setChatFlash] = useState(false);
 
+  // Chat is one shared list. Several phones sending at the same moment used to overwrite each other (last writer won),
+  // so every send now goes through an outbox: read what is online, add my pending messages, write, then confirm they stuck and retry if not.
+  const chatOutboxRef = useRef([]);
+  const chatBusyRef = useRef(false);
+  const mergeChatLists = (remote, extra) => {
+    const seen = new Set(); const out = [];
+    [...(Array.isArray(remote) ? remote : []), ...extra].forEach(m => { if (m && m.id && !seen.has(m.id)) { seen.add(m.id); out.push(m); } });
+    return out.sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(-150);
+  };
+  const flushChat = async () => {
+    if (chatBusyRef.current) return; chatBusyRef.current = true;
+    try {
+      for (let attempt = 0; attempt < 5 && chatOutboxRef.current.length; attempt++) {
+        const mine = chatOutboxRef.current.slice();
+        let remote = []; try { const res = await storage.get(chatKey(roundCode), true); remote = res && res.value ? JSON.parse(res.value) : []; } catch (e) {}
+        const next = mergeChatLists(remote, mine);
+        try { await storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {}
+        await new Promise(r => setTimeout(r, 350 + Math.floor(Math.random() * 250)));
+        let check = []; try { const res2 = await storage.get(chatKey(roundCode), true); check = res2 && res2.value ? JSON.parse(res2.value) : []; } catch (e) {}
+        const ids = new Set((Array.isArray(check) ? check : []).map(m => m && m.id));
+        chatOutboxRef.current = chatOutboxRef.current.filter(m => !ids.has(m.id));
+      }
+    } finally { chatBusyRef.current = false; if (chatOutboxRef.current.length) setTimeout(flushChat, 1500); }
+  };
+  const clearChat = () => { chatOutboxRef.current = []; setChat([]); (async () => { try { await storage.delete(chatKey(roundCode), true); } catch (e) {} })(); };
   const sendChat = (text) => {
     const author = tournament.players.find(p => p.id === whoamiId);
     const msg = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), authorId: whoamiId, authorName: author ? author.name : (deviceName || 'Guest'), text, ts: Date.now() };
-    setChat(prev => { const next = [...prev, msg].slice(-150); (async () => { try { await storage.set(chatKey(roundCode), JSON.stringify(next), true); } catch (e) {} })(); return next; });
+    chatOutboxRef.current = [...chatOutboxRef.current, msg];
+    setChat(prev => mergeChatLists(prev, [msg]));
+    flushChat();
     const now = Date.now();
     if (now - chatFlashRef.current > 60000) {
       chatFlashRef.current = now;
@@ -12075,6 +12172,8 @@ export default function RoGreen() {
   });
   const applyScan = (rows) => updateRound(prev => { const scores = { ...prev.scores }; rows.forEach(r => { scores[r.playerId] = r.scores.map((s, i) => s != null ? s : (scores[r.playerId]?.[i] ?? null)); }); return { ...prev, scores }; });
   const setScoreVal = (playerId, holeIndex, val) => updateRound(prev => {
+    // A submitted card is final. Only an admin can change it.
+    if (!(isAdmin && !previewMode) && Array.isArray(prev.submittedPlayers) && prev.submittedPlayers.includes(playerId)) return prev;
     // Captain's Choice: one team score, mirrored to both partners. No handicap math applied.
     let mirrorIds = [playerId];
     if (prev.matchFormat === 'captain-choice') {
@@ -12097,20 +12196,22 @@ export default function RoGreen() {
     });
     return { ...prev, scores: newScores, scoreUpdatedAt, scoreEnteredBy };
   });
-  const stateNow = getRoundView(tournament, tournament.activeRoundId);
+  const stateNow = getRoundView(tournament, activeRoundOf(tournament));
   const isPlayerSubmitted = (playerId) => Array.isArray(stateNow.submittedPlayers) && stateNow.submittedPlayers.includes(playerId);
   const tapPlus  = (playerId, holeIndex) => { if (!isAdmin && isPlayerSubmitted(playerId)) return; const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, cur == null ? par + 1 : cur + 1); };
   const tapMinus = (playerId, holeIndex) => { if (!isAdmin && isPlayerSubmitted(playerId)) return; const cur = stateNow.scores[playerId]?.[holeIndex]; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, Math.max(1, cur == null ? par - 1 : cur - 1)); };
   const tapCenter = (playerId, holeIndex) => { if (!isAdmin && isPlayerSubmitted(playerId)) return; const par = stateNow.pars[holeIndex] ?? 4; setScoreVal(playerId, holeIndex, par); };
   const clearScore = (playerId, holeIndex) => setScoreVal(playerId, holeIndex, null);
-  const submitScorecard = (playerId) => updateRound(prev => ({
+  // Submitting locks the card. With group scoring the whole group's cards lock together, so pass every id in the group.
+  const submitScorecard = (playerIds) => { const ids = Array.isArray(playerIds) ? playerIds : [playerIds]; updateRound(prev => ({
     ...prev,
-    submittedPlayers: [...(Array.isArray(prev.submittedPlayers) ? prev.submittedPlayers : []).filter(id => id !== playerId), playerId],
-  }));
-  const unlockScorecard = (playerId) => updateRound(prev => ({
+    submittedPlayers: [...(Array.isArray(prev.submittedPlayers) ? prev.submittedPlayers : []).filter(id => !ids.includes(id)), ...ids],
+  })); };
+  // Unlocking is an admin tool; players cannot reopen a submitted card.
+  const unlockScorecard = (playerIds) => { if (!(isAdmin && !previewMode)) return; const ids = Array.isArray(playerIds) ? playerIds : [playerIds]; updateRound(prev => ({
     ...prev,
-    submittedPlayers: (Array.isArray(prev.submittedPlayers) ? prev.submittedPlayers : []).filter(id => id !== playerId),
-  }));
+    submittedPlayers: (Array.isArray(prev.submittedPlayers) ? prev.submittedPlayers : []).filter(id => !ids.includes(id)),
+  })); };
 
   const goHole = (delta) => {
     setViewHole(v => Math.max(0, Math.min(stateNow.numHoles - 1, v + delta)));
@@ -12169,7 +12270,7 @@ export default function RoGreen() {
         newRound.games.parimutuel.resolved = false; newRound.games.parimutuel.winnerId = null; newRound.games.parimutuel.tickets = [];
       }
       prev.players.forEach(p => { newRound.scores[p.id] = Array(newRound.numHoles).fill(null); });
-      return { ...prev, rounds: [...prev.rounds, newRound], activeRoundId: newRound.id };
+      return { ...prev, rounds: [...prev.rounds, newRound], activeRoundId: newRound.id, viewRoundId: undefined };
     });
     autoJumpRef.current = false;
     setWizardIsNewRound(true);
@@ -12179,7 +12280,17 @@ export default function RoGreen() {
     const list = adminAccount ? (await loadTemplates(adminAccount.uid)).filter(t => t.kind === 'round') : [];
     if (list.length) setAddRoundChoices(list); else addRound();
   };
-  const switchRound = (roundId) => { updateTournament(prev => ({ ...prev, activeRoundId: roundId })); autoJumpRef.current = false; };
+  // Players and admins switching rounds only change what THIS phone looks at. Only an admin's "Make live" moves everyone.
+  const switchRound = (roundId) => {
+    setTournament(prev => ({ ...prev, viewRoundId: roundId === prev.activeRoundId ? undefined : roundId }));
+    try { if (roundId === tournament.activeRoundId) localStorage.removeItem(viewRoundStoreKey(roundCode)); else localStorage.setItem(viewRoundStoreKey(roundCode), JSON.stringify({ view: roundId, live: tournament.activeRoundId })); } catch (e) {}
+    autoJumpRef.current = false;
+  };
+  const makeRoundLive = (roundId) => {
+    setTournament(prev => ({ ...prev, activeRoundId: roundId, viewRoundId: undefined }));
+    try { localStorage.removeItem(viewRoundStoreKey(roundCode)); } catch (e) {}
+    autoJumpRef.current = false;
+  };
 
   const openChat = () => { setChatOpen(true); setChatSeenLen(chat.length); };
 
@@ -12226,7 +12337,7 @@ export default function RoGreen() {
 
   if (loading) return <div style={{ minHeight: '100vh', background: P.ground, display: 'flex', alignItems: 'center', justifyContent: 'center', color: P.ink2, fontFamily: "'Instrument Sans', Inter, sans-serif" }}>Loading round…</div>;
 
-  const state = getRoundView(tournament, tournament.activeRoundId);
+  const state = getRoundView(tournament, activeRoundOf(tournament));
   const stats = computeStats(state);
   const hasPlayers = tournament.players.length > 0;
   const whoami = tournament.players.find(p => p.id === (isAdmin && proxyPlayerId ? proxyPlayerId : whoamiId)) || null;
@@ -12248,7 +12359,7 @@ export default function RoGreen() {
   }
   const h = Math.max(0, Math.min(viewHole, state.numHoles - 1));
   const par = state.pars[h] ?? 4;
-  const roundBets = bets.filter(b => b.roundId === tournament.activeRoundId);
+  const roundBets = bets.filter(b => b.roundId === activeRoundOf(tournament));
   const phase = getRoundPhase(state, stats, roundBets);
   const viewAsAdmin = isAdmin && !previewMode;
   const coachOn = !drawerOpen && !settingsOpen && !qrOpen && !accountMenuOpen && !wizardOpen && !profileOpen && !accountProfileOpen;
@@ -12264,7 +12375,7 @@ export default function RoGreen() {
     return out;
   })();
   const multiRound = tournament.rounds.length > 1;
-  const isLastRound = tournament.rounds[tournament.rounds.length - 1]?.id === tournament.activeRoundId;
+  const isLastRound = tournament.rounds[tournament.rounds.length - 1]?.id === activeRoundOf(tournament);
 
   return (
     <div style={{ height: '100dvh', overflow: 'hidden', background: P.ground, color: P.ink, fontFamily: "'Instrument Sans', Inter, sans-serif", display: 'flex', flexDirection: 'column', position: 'fixed', inset: 0 }}>
@@ -12286,7 +12397,7 @@ export default function RoGreen() {
             {viewAsAdmin && 'admin'}
             {viewAsAdmin && multiRound && ' · '}
             {multiRound && (
-              <button onClick={() => setRoundSwitcherOpen(true)} style={{ background: 'transparent', border: 'none', color: '#7A5C0F', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>Round {tournament.rounds.findIndex(r => r.id === tournament.activeRoundId) + 1} of {tournament.rounds.length} <ChevronsUpDown size={11} /></button>
+              <button onClick={() => setRoundSwitcherOpen(true)} style={{ background: 'transparent', border: 'none', color: '#7A5C0F', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>Round {tournament.rounds.findIndex(r => r.id === activeRoundOf(tournament)) + 1} of {tournament.rounds.length} <ChevronsUpDown size={11} /></button>
             )}
             {(viewAsAdmin || multiRound) && ' · '}code <span data-testid="round-code">{roundCode}</span>
           </div>
@@ -12309,11 +12420,11 @@ export default function RoGreen() {
         </div>
       </div>
       {accountMenuOpen && adminAccount && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(4,15,10,0.7)', zIndex: 60 }} onClick={() => setAccountMenuOpen(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 70, right: 16, background: 'rgba(32,35,29,0.08)', border: `1px solid ${P.rule}`, borderRadius: 8, width: 220, padding: 8, boxShadow: '0 6px 18px rgba(0,0,0,0.25)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,12,8,0.45)', zIndex: 60 }} onClick={() => setAccountMenuOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 70, right: 16, background: P.paper, color: P.ink, border: `1px solid ${P.rule}`, borderRadius: 14, width: 236, padding: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.35)' }}>
             <div style={{ padding: '8px 10px', fontSize: 12, color: P.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: `1px solid ${P.rule}`, marginBottom: 6 }}>{adminAccount.email}</div>
-            <button onClick={() => { setAccountMenuOpen(false); handleLeave(); setAccountProfileOpen(true); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: P.ink, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>My Tournaments</button>
-            <button onClick={async () => { setAccountMenuOpen(false); await signOutAdmin(); handleLeave(); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: P.red, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Sign out</button>
+            <button onClick={() => { setAccountMenuOpen(false); handleLeave(); setAccountProfileOpen(true); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: P.ink, padding: '12px 10px', minHeight: 44, borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>My Tournaments</button>
+            <button onClick={async () => { setAccountMenuOpen(false); await signOutAdmin(); handleLeave(); }} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', color: P.red, padding: '12px 10px', minHeight: 44, borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>Sign out</button>
           </div>
         </div>
       )}
@@ -12370,11 +12481,11 @@ export default function RoGreen() {
         <SetupWizard tournament={tournament} state={state} updateTournament={updateTournament} updateRound={updateRound} onClose={() => { setWizardOpen(false); setWizardIsNewRound(false); }} onOpenSetup={() => { setWizardOpen(false); setWizardIsNewRound(false); setSetupOpen(true); }} roundCode={roundCode} selectProviderCourse={selectProviderCourse} selectCustomCourse={selectCustomCourse} setNumHoles={setNumHoles} setPlayerField={setPlayerField} autoFlights={autoFlights} addFlight={addFlight} renameFlight={renameFlight} removeFlight={removeFlight} assignFlight={assignFlight} setCourseField={setCourseField} startRound={startRound} isNewRound={wizardIsNewRound} quickMode={wizardQuickMode} onFinish={() => { setWizardOpen(false); setWizardIsNewRound(false); setActiveTab('home'); }} />
       )}
       {settingsOpen && (
-        <SettingsSheet onOpenClubhouse={() => { setSettingsOpen(false); setClubhouseOpen(true); }} onOpenSaveTemplate={adminAccount ? () => { setSettingsOpen(false); setSaveTplOpen(true); } : null} onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} onOpenAdminTeam={() => { setSettingsOpen(false); setAdminTeamOpen(true); }} />
+        <SettingsSheet onOpenClubhouse={() => { setSettingsOpen(false); setClubhouseOpen(true); }} onOpenSaveTemplate={adminAccount ? () => { setSettingsOpen(false); setSaveTplOpen(true); } : null} onClose={() => setSettingsOpen(false)} onOpenTeamEvent={() => { setSettingsOpen(false); setTeamEventOpen('setup'); }} onOpenSetup={() => { setSettingsOpen(false); setSetupOpen(true); }} onOpenNotifications={() => { setSettingsOpen(false); setNotifOpen(true); }} onOpenScan={() => { setSettingsOpen(false); setScanOpen(true); }} onLeave={handleLeave} onBecomeAdmin={() => { setSettingsOpen(false); setBecomeAdminOpen(true); }} roundCode={roundCode} adminPin={tournament.adminPin} isAdmin={viewAsAdmin} hasPlayers={hasPlayers} previewMode={previewMode} onExitPreview={() => { setSettingsOpen(false); setPreviewMode(false); }} onEnterPreview={() => { setSettingsOpen(false); setPreviewMode(true); }} guidanceEnabled={guidanceEnabled} onToggleGuidance={() => { const next = !guidanceEnabled; setGuidanceEnabled(next); try { localStorage.setItem('db:guidance-enabled', JSON.stringify(next)); } catch(e) {} }} onOpenProfile={() => { setSettingsOpen(false); setProfileOpen(true); }} onOpenRoundSwitcher={() => { setSettingsOpen(false); setRoundSwitcherOpen(true); }} multiRound={multiRound} onOpenRoundComplete={() => { setSettingsOpen(false); setRoundCompleteOpen(true); }} onOpenReset={() => { setSettingsOpen(false); setResetOpen(true); }} onOpenClearChat={() => { setSettingsOpen(false); setClearChatOpen(true); }} onOpenLayout={() => { setSettingsOpen(false); setLayoutOpen(true); }} onOpenRules={() => { setSettingsOpen(false); setRulesOpen(true); }} whoami={whoami} onSwitchPlayer={() => { setSettingsOpen(false); clearIdentity(); }} onOpenAuctionSetup={() => { setSettingsOpen(false); setAuctionSetupOpen(true); }} bettingOn={tournament.bettingEnabled !== false} onOpenAdminTeam={() => { setSettingsOpen(false); setAdminTeamOpen(true); }} />
       )}
       {notifOpen && <NotificationsModal prefs={notifPrefs} setPrefs={updateNotifPrefs} onClose={() => setNotifOpen(false)} />}
       {scanOpen && <ScanModal state={state} onClose={() => setScanOpen(false)} onApply={applyScan} />}
-      {drawerOpen && <ScoreDrawer state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} groupScoreEntry={!!tournament.groupScoreEntry} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} onSwitchPlayer={clearIdentity} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
+      {drawerOpen && <ScoreDrawer tournament={tournament} state={state} whoami={whoami} viewAsAdmin={viewAsAdmin} setScoreVal={setScoreVal} initialReview={drawerInitialReview} groupScoreEntry={!!tournament.groupScoreEntry} onClose={() => { setDrawerOpen(false); setDrawerInitialReview(false); }} onPick={setIdentity} onAddSelf={addSelf} onSwitchPlayer={clearIdentity} submitScorecard={submitScorecard} unlockScorecard={unlockScorecard} onFinalHoleConfirmed={() => {
         if (!adminAccount) {
           let dismissed = false;
           try { dismissed = localStorage.getItem('db:profile-prompt-dismissed') === 'true'; } catch (e) {}
@@ -12382,7 +12493,7 @@ export default function RoGreen() {
         }
       }} />}
       {clubhouseOpen && <ClubhouseAdminModal tournament={tournament} updateTournament={updateTournament} roundCode={roundCode} onClose={() => setClubhouseOpen(false)} />}
-      {saveTplOpen && <SaveTemplateModal tournament={tournament} round={tournament.rounds.find(r => r.id === tournament.activeRoundId) || tournament.rounds[0]} adminAccount={adminAccount} onClose={() => setSaveTplOpen(false)} />}
+      {saveTplOpen && <SaveTemplateModal tournament={tournament} round={tournament.rounds.find(r => r.id === activeRoundOf(tournament)) || tournament.rounds[0]} adminAccount={adminAccount} onClose={() => setSaveTplOpen(false)} />}
       {addRoundChoices && <AddRoundModal templates={addRoundChoices} onCopyLast={() => addRound()} onTemplate={(t) => addRound(t)} onClose={() => setAddRoundChoices(null)} />}
       {rulesOpen && <RulesModal rules={tournament.rules} isAdmin={viewAsAdmin} adminAccount={adminAccount} onSave={(text) => updateTournament(p => ({ ...p, rules: text }))} onClose={() => setRulesOpen(false)} />}
       {becomeAdminOpen && <BecomeAdminModal onSubmit={becomeAdmin} onClose={() => setBecomeAdminOpen(false)} />}
@@ -12412,7 +12523,7 @@ export default function RoGreen() {
         );
       })()}
       {awardsOpen && <AwardsCreditsModal awards={computeAwards(state, tournament, ledger)} tournament={tournament} roundName={state.roundName} onClose={() => { setAwardsOpen(false); if (viewAsAdmin) updateRound(r => ({ ...r, awardsPresentationActive: false })); }} />}
-      {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={requestAddRound} />}
+      {roundSwitcherOpen && <RoundSwitcherModal tournament={tournament} onSwitch={switchRound} onMakeLive={makeRoundLive} onClose={() => setRoundSwitcherOpen(false)} isAdmin={viewAsAdmin} onAddRound={requestAddRound} />}
       {leaderboardOpen && (
         <DrawerFrame origin="tap" paper={false} fill wide={420} onClose={() => setLeaderboardOpen(false)}>{(close) => (
           <>
@@ -12443,6 +12554,7 @@ export default function RoGreen() {
       {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} spectatorsEnabled={tournament.spectatorsEnabled} onToggleSpectators={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))} onClose={() => setQrOpen(false)} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
       {proxyOpen && <ProxyPickerModal tournament={tournament} activeProxyId={proxyPlayerId} onPick={(id) => { setProxyPlayerId(id); setProxyOpen(false); }} onStop={() => { setProxyPlayerId(null); setProxyOpen(false); }} onClose={() => setProxyOpen(false)} />}
+      {clearChatOpen && <ResetRoundModal title="Delete group chat?" body="This removes every message for everyone. This cannot be undone." body2="Every message will disappear on all phones." finalLabel="Delete chat" onConfirm={() => { clearChat(); setClearChatOpen(false); }} onClose={() => setClearChatOpen(false)} />}
       {resetOpen && <ResetRoundModal roundName={state.roundName} onConfirm={() => { resetRound(); setResetOpen(false); }} onClose={() => setResetOpen(false)} />}
       {layoutOpen && <LayoutPreferencesModal prefs={homeLayoutPrefs} onToggle={toggleLayoutPref} onClose={() => setLayoutOpen(false)} />}
     </div>
