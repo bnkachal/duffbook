@@ -8918,7 +8918,7 @@ function AdminTeamModal({ tournament, updateTournament, roundCode, onClose }) {
   const [oPlaying, setOPlaying] = useState(org.playing !== false);
   const [hName, setHName] = useState(''); const [hPhone, setHPhone] = useState(''); const [hEmail, setHEmail] = useState(''); const [hPlaying, setHPlaying] = useState(false);
   const [msg, setMsg] = useState('');
-  const invites = tournament.adminInvites || [];
+  const invites = (tournament.adminInvites || []).filter(i => i && !i.shared);
   const fld = { ...inputStyle, marginBottom: 8, fontSize: 15 };
   const lbl = { fontSize: 11, fontWeight: 600, color: P.ink2, marginBottom: 3, display: 'block' };
   const saveOrg = () => { updateTournament(prev => ({ ...prev, organizer: { name: oName.trim(), phone: oPhone.trim(), email: oEmail.trim(), playing: oPlaying } })); setMsg('Saved'); setTimeout(() => setMsg(''), 1600); };
@@ -10876,8 +10876,72 @@ function RulesModal({ rules, isAdmin, onSave, onClose, adminAccount }) {
   );
 }
 
-function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSpectators, onClose }) {
-  const [mode, setMode] = useState('player'); // 'player' | 'spectator'
+// Small QR picture for a link. Waits for the QR library (loaded by the share window) if it is not there yet.
+function QRBox({ text, size = 200 }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let dead = false, iv = null;
+    const draw = () => { if (dead || !ref.current || !window.QRCode) return false; ref.current.innerHTML = ''; try { new window.QRCode(ref.current, { text, width: size, height: size, colorDark: '#111827', colorLight: '#FFFFFF', correctLevel: window.QRCode.CorrectLevel.M }); setReady(true); } catch (e) { return false; } return true; };
+    if (!draw()) iv = setInterval(() => { if (draw()) clearInterval(iv); }, 300);
+    return () => { dead = true; if (iv) clearInterval(iv); };
+  }, [text, size]);
+  return <div style={{ display: 'inline-block', background: '#FFF', padding: 10, borderRadius: 12, border: `1px solid ${P.rule}`, minWidth: size, minHeight: size }}><div ref={ref} data-testid="admin-qr" style={{ width: size, height: size }} />{!ready && <div style={{ fontSize: 12, color: P.ink3, marginTop: -size / 2 }}>Loading QR…</div>}</div>;
+}
+// Admin tab of the share window. Only admins ever see this. Shared link: one reusable link (reset it if it leaks). Named invite: one personal link per helper.
+function AdminShareBody({ roundCode, tournament, updateTournament, tournamentName }) {
+  const [msg, setMsg] = useState('');
+  const [name, setName] = useState('');
+  const shared = (tournament.adminInvites || []).find(i => i && i.shared);
+  const linkFor = (inv) => `${window.location.origin}?code=${roundCode}&invite=${inv.token}`;
+  const say = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2200); };
+  const send = async (link, who) => {
+    const text = `${who ? who + ', y' : 'Y'}ou're helping run ${tournamentName || 'our tournament'} on ${BRAND.name}. Tap to open as an admin: ${link}`;
+    try { if (navigator.share) { await navigator.share({ title: 'Admin invite', text, url: link }); } else { await navigator.clipboard.writeText(link); say('Link copied'); } } catch (e) { /* cancelled */ }
+  };
+  const copy = (link) => { try { navigator.clipboard.writeText(link).then(() => say('Link copied')); } catch (e) { say('Copy failed'); } };
+  const createShared = () => updateTournament(prev => ({ ...prev, adminInvites: [...(prev.adminInvites || []).filter(i => !(i && i.shared)), { id: 'a_' + Date.now().toString(36), token: newInviteToken(), name: '', phone: '', email: '', playing: true, shared: true, createdAt: Date.now() }] }));
+  const resetShared = () => { if (window.confirm('Reset the shared admin link? The old link and QR stop working, and anyone who joined with it loses admin until they use the new one.')) createShared(); };
+  const removeShared = () => { if (window.confirm('Turn off the shared admin link?')) updateTournament(prev => ({ ...prev, adminInvites: (prev.adminInvites || []).filter(i => !(i && i.shared)) })); };
+  const addNamed = () => {
+    if (!name.trim()) return;
+    const inv = { id: 'a_' + Date.now().toString(36), token: newInviteToken(), name: name.trim(), phone: '', email: '', playing: false, createdAt: Date.now() };
+    updateTournament(prev => ({ ...prev, adminInvites: [...(prev.adminInvites || []), inv] }));
+    setName(''); send(linkFor(inv), inv.name.split(' ')[0]);
+  };
+  const lbtn = { flex: 1, minHeight: 42, borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 };
+  return (
+    <div data-testid="admin-share">
+      <div style={{ fontFamily: DISPLAY, fontWeight: 900, fontSize: 20, color: P.ink, marginBottom: 2 }}>Admin link</div>
+      <div style={{ fontSize: 12, color: P.red, fontWeight: 700, marginBottom: 12 }}>Only share with people who should run scoring.</div>
+      <div style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', marginBottom: 6 }}>Shared link</div>
+      {!shared ? (
+        <GoldButton data-testid="admin-create-shared" onClick={createShared} style={{ width: '100%', padding: '12px 0', marginBottom: 6 }}>Create shared admin link</GoldButton>
+      ) : (<>
+        <QRBox text={linkFor(shared)} size={190} />
+        <div style={{ display: 'flex', gap: 8, margin: '10px 0 6px' }}>
+          <button onClick={() => send(linkFor(shared), '')} style={{ ...lbtn, border: 'none', background: `linear-gradient(135deg, #00874A, ${C.gold})`, color: '#FFF' }}><Share2 size={15} /> Share</button>
+          <button onClick={() => copy(linkFor(shared))} style={{ ...lbtn, border: `1.5px solid ${P.rule}`, background: P.paper, color: P.ink }}><Copy size={15} /> Copy</button>
+        </div>
+        <div style={{ display: 'flex', gap: 14, justifyContent: 'center' }}>
+          <button data-testid="admin-reset-shared" onClick={resetShared} style={{ background: 'transparent', border: 'none', color: P.red, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Reset link</button>
+          <button onClick={removeShared} style={{ background: 'transparent', border: 'none', color: P.ink3, fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}>Turn off</button>
+        </div>
+        <div style={{ fontSize: 11, color: P.ink3, lineHeight: 1.45, marginTop: 6 }}>Anyone who opens this becomes an admin. It does not record who. Reset it if it gets forwarded.</div>
+      </>)}
+      <div style={{ textAlign: 'left', fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#7A5C0F', margin: '16px 0 6px' }}>Named invite</div>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Helper's name" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8, fontSize: 15 }} />
+      <GoldButton data-testid="admin-create-named" onClick={addNamed} disabled={!name.trim()} style={{ width: '100%', padding: '12px 0' }}>Create and share invite</GoldButton>
+      <div style={{ fontSize: 11, color: P.ink3, lineHeight: 1.45, marginTop: 6 }}>A personal link for one person. Manage or remove helpers under Settings, Admins and helpers.</div>
+      {tournament.adminPin && <div style={{ fontSize: 11.5, color: P.ink2, marginTop: 10 }}>Backup: round code <b>{roundCode}</b>, tap "I'm helping run this", PIN <b>{tournament.adminPin}</b>.</div>}
+      {msg && <div role="status" style={{ fontSize: 12.5, color: P.green, fontWeight: 700, marginTop: 8 }}>{msg}</div>}
+      <div style={{ height: 8 }} />
+    </div>
+  );
+}
+
+function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSpectators, onClose, isAdmin, tournament, updateTournament }) {
+  const [mode, setMode] = useState('player'); // 'player' | 'spectator' | 'admin' (admins only)
   const url = mode === 'spectator' ? `${window.location.origin}?code=${roundCode}&spectate=1` : `${window.location.origin}?code=${roundCode}`;
   const canvasRef = useRef(null);
   const [copied, setCopied] = useState(false);
@@ -10931,8 +10995,10 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: P.paper, borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-        {mode === 'spectator' && !spectatorsEnabled ? (
+      <div onClick={e => e.stopPropagation()} style={{ background: P.paper, borderRadius: 20, padding: 28, maxWidth: 320, width: '100%', maxHeight: '92vh', overflowY: 'auto', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        {mode === 'admin' && isAdmin ? (
+          <AdminShareBody roundCode={roundCode} tournament={tournament} updateTournament={updateTournament} tournamentName={tournamentName} />
+        ) : mode === 'spectator' && !spectatorsEnabled ? (
           <div style={{ padding: '20px 4px' }}>
             <div style={{ fontSize: 13, color: P.ink2, lineHeight: 1.6, marginBottom: 16 }}>Spectators are currently turned off for this tournament. Turn them on to generate a follow-along link.</div>
             <GoldButton onClick={onToggleSpectators} style={{ width: '100%', padding: '12px 0', marginBottom: 10 }}>Turn On Spectators</GoldButton>
@@ -10969,9 +11035,6 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
               </button>
             </div>
 
-            <button onClick={() => { setQrReady(false); setMode(mode === 'player' ? 'spectator' : 'player'); }} style={{ width: '100%', background: 'transparent', border: `1px dashed ${P.rule}`, borderRadius: 10, padding: '10px 0', color: '#7A5C0F', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              {mode === 'player' ? <>👀 Get spectator link instead</> : <>🏌️ Get player link instead</>}
-            </button>
 
             <div style={{ fontSize: 11, color: P.ink3, marginBottom: 16, lineHeight: 1.5 }}>
               {mode === 'spectator' ? 'Anyone with this link can follow the leaderboard and chat live — they can\'t enter scores or see admin controls.' : 'Players scan the QR or tap the link to land directly in your round — no code typing needed.'}
@@ -10979,6 +11042,11 @@ function QRShareModal({ roundCode, tournamentName, spectatorsEnabled, onToggleSp
           </>
         )}
 
+        <div role="tablist" data-testid="share-mode" style={{ display: 'flex', gap: 3, background: 'rgba(32,35,29,0.08)', borderRadius: 10, padding: 3, margin: '4px 0 12px' }}>
+          {[['player', 'Player'], ['spectator', 'Spectator'], ...(isAdmin ? [['admin', 'Admin']] : [])].map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={mode === k} data-testid={`share-mode-${k}`} onClick={() => { if (k !== mode) { setQrReady(false); setMode(k); } }} style={{ flex: 1, border: 'none', borderRadius: 8, padding: '8px 4px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: mode === k ? P.paper : 'transparent', color: mode === k ? P.ink : P.ink3, boxShadow: mode === k ? '0 1px 3px rgba(0,0,0,0.15)' : 'none' }}>{l}</button>
+          ))}
+        </div>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: P.ink3, fontSize: 13, cursor: 'pointer', padding: '4px 0' }}>Close</button>
       </div>
     </div>
@@ -12610,7 +12678,7 @@ export default function RoGreen() {
           <KoSModal tournament={tournament} updateTournament={updateTournament} onClose={close} />
         )}</DrawerFrame>
       )}
-      {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} spectatorsEnabled={tournament.spectatorsEnabled} onToggleSpectators={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))} onClose={() => setQrOpen(false)} />}
+      {qrOpen && <QRShareModal roundCode={roundCode} tournamentName={tournament.name} spectatorsEnabled={tournament.spectatorsEnabled} onToggleSpectators={() => updateTournament(p => ({ ...p, spectatorsEnabled: !p.spectatorsEnabled }))} onClose={() => setQrOpen(false)} isAdmin={isAdmin} tournament={tournament} updateTournament={updateTournament} />}
       {profileOpen && <DeviceProfileModal name={deviceName} onSave={saveDeviceProfile} onClose={() => setProfileOpen(false)} />}
       {proxyOpen && <ProxyPickerModal tournament={tournament} activeProxyId={proxyPlayerId} onPick={(id) => { setProxyPlayerId(id); setProxyOpen(false); }} onStop={() => { setProxyPlayerId(null); setProxyOpen(false); }} onClose={() => setProxyOpen(false)} />}
       {clearChatOpen && <ResetRoundModal title="Delete group chat?" body="This removes every message for everyone. This cannot be undone." body2="Every message will disappear on all phones." finalLabel="Delete chat" onConfirm={() => { clearChat(); setClearChatOpen(false); }} onClose={() => setClearChatOpen(false)} />}
